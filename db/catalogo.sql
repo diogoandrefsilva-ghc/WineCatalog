@@ -210,6 +210,7 @@ ALTER TABLE winecatalog.config    ENABLE ROW LEVEL SECURITY;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.tokens(p_texto text)
   RETURNS text[] LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   -- Duas voltas, e a ORDEM importa: primeiro expandem-se as abreviaturas,
   -- só DEPOIS se deitam fora as palavras que não distinguem nada. Ao
@@ -268,6 +269,7 @@ $$;
 -- nota acima).
 CREATE OR REPLACE FUNCTION winecatalog.chave_base(p_nome text, p_produtor text)
   RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT array_to_string(
     winecatalog.tokens(
@@ -278,6 +280,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION winecatalog.chave(p_nome text, p_produtor text, p_ano integer)
   RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT winecatalog.chave_base(p_nome, p_produtor) || '|' || COALESCE(p_ano::text, '');
 $$;
@@ -313,6 +316,7 @@ $$;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.base_nome(p_nome text)
   RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT CASE
     WHEN EXISTS (
@@ -329,6 +333,7 @@ $$;
 
 CREATE OR REPLACE FUNCTION winecatalog.chave_nome(p_nome text, p_ano integer)
   RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT winecatalog.base_nome(p_nome) || '|' || COALESCE(p_ano::text, '');
 $$;
@@ -418,6 +423,7 @@ $$;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.volatil(p_campo text)
   RETURNS boolean LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT COALESCE(p_campo, '') IN (
     'vivino_nota', 'vivino_avaliacoes', 'vivino_url',
@@ -471,6 +477,7 @@ $$;
 DROP FUNCTION IF EXISTS winecatalog.forca(text);
 CREATE OR REPLACE FUNCTION winecatalog.forca(p_origem text, p_campo text DEFAULT NULL)
   RETURNS integer LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT CASE
     WHEN COALESCE(p_origem,'') = 'garrafeira' AND winecatalog.volatil(p_campo) THEN 2
@@ -839,7 +846,7 @@ $$;
 -- responde à pergunta "vale a pena abrir esta?".
 CREATE OR REPLACE FUNCTION winecatalog.resumo_linha(r winecatalog.vinhos)
   RETURNS jsonb LANGUAGE sql STABLE
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT jsonb_build_object(
     'id',       r.id,
@@ -881,7 +888,7 @@ CREATE OR REPLACE FUNCTION winecatalog.listar(
   p_saltar  integer DEFAULT 0
 ) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
   v_q    text    := lower(trim(COALESCE(p_procura, '')));
@@ -953,7 +960,7 @@ $$;
 CREATE OR REPLACE FUNCTION winecatalog.ver(p_id bigint)
   RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
   r winecatalog.vinhos%ROWTYPE;
@@ -990,18 +997,78 @@ $$;
 -- DUPLICADOS: a fusão MANUAL
 -- =====================================================================
 -- ---------------------------------------------------------------------
+-- GENÉRICO: as palavras que NÃO identificam um vinho
+--
+-- Serve só à lista de candidatos, e é o que a fez passar de 28 pares para
+-- 7 na base real. Sem ela, a varredura propunha coisas destas:
+--
+--   HERDADE DO SOBROSO Grande Reserva  ×  Bafarela Grande Reserva
+--   Esporão Touriga Nacional           ×  Quinta do Noval Touriga Nacional
+--   Leo d'Honor                        ×  Ermelinda Freitas Syrah
+--
+-- Três ruídos diferentes, e vale a pena saber distingui-los:
+--   · QUALIFICADORES ("grande", "reserva", "garrafeira", "velhas") — dizem
+--     a gama, não o vinho. Dois vinhos que só partilham isto não têm nada
+--     a ver um com o outro;
+--   · CASTAS ("touriga", "nacional", "syrah") — é a uva, e metade do Douro
+--     engarrafa a mesma. Era este o falso positivo perigoso que o
+--     documento de arranque já tinha apanhado (`nacional-touriga-vallado`
+--     com `esporao-nacional-touriga`);
+--   · o PRODUTOR — este não se resolve com uma lista, resolve-se abaixo:
+--     a chave junta nome E produtor (de propósito, ver `catalogo.achar`),
+--     por isso dois vinhos diferentes da MESMA casa partilham sempre os
+--     tokens dela. O "Leo d'Honor" e o "Ermelinda Freitas Syrah" são os
+--     dois da Ermelinda Freitas e não têm mais nada em comum.
+--
+-- ESTA LISTA NÃO É A DO `base_nome`, e não tem de ser. Aquela decide
+-- IDENTIDADE — mexer nela mexe na chave e, por aí, nas três apps. Esta só
+-- decide se vale a pena PROPOR um par a uma pessoa, e por isso pode (e
+-- deve) ser mais larga: aqui um falso negativo custa um duplicado que fica
+-- mais um mês à espera, e um falso positivo custa a confiança na lista
+-- toda — que é o que faz alguém carregar em "são o mesmo" sem olhar.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.generico(p_token text)
+  RETURNS boolean LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT COALESCE(p_token, '') IN (
+    -- gama, cor, estilo
+    'reserva','grande','garrafeira','colheita','selecionada','seleccionada',
+    'velhas','velha','superior','especial','premium','escolha','tinto','branco',
+    'rose','doce','seco','bruto','meio','unoaked','barrica','madeira','antiga',
+    'velho','novo','private','selection','edicao','limitada','safra','vindima',
+    -- castas
+    'touriga','nacional','franca','roriz','tinta','aragonez','trincadeira',
+    'castelao','baga','jaen','alfrocheiro','alicante','bouschet','syrah','shiraz',
+    'cabernet','sauvignon','merlot','pinot','noir','chardonnay','alvarinho',
+    'loureiro','arinto','encruzado','fernao','pires','antao','vaz','verdelho',
+    'viosinho','rabigato','gouveio','malvasia','moscatel','sercial','bual',
+    'sousao','barroca','bastardo','ramisco','avesso','azal','trajadura','esgana',
+    'cao','marufo','carignan','grenache','tempranillo','viognier','riesling',
+    'semillon','petit','verdot','malbec','blend'
+  );
+$$;
+
+-- ---------------------------------------------------------------------
 -- CANDIDATOS: a lista que SUGERE, e que nunca decide
 --
--- Os cortes (mesmo ano, >=2 tokens comuns, >=60% de sobreposição) são os
--- que deram os 29 pares que se foram ver à mão — ficam à vista de
--- propósito, e os números de cada par vão para o ecrã com ele, porque é
--- uma pessoa que decide e uma pessoa decide melhor a ver a conta.
+-- A trave está nas palavras que os dois lados partilham NO NOME e que
+-- IDENTIFICAM mesmo um vinho (`fortes`). Tem de haver pelo menos uma —
+-- senão o par não é proposto, por muito parecidas que as chaves sejam.
+--
+-- Repara que a contagem é sobre os tokens do NOME e não sobre os da
+-- chave. É isso que apanha o terceiro ruído: a chave traz o produtor lá
+-- dentro, e por isso dois vinhos diferentes da mesma casa parecem
+-- parecidíssimos por tokens. Pelo nome, não: "Leo d'Honor" e "Ermelinda
+-- Freitas Syrah" não têm uma palavra em comum.
+--
+-- Os cortes de antes ficam como estavam (>=2 tokens comuns, >=60% de
+-- sobreposição): servem para medir QUÃO parecidas são duas chaves, e isso
+-- continua a ser bom sinal. O que mudou é que já não chegam sozinhos.
 --
 -- A sobreposição mede-se contra o MENOR dos dois conjuntos: "Crasto" (1
 -- token) contra "Crasto Reserva" (2) dá 100% e aparece na lista — que é o
--- que se quer, é um par a olhar. Contra o maior dava 50% e desaparecia.
--- Aparecer a mais é barato (alguém diz "não são" uma vez e nunca mais se
--- fala nisso); desaparecer é o duplicado que fica lá para sempre.
+-- que se quer. Contra o maior dava 50% e desaparecia.
 --
 -- Fora ficam: pares já marcados como distintos, linhas já fundidas
 -- noutras, e colheitas diferentes (que nunca se fundem).
@@ -1009,7 +1076,7 @@ $$;
 CREATE OR REPLACE FUNCTION winecatalog.candidatos(p_limite integer DEFAULT 40)
   RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
   v_lim integer := LEAST(GREATEST(COALESCE(p_limite, 40), 1), 200);
@@ -1020,14 +1087,22 @@ BEGIN
   END IF;
 
   WITH linhas AS (
-    SELECT v.*, string_to_array(v.chave_base, '-') AS toks
+    SELECT v.*,
+           string_to_array(v.chave_base, '-') AS toks,
+           winecatalog.tokens(v.nome)         AS toks_nome
       FROM winecatalog.vinhos v
      WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)
   ), pares AS (
     SELECT a.id AS id_a, b.id AS id_b,
            a.chave AS chave_a, b.chave AS chave_b,
            cardinality(ARRAY(SELECT unnest(a.toks) INTERSECT SELECT unnest(b.toks))) AS comuns,
-           LEAST(cardinality(a.toks), cardinality(b.toks)) AS menor
+           LEAST(cardinality(a.toks), cardinality(b.toks)) AS menor,
+           -- as palavras do NOME que os dois partilham e que identificam
+           -- mesmo um vinho: nem gama, nem casta, nem só o produtor
+           ARRAY(SELECT t FROM (
+                   SELECT unnest(a.toks_nome) INTERSECT SELECT unnest(b.toks_nome)
+                 ) x(t)
+                  WHERE NOT winecatalog.generico(t)) AS fortes
       FROM linhas a
       JOIN linhas b
         ON b.id > a.id
@@ -1037,7 +1112,8 @@ BEGIN
   ), filtrados AS (
     SELECT p.*, round(p.comuns::numeric / NULLIF(p.menor, 0), 2) AS sobreposicao
       FROM pares p
-     WHERE p.comuns >= 2
+     WHERE cardinality(p.fortes) >= 1
+       AND p.comuns >= 2
        AND p.menor > 0
        AND p.comuns::numeric / p.menor >= 0.6
        AND NOT EXISTS (
@@ -1048,6 +1124,9 @@ BEGIN
   SELECT COALESCE(jsonb_agg(jsonb_build_object(
            'comuns',       f.comuns,
            'sobreposicao', f.sobreposicao,
+           -- vai para o ecrã: ver QUE palavra é que os aproximou é o que
+           -- torna a decisão de um segundo em vez de um estudo
+           'fortes',       to_jsonb(f.fortes),
            'a', winecatalog.resumo_linha(va.*),
            'b', winecatalog.resumo_linha(vb.*)
          ) ORDER BY f.sobreposicao DESC, f.comuns DESC), '[]'::jsonb)
@@ -1060,12 +1139,9 @@ BEGIN
 END;
 $$;
 
-
--- O "não são". Grava-se pelas CHAVES e não pelos ids: um id é de uma
--- linha, uma chave é de um vinho, e é o vinho que não é o outro.
 CREATE OR REPLACE FUNCTION winecatalog.marcar_distintos(p_id_a bigint, p_id_b bigint)
   RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
   v_a text; v_b text;
@@ -1088,7 +1164,7 @@ $$;
 -- E desfazer o "não são", que também é uma decisão e também se erra.
 CREATE OR REPLACE FUNCTION winecatalog.desmarcar_distintos(p_chave_a text, p_chave_b text)
   RETURNS text LANGUAGE plpgsql SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 BEGIN
   IF NOT winecatalog.sou_admin() THEN
@@ -1105,7 +1181,7 @@ $$;
 -- SQL Editor.
 CREATE OR REPLACE FUNCTION winecatalog.listar_distintos()
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE v_res jsonb;
 BEGIN
@@ -1331,7 +1407,7 @@ $$;
 -- =====================================================================
 CREATE OR REPLACE FUNCTION winecatalog.resumo()
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE v_res jsonb;
 BEGIN
@@ -1414,6 +1490,7 @@ $$;
 -- alguém gravar "n/d" — e o ecrã ficava em branco sem se perceber porquê.
 CREATE OR REPLACE FUNCTION winecatalog.num(p jsonb, k text)
   RETURNS numeric LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT CASE WHEN jsonb_typeof(p -> k) = 'number' THEN (p ->> k)::numeric ELSE 0 END;
 $$;
@@ -1489,7 +1566,7 @@ CREATE OR REPLACE VIEW winecatalog.consumo AS
 -- a crescer — é a contagem de pedidos servidos sem IA nenhuma.
 CREATE OR REPLACE FUNCTION winecatalog.consumo_resumo(p_dias integer DEFAULT NULL)
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
   v_desde timestamptz := CASE WHEN COALESCE(p_dias, 0) > 0
@@ -1639,6 +1716,7 @@ GRANT EXECUTE ON FUNCTION winecatalog.definir_admin(text)              TO authen
 -- (para saber que botões mostrar). As outras são chamadas de DENTRO das
 -- de cima, onde o SECURITY DEFINER já as alcança.
 REVOKE ALL ON FUNCTION winecatalog.admin_email()                      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.generico(text)                     FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.resumo_linha(winecatalog.vinhos)   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.sou_admin()                        FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pode_ler()                         FROM PUBLIC, anon;

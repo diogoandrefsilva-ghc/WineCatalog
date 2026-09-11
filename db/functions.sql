@@ -39,5 +39,12 @@ AS $$
   );
 $$;
 
+-- O REVOKE antes do GRANT, e não é zelo a mais: uma função SECURITY
+-- DEFINER nasce com EXECUTE para PUBLIC, e PUBLIC inclui o `anon`. Sem
+-- estas duas linhas ficavam as duas abertas a quem não tem login — foi o
+-- linter do Supabase que o apontou, e é exactamente o buraco calado
+-- contra o qual está escrito o aviso no `catalogo.sql`.
+REVOKE ALL ON FUNCTION winecatalog.is_admin()   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.is_allowed() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION winecatalog.is_admin()   TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.is_allowed() TO authenticated;

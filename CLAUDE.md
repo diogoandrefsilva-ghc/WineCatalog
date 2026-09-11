@@ -146,6 +146,26 @@ Três coisas que não são negociáveis:
   *esporao-nacional-touriga* — produtores diferentes a partilhar o nome de
   uma casta. **A semelhança serve para SUGERIR, nunca para DECIDIR**, e os
   números de cada par vão para o ecrã com ele.
+- **uma palavra em comum tem de IDENTIFICAR um vinho** (`winecatalog.generico`,
+  e é a trave que tornou a lista legível: 28 pares → 7 na base real). Os
+  cortes acima medem quão parecidas são duas CHAVES, e isso sozinho propunha
+  três ruídos diferentes:
+  · *HERDADE DO SOBROSO Grande Reserva* × *Bafarela Grande Reserva* — só a
+    GAMA em comum;
+  · *Esporão Touriga Nacional* × *Quinta do Noval Touriga Nacional* — só a
+    CASTA (metade do Douro engarrafa a mesma);
+  · *Leo d'Honor* × *Ermelinda Freitas Syrah* — só o PRODUTOR, e este é
+    estrutural: a chave junta nome E produtor de propósito (ver `achar`), por
+    isso dois vinhos diferentes da mesma casa parecem-se sempre por tokens.
+  Uma regra só mata os três: a palavra partilhada tem de vir do **nome**
+  (não da chave — é aí que o produtor entra pela porta do lado) e não pode
+  ser nem qualificador nem casta. O ecrã diz sempre QUAL foi (`fortes`), que
+  é o que torna a decisão de um segundo em vez de um estudo.
+  **Esta lista não é a do `base_nome` e não tem de ser:** aquela decide
+  IDENTIDADE — mexer nela mexe na chave e, por aí, nas três apps. Esta só
+  decide se vale a pena PROPOR um par a uma pessoa, e por isso pode ser
+  muito mais larga: aqui um falso negativo custa um duplicado que espera mais
+  um mês, e um falso positivo custa a confiança na lista toda.
 - **o "não são" fica GRAVADO** (`winecatalog.distintos`). Senão a lista volta
   a propor o mesmo par todas as semanas, e uma lista que insiste em erros
   deixa de se ler — é o caminho para alguém carregar em "são o mesmo" sem

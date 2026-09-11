@@ -636,10 +636,17 @@ function wcLadoHTML(v,outro,podeDecidir){
 function wcParHTML(p){
   const a=p.a,b=p.b;
   const adm=isAdmin();
+  /* O que os aproximou, por palavras. Dizer "2 palavras em comum" não
+     ajudava ninguém a decidir — e, pior, escondia os pares que só tinham
+     em comum "grande reserva". Agora vê-se a palavra, e a decisão é de um
+     segundo. */
+  const fortes=Array.isArray(p.fortes)?p.fortes:[];
   return `<div class="wc-card par">
     <div class="par-cab">
       <span class="par-sim">${Math.round(Number(p.sobreposicao||0)*100)}% parecidos</span>
-      <span class="wc-note">${esc(String(p.comuns))} palavras em comum${a.ano?` · colheita ${esc(String(a.ano))}`:' · sem colheita'}</span>
+      <span class="wc-note">${fortes.length
+        ?`em comum: ${fortes.map(f=>`<strong>${esc(f)}</strong>`).join(', ')}`
+        :`${esc(String(p.comuns))} palavras em comum`}${a.ano?` · colheita ${esc(String(a.ano))}`:' · sem colheita'}</span>
     </div>
     <div class="par-grid">
       ${wcLadoHTML(a,b,adm)}
