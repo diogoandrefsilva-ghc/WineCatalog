@@ -202,16 +202,25 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:18px 18px 12px;border-bottom:1px solid var(--bo)}
 .modal-x{background:var(--bg);border:1px solid var(--bo);border-radius:8px;width:30px;height:30px;cursor:pointer;color:var(--mu);font-size:14px;flex-shrink:0}
 .modal-body{padding:16px 18px 20px}
+/* A ficha do vinho traz a sua própria capa bordô encostada ao topo — o
+   corpo continua com o mesmo recuo dos lados, e é a `.mhero` que sai para
+   fora dele com margens negativas (mesma técnica da Garrafeira). */
+.modal-body.capa{padding-top:20px;overflow:hidden;border-radius:16px}
 .fi-nome{font-family:'Playfair Display',serif;font-size:18px;font-weight:700;line-height:1.25}
 .fi-sub{font-size:12px;color:var(--mu);margin-top:2px}
 
-.fi-campos{display:flex;flex-direction:column}
-.fi-campo{padding:10px 0;border-bottom:1px solid var(--bo)}
+.fi-campos{display:flex;flex-direction:column;margin-top:12px}
+/* Duas colunas, como a `.mdl` da Garrafeira: o rótulo à esquerda com
+   largura fixa, o valor à direita. A diferença desta app fica POR BAIXO do
+   valor — de onde veio e com que força — em vez de nada. */
+.fi-campo{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--bo)}
 .fi-campo:last-child{border-bottom:none}
-.fi-k{font-size:10.5px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.3px}
-.fi-v{font-size:13.5px;line-height:1.5;margin-top:2px;word-break:break-word}
+.fi-k{flex:0 0 104px;font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;
+  letter-spacing:.7px;padding-top:3px}
+.fi-c{flex:1;min-width:0}
+.fi-v{font-size:13.5px;line-height:1.5;word-break:break-word}
 .fi-v a{color:var(--wine)}
-.fi-o{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:5px}
+.fi-o{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
 .og-tag{font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:20px;background:#f6f2f0}
 .og-tag.og-forte{background:#fdf6e8;border:1px solid #f0e0b8}
 .og-tag.og-media{background:#f7eef1;border:1px solid #ecdde2}
@@ -266,4 +275,132 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   .tbl-h,.tbl-r{grid-template-columns:1.4fr .6fr .9fr .9fr;font-size:11.5px}
   .tbl-h span:nth-child(5),.tbl-r span:nth-child(5){display:none}
   .it{font-size:11px}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   A CAPA DA FICHA — o mesmo desenho da Garrafeira
+
+   Porque é que isto é copiado e não "inspirado": são as duas a mesma
+   coisa vista de dois sítios. Quem anda nas duas não devia ter de
+   aprender dois ecrãs para ver um vinho, e a diferença que interessa
+   (de onde veio cada campo) está no CONTEÚDO, não na moldura.
+
+   O que NÃO veio de lá: o `modal.pagina` — o cabeçalho que encolhe ao
+   rolar. São duzentas linhas de CSS presas a uma variável que o JS
+   atualiza a cada scroll, para resolver um problema que lá existe (a
+   ficha é uma página cheia de garrafas, prateleiras e consumos) e aqui
+   não (cabe quase sempre num ecrã).
+   ══════════════════════════════════════════════════════════════════ */
+.mhero{position:relative;margin:-20px -18px 4px;padding:18px;
+  background:linear-gradient(155deg,#3d0e20,var(--wine-dk) 55%,#8d2748);color:#fff;overflow:hidden}
+.mhero::after{content:'';position:absolute;left:0;right:0;bottom:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.8}
+.mhero .mx{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.14);color:#fff;
+  border:none;width:30px;height:30px;border-radius:50%;font-size:15px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:background .15s}
+.mhero .mx:hover{background:rgba(255,255,255,.3)}
+.mhero-in{display:flex;gap:14px;align-items:center;padding-right:34px}
+/* A moldura da garrafa: fundo de papel, cantos redondos, `overflow:hidden`
+   e a fotografia em `cover`. Sem o overflow a foto ficava um quadrado
+   branco no meio do bordô com a garrafa desenhada a espreitar por baixo —
+   é uma lição que a Garrafeira já pagou. */
+.mhero-g{width:64px;height:104px;flex-shrink:0;position:relative;display:flex;align-items:center;
+  justify-content:center;overflow:hidden;border-radius:11px;
+  background:linear-gradient(160deg,#fff,var(--bg));border:1px solid rgba(255,255,255,.5);
+  box-shadow:0 8px 20px -8px rgba(0,0,0,.6)}
+.mhero-g svg{width:100%;height:auto;max-height:94px;padding:5px 3px;
+  filter:drop-shadow(0 2px 4px rgba(43,10,22,.22))}
+.mhero-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.mhero-tx{min-width:0;flex:1}
+.mhero-k{font-size:10px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase;color:rgba(255,255,255,.7)}
+.mhero h3{font-family:'Playfair Display',serif;font-weight:600;font-size:21px;line-height:1.2;margin-top:4px;
+  word-break:break-word}
+.mhero-s{font-size:12px;color:rgba(255,255,255,.78);margin-top:4px}
+.mhero-s em{font-style:normal;opacity:.7}
+.mhero-n{display:inline-flex;align-items:center;gap:5px;margin-top:8px;margin-right:5px;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:99px;
+  padding:3px 10px;font-size:11px;font-weight:600;color:#f6dfa8}
+
+/* Crachás e secções: também da Garrafeira, mesma ideia — a cor é excepção,
+   não regra. Dourado = distinção; o resto vive em tons de papel. */
+.vc-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px;align-items:center}
+.vc-badges:empty{display:none}
+.bdg{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:3px 9px;border-radius:99px;
+  background:var(--bg);color:var(--mu);border:1px solid var(--bo);white-space:nowrap;line-height:1.5}
+.bdg.cas{background:#f7f3f8;color:#5c4166;border-color:#e9dfec}
+.bdg.men{background:#fdf6e8;color:#7a5b0a;border-color:#eddfba;font-weight:600}
+.msec{display:flex;align-items:center;gap:9px;font-size:10.5px;font-weight:700;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--wine);margin:20px 0 4px}
+.msec::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--wine),transparent);opacity:.35}
+.macoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.macoes.fim{margin-top:20px;padding-top:16px;border-top:1px solid var(--bo)}
+.btn-prim.auto{width:auto;flex:1 1 auto;min-width:0}
+.fi-espera{padding:30px 0;text-align:center}
+
+/* ── EDITAR ── */
+.ed-campo{margin-bottom:10px}
+.ed-campo label{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  font-size:11px;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.4px;margin:0 0 5px}
+/* De onde vem o valor que está lá AGORA, ao lado do rótulo do campo. Sem
+   isto, corrige-se às cegas: não se via que se ia escrever por cima de uma
+   pesquisa paga. */
+.ed-de{display:inline-flex;align-items:center;gap:4px;text-transform:none;letter-spacing:0}
+.ed-campo input[type=text],.ed-campo select,.ed-campo textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--bo);border-radius:10px;font-size:14px;
+  background:#fff;color:var(--tx)}
+.ed-campo textarea{resize:vertical;line-height:1.5}
+.ed-campo input:focus,.ed-campo select:focus,.ed-campo textarea:focus{outline:none;border-color:var(--wine)}
+.ed-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:4px 0 6px;cursor:pointer}
+.ed-oculto{display:none}
+
+/* ── PROCURAR ── */
+.pr-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:12px 0 4px}
+.pr-acoes .wc-note{margin:0 0 0 auto}
+.pr-campos{display:flex;flex-direction:column;margin-top:6px}
+.pr-campo{display:flex;align-items:center;gap:7px;padding:7px 0;border-bottom:1px solid var(--bo);
+  font-size:13px;cursor:pointer}
+.pr-campo:last-child{border-bottom:none}
+.pr-campo input{width:17px;height:17px;flex-shrink:0;accent-color:var(--wine)}
+.pr-nome{flex:1;min-width:0;font-weight:600}
+.pr-falta{font-size:10.5px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:.4px}
+.pr-espera{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--bo);
+  border-radius:12px;padding:14px;margin-top:14px}
+.pr-espera.erro{background:#fdf2f1;border-color:#f2cdcb}
+.wc-spin.escuro{border-color:rgba(107,18,48,.2);border-top-color:var(--wine);flex-shrink:0}
+.pr-res{background:var(--bg);border:1px solid var(--bo);border-radius:12px;padding:14px;margin-top:14px}
+.pr-res-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px}
+.pr-res-cab .wc-note{margin:0;font-size:10.5px}
+.pr-res-l{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.pr-res-fora{margin-top:6px}
+.pr-res-fora div{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:12.5px;padding:4px 0}
+.pr-res-fora .wc-note{margin:0}
+
+/* ── ALERTAS ── */
+.it-n{display:none;background:var(--dg);color:#fff;font-size:9.5px;font-weight:700;
+  border-radius:99px;padding:1px 5px;margin-left:4px;line-height:1.5}
+.it-n.on{display:inline-block}
+.wc-card.rep{padding:14px}
+.rep-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.rep-est{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--mu);border:1px solid var(--bo);flex-shrink:0}
+.rep-est.aberto{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
+.rep-est.resolvido{background:#eef7f1;color:var(--vd);border-color:#cfe3d8}
+/* Os dois valores lado a lado, que é a única forma de isto se ler num
+   segundo. O terceiro ("agora") só aparece quando já mudou. */
+.rep-vals{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.rep-vals>div{flex:1 1 160px;min-width:0;background:var(--bg);border:1px solid var(--bo);
+  border-radius:10px;padding:8px 10px}
+.rep-vals>div.deles{background:#fdf6e8;border-color:#f0e0b8}
+.rep-vals>div.agora{background:#eef7f1;border-color:#cfe3d8}
+.rep-vals span{display:block;font-size:9.5px;font-weight:700;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.4px}
+.rep-vals b{display:block;font-size:14px;margin-top:2px;word-break:break-word}
+.rep-vals .og-tag{display:inline-block;margin-top:5px;text-transform:none;letter-spacing:0;font-weight:600}
+.rep-nota{font-style:italic;margin-top:8px}
+.rep-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--bo)}
+
+@media (max-width:520px){
+  .fi-campo{flex-direction:column;gap:2px}
+  .fi-k{flex:none;padding-top:0}
+  .mhero{margin:-20px -18px 4px}
 }

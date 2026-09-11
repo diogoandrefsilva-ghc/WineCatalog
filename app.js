@@ -153,6 +153,17 @@ function toast(msg,erro){
   _toastTimer=setTimeout(()=>t.classList.remove('on'),3200);
 }
 
+/* ── MODAIS ────────────────────────────────────
+   A app começou com um modal só (a ficha), aberto e fechado à mão. Agora
+   são quatro e há dois empilhados (a ficha por baixo, o editar por cima),
+   por isso vale um par de funções — mesmos nomes da Garrafeira, que é onde
+   este desenho já existe. */
+function abrirModal(id){const m=document.getElementById(id);if(m)m.classList.add('on');}
+function fecharModal(id){const m=document.getElementById(id);if(m)m.classList.remove('on');}
+/* Fechar pelo fundo escuro só quando se carrega MESMO no fundo — não num
+   filho que por acaso deixou passar o clique. */
+function fecharFundo(ev,id){if(ev&&ev.target&&ev.target.id===id)fecharModal(id);}
+
 /* ── TABS ──────────────────────────────────── */
 function itab(tab){
   document.querySelectorAll('#app-sec > .itabs > .it').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));
@@ -163,11 +174,16 @@ function itab(tab){
   if(tab==='resumo')wcCarregarResumo();
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
+  if(tab==='alertas')wcCarregarReportes('aberto');
 }
 function restaurarTab(){
   let tab=null;
   try{tab=localStorage.getItem('wc_tab');}catch(e){}
   if(!tab||!document.getElementById('t-'+tab))tab='resumo';
+  /* O painel dos alertas existe no HTML para toda a gente (é o botão que
+     está escondido), por isso quem deixou de ser admin voltava a cair nele
+     e apanhava um "só o admin vê os alertas" à entrada. */
+  if(tab==='alertas'&&!isAdmin())tab='resumo';
   itab(tab);
 }
 
@@ -489,73 +505,179 @@ function wcLinhaHTML(v){
   </div>`;
 }
 
-/* ── A FICHA: campo a campo, de onde veio ────── */
+/* ══════════════════════════════════════════════
+   A FICHA DE UM VINHO
+
+   O desenho é o da Garrafeira, de propósito: a mesma capa bordô com a
+   garrafa, os mesmos crachás, as mesmas secções com filete, os mesmos dois
+   botões. Quem anda nas duas apps não tem de aprender dois ecrãs para a
+   mesma coisa — e a diferença que interessa é a que fica por baixo, não a
+   moldura.
+
+   O QUE É DIFERENTE, E TEM DE SER: cada campo diz DE ONDE VEIO e COM QUE
+   FORÇA. Na Garrafeira isso não faz sentido (a ficha é de quem a escreveu);
+   aqui é a razão de a app existir. Por isso a linha da ficha é a mesma
+   linha de duas colunas da Garrafeira, com a proveniência por baixo do
+   valor em vez de nada.
+
+   O que NÃO veio de lá: o cabeçalho que encolhe ao rolar (`modal.pagina`,
+   `pgCabecalho`). São umas boas duzentas linhas de CSS e de JS presas ao
+   scroll para resolver um problema que aqui não existe — lá a ficha é uma
+   PÁGINA cheia de garrafas, prateleiras e consumos; aqui cabe quase sempre
+   num ecrã. Copiá-lo era trazer a manutenção sem o problema.
+   ══════════════════════════════════════════════ */
+
+/* A garrafa desenhada, igualzinha à da Garrafeira (mesmo SVG, mesmas cores
+   de vidro) — é o que dá a mesma cara às duas apps quando não há
+   fotografia. Aqui a cor sai da FICHA e não de uma coluna, que é onde o
+   `tipo` vive neste schema. */
+const WC_VIDRO={Tinto:'#5e1226',Branco:'#8b9a45','Rosé':'#cd7d95',
+  Espumante:'#3a5140',Licoroso:'#7b4213',Frisante:'#7d9b6e'};
+function wcGarrafaSVG(tipo,ano){
+  const c=WC_VIDRO[tipo]||WC_VIDRO.Tinto;
+  const cap=(tipo==='Espumante'||tipo==='Licoroso')?'#a9832f':'#33202a';
+  return `<svg viewBox="0 0 40 74" aria-hidden="true" focusable="false">
+    <rect x="14.5" y="1" width="11" height="8" rx="2" fill="${cap}"/>
+    <path d="M15.5 4h9v11.5q0 3.5 4.6 7Q33 27 33 34.5V64q0 6-6 6H13q-6 0-6-6V34.5q0-7.5 3.9-12Q15.5 19 15.5 15.5z" fill="${c}"/>
+    <rect x="17" y="6" width="2.4" height="12" rx="1.2" fill="#fff" opacity=".22"/>
+    <rect x="9.5" y="43" width="21" height="17" rx="2" fill="#f8f2e6"/>
+    <rect x="9.5" y="43" width="21" height="3" fill="${c}" opacity=".6"/>
+    <text x="20" y="56" text-anchor="middle" font-family="Playfair Display,Georgia,serif" font-size="9.5"
+      fill="#4e1228">${esc(ano||'')}</text>
+  </svg>`;
+}
+
+/* A janela de consumo em palavras, como na Garrafeira. Mesma ideia, menos
+   máquina: lá o crachá enche-se conforme a posição dentro da janela, e isso
+   vive preso a uma variável CSS que não vale a pena trazer para aqui. */
+function wcJanelaTxt(de,ate){
+  const a=new Date().getFullYear();
+  if(!de&&!ate)return '';
+  if(de&&a<de)return 'Ainda cedo';
+  if(ate&&a>ate)return 'Já passou o ponto';
+  return 'No ponto';
+}
+
+let _wcFicha=null;     // a linha aberta — usada pelo Editar e pelo Procurar
+
 async function wcVerFicha(id){
   const m=document.getElementById('modal-ficha');
   const corpo=document.getElementById('ficha-corpo');
-  const tit=document.getElementById('ficha-titulo');
   if(!m)return;
-  tit.innerHTML='<div class="fi-nome">A carregar…</div>';
-  corpo.innerHTML='';
+  corpo.innerHTML='<div class="fi-espera"><p class="wc-note">A carregar…</p></div>';
   m.classList.add('on');
   try{
     const v=await catRpc('ver',{p_id:id});
-    if(!v){corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
-    tit.innerHTML=`<div class="fi-nome">${esc(v.nome||'(sem nome)')}${v.ano?` <span class="cat-ano">${esc(String(v.ano))}</span>`:''}</div>
-      <div class="fi-sub">${esc(v.produtor||'(sem produtor)')}</div>`;
+    if(!v){_wcFicha=null;corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
+    _wcFicha=v;
     corpo.innerHTML=wcFichaHTML(v);
   }catch(e){
+    _wcFicha=null;
     corpo.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
   }
+}
+/* Depois de editar ou de pesquisar, o ecrã tem de mostrar o que ficou lá —
+   não o que estava quando abriu. */
+async function wcRefrescarFicha(){
+  if(_wcFicha&&_wcFicha.id)await wcVerFicha(_wcFicha.id);
 }
 function wcFecharFicha(ev){
   if(ev&&ev.target&&ev.target.id!=='modal-ficha')return;
   const m=document.getElementById('modal-ficha');
   if(m)m.classList.remove('on');
+  wcProcPararPolling();
+}
+
+function wcLinhaFicha(k,lbl,ficha,origens){
+  const o=origens[k]||{};
+  const f=Number(o.f||0);
+  const velho=WC_VOLATEIS.includes(k)&&o.em&&
+    (Date.now()-new Date(o.em).getTime())>30*86400000;
+  return `<div class="fi-campo">
+    <div class="fi-k">${esc(lbl)}</div>
+    <div class="fi-c">
+      <div class="fi-v">${wcValorHTML(k,ficha[k])}</div>
+      <div class="fi-o">
+        <span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span>
+        <span class="forca f${esc(String(f))}">${esc(String(f))}</span>
+        <span class="fi-em">${esc(dataFmt(o.em))}${velho?' <b title="campo volátil com mais de 30 dias — as apps voltam a pedi-lo à IA">envelhecido</b>':''}</span>
+      </div>
+    </div>
+  </div>`;
 }
 
 function wcFichaHTML(v){
   const ficha=v.ficha||{};
   const origens=v.origens||{};
-  /* Primeiro os campos pela ordem conhecida, depois os que a lista não
-     conhece — um campo novo numa das outras apps aparece na mesma. */
+  const tipo=String(ficha.tipo||'');
+  const castas=Array.isArray(ficha.castas)?ficha.castas:[];
+  const img=String(ficha.imagem_url||'').trim();
+  const origem=[v.produtor,ficha.regiao,ficha.sub_regiao].filter(Boolean).map(esc).join(' · ');
+  const jan=wcJanelaTxt(ficha.beber_de,ficha.beber_ate);
+  const nota=ficha.vivino_nota;
+
+  let h=`<div class="mhero">
+    <button class="mx" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
+    <div class="mhero-in">
+      <div class="mhero-g">
+        ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onerror="this.remove()">`:''}
+      </div>
+      <div class="mhero-tx">
+        <div class="mhero-k">${esc([tipo,ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
+        <h3>${esc(v.nome||'(sem nome)')}</h3>
+        <div class="mhero-s"><span class="mhero-o">${origem||'<em>sem produtor nem região</em>'}${origem&&v.ano?' · ':''}</span>${v.ano?`<b>${esc(String(v.ano))}</b>`:''}</div>
+        ${nota!=null?`<span class="mhero-n">★ ${esc(Number(nota).toFixed(2))} Vivino${ficha.vivino_avaliacoes?` · ${esc(nFmt(ficha.vivino_avaliacoes))}`:''}</span>`:''}
+        ${jan?`<span class="mhero-n">${esc(jan)}</span>`:''}
+      </div>
+    </div>
+  </div>
+
+  <div class="vc-badges">
+    ${ficha.mencao?`<span class="bdg men">${esc(ficha.mencao)}</span>`:''}
+    ${castas.map(c=>`<span class="bdg cas">🍇 ${esc(c)}</span>`).join('')}
+  </div>`;
+
+  /* Os dois botões da Garrafeira, com o mesmo aspeto e a mesma ordem. Só
+     para o admin: pesquisar gasta, e editar escreve numa tabela que as
+     outras duas apps leem — quem lê o catálogo é toda a gente aprovada,
+     quem o manda mexer é quem é dono dele. */
+  if(isAdmin()){
+    h+=`<div class="macoes">
+      <button class="btn-prim auto" onclick="wcAbrirProcurar()">🔎 Procurar informação</button>
+      <button class="btn-n" onclick="wcAbrirEditar()">✏️ Editar</button>
+    </div>`;
+  }
+  h+=`<div id="proc-caixa"></div>`;
+
+  /* ── A FICHA ── */
   const conhecidos=WC_CAMPOS.filter(([k])=>k in ficha);
   const extra=Object.keys(ficha).filter(k=>!WC_CAMPOS.some(([c])=>c===k)).map(k=>[k,k]);
   const todos=conhecidos.concat(extra);
 
-  let h='';
+  h+='<div class="msec">Ficha</div>';
   if(!todos.length){
-    h+='<p class="wc-note">Esta linha ainda não tem campo nenhum — só a identidade.</p>';
+    h+='<p class="wc-note">Esta linha ainda não tem campo nenhum — só a identidade.'+
+       (isAdmin()?' Manda pesquisar ou preenche-a à mão.':'')+'</p>';
   }else{
-    h+=`<div class="wc-card-label">A ficha, campo a campo</div>
-    <p class="wc-note">Cada linha diz <strong>de onde veio</strong> e <strong>com que força</strong>. É a força que decide quem ganha quando duas leituras discordam — e é ela que impede um número copiado à pressa de tapar uma pesquisa que se pagou.</p>
+    h+=`<p class="wc-note">Cada linha diz <strong>de onde veio</strong> e <strong>com que força</strong>. É a força que decide quem ganha quando duas leituras discordam — e é ela que impede um número copiado à pressa de tapar uma pesquisa que se pagou.</p>
     <div class="fi-campos">`;
-    for(const [k,lbl] of todos){
-      const o=origens[k]||{};
-      const f=Number(o.f||0);
-      const velho=WC_VOLATEIS.includes(k)&&o.em&&
-        (Date.now()-new Date(o.em).getTime())>30*86400000;
-      h+=`<div class="fi-campo">
-        <div class="fi-k">${esc(lbl)}</div>
-        <div class="fi-v">${wcValorHTML(k,ficha[k])}</div>
-        <div class="fi-o">
-          <span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span>
-          <span class="forca f${esc(String(f))}">${esc(String(f))}</span>
-          <span class="fi-em">${esc(dataFmt(o.em))}${velho?' <b title="campo volátil com mais de 30 dias — as apps voltam a pedi-lo à IA">envelhecido</b>':''}</span>
-        </div>
-      </div>`;
-    }
+    for(const [k,lbl] of todos)h+=wcLinhaFicha(k,lbl,ficha,origens);
     h+='</div>';
+  }
+
+  if(ficha.ai_resumo){
+    h+=`<div class="msec">O que se sabe</div>
+      <div class="wc-note" style="font-size:12.5px">${esc(ficha.ai_resumo)}</div>`;
   }
 
   const fontes=v.fontes||[];
   if(fontes.length){
-    h+=`<div class="divi"></div><div class="wc-card-label">Fontes</div>
+    h+=`<div class="msec">Fontes</div>
     <div class="fi-fontes">${fontes.map(f=>
       `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join('')}</div>`;
   }
 
-  h+=`<div class="divi"></div><div class="wc-card-label">Identidade</div>
+  h+=`<div class="msec">Identidade</div>
   <p class="wc-note">
     É isto que decide se dois vinhos são o mesmo vinho. A chave vive
     <strong>só no SQL</strong> (<code>winecatalog.chave</code>) — nenhuma app a
@@ -576,7 +698,7 @@ function wcFichaHTML(v){
      saber — e a desfazê-las. */
   const al=v.aliases||[];
   if(al.length){
-    h+=`<div class="divi"></div><div class="wc-card-label">Linhas fundidas nesta</div>`;
+    h+=`<div class="msec">Linhas fundidas nesta</div>`;
     h+=al.map(a=>`<div class="fi-alias">
       <div>
         <strong>${esc(a.nome||a.chaveDe)}</strong>${a.ano?` <span class="cat-ano">${esc(String(a.ano))}</span>`:''}
@@ -585,8 +707,365 @@ function wcFichaHTML(v){
       ${isAdmin()?`<button class="btn-n" onclick="wcSeparar('${escJs(a.chaveDe)}',${v.id})">Desfazer</button>`:''}
     </div>`).join('');
   }
+
+  h+=`<div class="macoes fim"><button class="btn-n larg" onclick="wcFecharFicha()">Fechar</button></div>`;
   return h;
 }
+
+
+/* ══════════════════════════════════════════════
+   EDITAR — a correção à mão
+
+   A força 4 do `catalogo-admin` é o que faz este botão valer alguma coisa
+   (ver `winecatalog.forca`): a 3 empatava com a garrafeira e a escrita
+   seguinte de qualquer pessoa desfazia a correção em silêncio.
+
+   DUAS COISAS QUE O ECRÃ TEM DE DIZER, e diz:
+   · apagar um campo NÃO o fixa — deixa-o livre para a próxima escrita o
+     voltar a preencher, com o mesmo valor errado se ele vier de uma
+     garrafeira que o tem escrito. Para fixar, corrige-se;
+   · a nota do Vivino e o preço ficam a 3 e não a 4, porque ninguém os sabe
+     por ser admin. Uma pesquisa a sério fresca ainda os há de actualizar.
+   ══════════════════════════════════════════════ */
+const WC_TIPOS=['','Tinto','Branco','Rosé','Espumante','Licoroso','Frisante'];
+const WC_ESTILOS=['','Maduro','Verde','Colheita Tardia','Palhete'];
+const WC_MENCOES=['','Reserva','Grande Reserva','Garrafeira','Colheita Selecionada',
+  'Vinhas Velhas','Superior','Grande Escolha'];
+const WC_CLASSIF=['','DOC','Vinho Regional','Vinho'];
+
+/* [chave, rótulo, tipo de campo, opções]. A ORDEM é a de `WC_CAMPOS` (a
+   ordem por que faz sentido ler um vinho) e não a do alfabeto. */
+const WC_EDIT=[
+  ['tipo','Tipo','sel',WC_TIPOS],
+  ['estilo','Estilo','sel',WC_ESTILOS],
+  ['mencao','Menção','sel',WC_MENCOES],
+  ['classificacao','Classificação','sel',WC_CLASSIF],
+  ['castas','Castas','lista'],
+  ['regiao','Região','txt'],
+  ['sub_regiao','Sub-região','txt'],
+  ['pais','País','txt'],
+  ['teor','Teor alcoólico (%)','num'],
+  ['estagio_meses','Estágio (meses)','int'],
+  ['estagio_texto','Estágio','txt'],
+  ['vivino_nota','Nota Vivino (0-5)','num'],
+  ['vivino_avaliacoes','Avaliações Vivino','int'],
+  ['vivino_url','URL do Vivino','txt'],
+  ['preco_medio','Preço de mercado (€)','num'],
+  ['imagem_url','Imagem (URL direto)','txt'],
+  ['beber_de','Beber de (ano)','int'],
+  ['beber_ate','Beber até (ano)','int'],
+  ['notas_prova','Notas de prova','area'],
+  ['harmonizacao','Harmonização','area'],
+  ['ai_resumo','Resumo','area']
+];
+
+function wcValorEdit(k,v){
+  if(v==null)return '';
+  if(Array.isArray(v))return v.join(', ');
+  return String(v);
+}
+function wcAbrirEditar(){
+  if(!_wcFicha||!isAdmin())return;
+  const v=_wcFicha, ficha=v.ficha||{}, origens=v.origens||{};
+  const box=document.getElementById('editar-corpo');
+  if(!box)return;
+  let h=`<p class="wc-note">O que corrigires aqui fica com <strong>força 4</strong> nos campos de
+    rótulo (castas, cor, teor, região) — ninguém lhes passa por cima. A <strong>nota do Vivino,
+    o preço e a imagem</strong> ficam a 3: ninguém os sabe por ser admin do catálogo, e uma
+    pesquisa a sério fresca ainda os deve poder actualizar.</p>
+  <p class="wc-note"><strong>Esvaziar um campo apaga-o</strong> — e apagar não o fixa: fica livre
+    para a próxima escrita de qualquer garrafeira o voltar a preencher. Para travar um valor
+    errado, corrige-o em vez de o apagares.</p>
+  <div class="divi"></div>`;
+
+  for(const [k,lbl,tp,ops] of WC_EDIT){
+    const o=origens[k]||{}, f=Number(o.f||0);
+    const val=wcValorEdit(k,ficha[k]);
+    const marca=(k in ficha)
+      ? `<span class="ed-de"><span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span></span>`
+      : '';
+    h+=`<div class="ed-campo">
+      <label for="ed-${esc(k)}">${esc(lbl)}${marca}</label>`;
+    if(tp==='sel'){
+      h+=`<select id="ed-${esc(k)}">${ops.map(op=>
+        `<option value="${esc(op)}"${String(val)===op?' selected':''}>${esc(op||'— vazio —')}</option>`).join('')}</select>`;
+    }else if(tp==='area'){
+      h+=`<textarea id="ed-${esc(k)}" rows="3">${esc(val)}</textarea>`;
+    }else{
+      const ph=tp==='lista'?'separadas por vírgula':'';
+      h+=`<input type="text" id="ed-${esc(k)}" value="${esc(val)}" placeholder="${esc(ph)}"
+             inputmode="${tp==='num'||tp==='int'?'decimal':'text'}">`;
+    }
+    h+='</div>';
+  }
+
+  /* A identidade fica atrás de um interruptor, e não por timidez: mexer no
+     nome muda a CHAVE, que é o que faz duas linhas serem a mesma. Aberto
+     por omissão, um engano de dedo aqui partia um vinho em dois. */
+  h+=`<div class="divi"></div>
+  <label class="ed-check"><input type="checkbox" id="ed-ident" onchange="wcEdIdent()">
+    Mexer na identidade (nome, produtor, colheita)</label>
+  <p class="wc-note">Isto muda a <strong>chave</strong> — o que faz duas linhas serem o mesmo
+    vinho. Se a chave nova já for de outra linha, a base recusa e manda-te juntá-las em
+    Duplicados, que é reversível.</p>
+  <div id="ed-ident-box" class="ed-oculto">
+    <div class="ed-campo"><label for="ed-nome">Nome</label>
+      <input type="text" id="ed-nome" value="${esc(v.nome||'')}"></div>
+    <div class="ed-campo"><label for="ed-produtor">Produtor</label>
+      <input type="text" id="ed-produtor" value="${esc(v.produtor||'')}"></div>
+    <div class="ed-campo"><label for="ed-ano">Colheita (vazio = sem colheita)</label>
+      <input type="text" id="ed-ano" inputmode="numeric" value="${esc(v.ano==null?'':String(v.ano))}"></div>
+  </div>
+  <div class="macoes fim">
+    <button class="btn-n" onclick="fecharModal('modal-editar')">Cancelar</button>
+    <button class="btn-prim auto" id="ed-guardar" onclick="wcGuardarEdicao()">Guardar</button>
+  </div>`;
+  box.innerHTML=h;
+  document.getElementById('editar-titulo').textContent=v.nome||'(sem nome)';
+  abrirModal('modal-editar');
+}
+function wcEdIdent(){
+  const on=document.getElementById('ed-ident').checked;
+  document.getElementById('ed-ident-box').classList.toggle('ed-oculto',!on);
+}
+
+/* O que vai para a base: `null` quando o campo ficou vazio (a `editar`
+   lê isso como apagar) e o valor com o TIPO certo quando não. Um número
+   guardado como texto entrava no catálogo e quebrava a comparação da
+   Garrafeira — que é uma avaria caladíssima: dava divergência entre 13.5 e
+   "13.5". (A `winecatalog.igual` já apara isso do lado do SQL, mas
+   mandar lixo de propósito porque alguém o apara é outra coisa.) */
+function wcLerEdicao(){
+  const out={};
+  for(const [k,,tp] of WC_EDIT){
+    const el=document.getElementById('ed-'+k);
+    if(!el)continue;
+    const cru=String(el.value||'').trim();
+    if(cru===''){out[k]=null;continue;}
+    if(tp==='lista'){
+      const l=cru.split(',').map(x=>x.trim()).filter(Boolean);
+      out[k]=l.length?l:null;
+    }else if(tp==='num'||tp==='int'){
+      const n=parseFloat(cru.replace(',','.'));
+      if(!isFinite(n)){out[k]=null;continue;}
+      out[k]=tp==='int'?Math.round(n):n;
+    }else out[k]=cru;
+  }
+  return out;
+}
+async function wcGuardarEdicao(){
+  if(!_wcFicha)return;
+  const b=document.getElementById('ed-guardar');
+  const ident=!!(document.getElementById('ed-ident')||{}).checked;
+  const args={p_id:_wcFicha.id,p_campos:wcLerEdicao()};
+  if(ident){
+    const ano=String((document.getElementById('ed-ano')||{}).value||'').trim();
+    args.p_nome=String((document.getElementById('ed-nome')||{}).value||'').trim();
+    args.p_produtor=String((document.getElementById('ed-produtor')||{}).value||'').trim();
+    args.p_ano=ano===''?null:(parseInt(ano,10)||null);
+    args.p_mexer_identidade=true;
+  }
+  if(b){b.disabled=true;b.textContent='A guardar…';}
+  try{
+    const r=await catRpc('editar',args);
+    const n=(r&&r.campos)||0, ap=(r&&r.apagados)||0;
+    toast(n+ap?`Guardado ✓ ${n} corrigidos${ap?`, ${ap} apagados`:''}`:'Nada mudou');
+    fecharModal('modal-editar');
+    await wcRefrescarFicha();
+    wcCarregarCatalogo(true);
+  }catch(e){
+    toast('Erro: '+e.message,1);
+    if(b){b.disabled=false;b.textContent='Guardar';}
+  }
+}
+
+
+/* ══════════════════════════════════════════════
+   PROCURAR INFORMAÇÃO — a pesquisa Google a sério
+
+   Mesmo fluxo da Garrafeira: escolhem-se os campos, manda-se pesquisar, e
+   espera-se. Pedir os 21 de uma vez põe o modelo a andar atrás de tudo e a
+   voltar com meia dúzia de coisas mornas — pedir três dá três boas. É a
+   lição que a `vinho-info` já tinha pago, e é por isso que este ecrã abre
+   com os campos VAZIOS escolhidos e os outros não.
+
+   O RESULTADO DIZ O QUE **NÃO** ENTROU, e isso é metade do ponto. A
+   `winecatalog.juntar` recusa um campo quando o que já lá estava veio de
+   uma fonte mais forte — o que é o sistema a funcionar (quem tem a garrafa
+   na mão sabe melhor), mas sem isto no ecrã o admin mandava pesquisar, via
+   metade dos campos na mesma e ficava sem saber se a pesquisa falhou ou se
+   a base recusou. São coisas muito diferentes.
+   ══════════════════════════════════════════════ */
+const FN_CATALOGO_INFO=SB_URL+'/functions/v1/catalogo-info';
+let _wcProcTimer=null, _wcProcId=null, _wcProcAte=0;
+
+function wcAbrirProcurar(){
+  if(!_wcFicha||!isAdmin())return;
+  const ficha=_wcFicha.ficha||{}, origens=_wcFicha.origens||{};
+  const box=document.getElementById('procurar-corpo');
+  if(!box)return;
+  let h=`<p class="wc-note">Uma pesquisa Google a sério, com fontes, para este vinho. Vale
+    <strong>força 3</strong> — entra por cima de estimativas e de cópias de garrafeira, e perde
+    para o que tenhas corrigido à mão.</p>
+  <p class="wc-note">Escolhe <strong>poucos campos</strong>. Pedir os vinte de uma vez põe o
+    modelo a andar atrás de tudo e a voltar com meia dúzia de coisas mornas.</p>
+  <div class="pr-acoes">
+    <button class="btn-n" onclick="wcProcTodos(true)">Todos</button>
+    <button class="btn-n" onclick="wcProcTodos(false)">Nenhum</button>
+    <button class="btn-n" onclick="wcProcVazios()">Só os que faltam</button>
+    <span class="wc-note" id="pr-conta"></span>
+  </div>
+  <div class="pr-campos">`;
+  for(const [k,lbl] of WC_EDIT.map(([k,l])=>[k,l])){
+    const tem=k in ficha;
+    const o=origens[k]||{}, f=Number(o.f||0);
+    h+=`<label class="pr-campo">
+      <input type="checkbox" value="${esc(k)}"${tem?'':' checked'} onchange="wcProcContar()">
+      <span class="pr-nome">${esc(lbl)}</span>
+      ${tem?`<span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span>`
+           :'<span class="pr-falta">vazio</span>'}
+    </label>`;
+  }
+  h+=`</div>
+  <div class="macoes fim">
+    <button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button>
+    <button class="btn-prim auto" id="pr-ir" onclick="wcProcurarArrancar()">🔎 Pesquisar</button>
+  </div>`;
+  box.innerHTML=h;
+  document.getElementById('procurar-titulo').textContent=_wcFicha.nome||'(sem nome)';
+  wcProcContar();
+  abrirModal('modal-procurar');
+}
+function wcProcCaixas(){return [...document.querySelectorAll('#procurar-corpo .pr-campo input')];}
+function wcProcTodos(on){wcProcCaixas().forEach(c=>c.checked=on);wcProcContar();}
+function wcProcVazios(){
+  const ficha=(_wcFicha&&_wcFicha.ficha)||{};
+  wcProcCaixas().forEach(c=>c.checked=!(c.value in ficha));
+  wcProcContar();
+}
+function wcProcContar(){
+  const n=wcProcCaixas().filter(c=>c.checked).length;
+  const el=document.getElementById('pr-conta');
+  const ir=document.getElementById('pr-ir');
+  if(el)el.textContent=n?`${n} campo${n>1?'s':''}`:'nenhum campo escolhido';
+  if(ir)ir.disabled=!n;
+}
+
+async function wcProcurarArrancar(){
+  if(!_wcFicha)return;
+  const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
+  if(!campos.length)return;
+  const b=document.getElementById('pr-ir');
+  if(b){b.disabled=true;b.textContent='A arrancar…';}
+  try{
+    const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
+    fecharModal('modal-procurar');
+    wcProcEspera();
+    /* `jaAndava` é uma pesquisa que já estava a correr para este vinho — e
+       nesse caso NÃO se chama outra vez a função, que era pagar duas vezes
+       o mesmo trabalho. Sonda-se a que já lá está. */
+    if(!p.jaAndava){
+      const r=await fetch(FN_CATALOGO_INFO,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',apikey:SB_KEY,
+                 Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
+        body:JSON.stringify({pesquisaId:p.id,campos})
+      });
+      if(!r.ok&&r.status!==202){
+        let msg='';try{msg=(await r.json()).error||'';}catch(_){}
+        throw new Error(msg||('a função respondeu '+r.status));
+      }
+    }
+    wcProcIniciarPolling(p.id);
+  }catch(e){
+    wcProcErro(e.message);
+    if(b){b.disabled=false;b.textContent='🔎 Pesquisar';}
+  }
+}
+
+function wcProcCaixa(){return document.getElementById('proc-caixa');}
+function wcProcEspera(){
+  const c=wcProcCaixa();
+  if(c)c.innerHTML=`<div class="pr-espera">
+    <div class="wc-spin escuro"></div>
+    <div><strong>A pesquisar…</strong>
+      <div class="wc-note">Pesquisa Google a sério — pode levar um minuto. Podes fechar isto,
+        que o trabalho continua do lado do servidor.</div></div>
+  </div>`;
+}
+function wcProcErro(msg){
+  const c=wcProcCaixa();
+  if(c)c.innerHTML=`<div class="pr-espera erro"><div>⚠️</div>
+    <div><strong>A pesquisa falhou</strong><div class="wc-note">${esc(msg||'erro desconhecido')}</div></div></div>`;
+}
+function wcProcPararPolling(){
+  if(_wcProcTimer){clearInterval(_wcProcTimer);_wcProcTimer=null;}
+  _wcProcId=null;
+}
+function wcProcIniciarPolling(id){
+  wcProcPararPolling();
+  _wcProcId=id;
+  _wcProcAte=Date.now()+3*60*1000;   // o mesmo limite da WineSelection
+  _wcProcTimer=setInterval(wcProcPollTick,3000);
+  wcProcPollTick();
+}
+async function wcProcPollTick(){
+  if(!_wcProcId)return;
+  if(Date.now()>_wcProcAte){
+    wcProcPararPolling();
+    wcProcErro('demorou demasiado — o resultado pode aparecer se recarregares daqui a pouco');
+    return;
+  }
+  try{
+    const p=await catRpc('pesquisa_ver',{p_id:_wcProcId});
+    if(!p)return;
+    if(p.estado==='pendente')return;
+    wcProcPararPolling();
+    if(p.estado==='erro'){wcProcErro(p.erro);return;}
+    const res=p.resultado||{};
+    /* A ficha refresca-se PRIMEIRO (o `wcFichaHTML` volta a desenhar a
+       caixa vazia) e só depois se escreve o resultado lá dentro. Ao
+       contrário, o relatório aparecia e desaparecia logo a seguir. */
+    await wcRefrescarFicha();
+    const c=wcProcCaixa();
+    if(c)c.innerHTML=wcProcResultadoHTML(res);
+    wcCarregarCatalogo(true);
+  }catch(e){
+    wcProcPararPolling();
+    wcProcErro(e.message);
+  }
+}
+function wcProcResultadoHTML(res){
+  const props=Array.isArray(res.propostas)?res.propostas:[];
+  const entraram=props.filter(p=>p.entrou);
+  const fora=props.filter(p=>!p.entrou);
+  const nome=k=>{const c=WC_CAMPOS.find(([x])=>x===k);return c?c[1]:k;};
+  let h=`<div class="pr-res">
+    <div class="pr-res-cab"><strong>${entraram.length?`${entraram.length} campo${entraram.length>1?'s':''} ${entraram.length>1?'entraram':'entrou'}`:'Nada de novo entrou'}</strong>
+      <span class="wc-note">${esc(res.modelo||'')}</span></div>`;
+  if(entraram.length){
+    h+=`<div class="pr-res-l">${entraram.map(p=>
+      `<span class="bdg men">${esc(nome(p.campo))}</span>`).join('')}</div>`;
+  }
+  if(fora.length){
+    /* O importante: POR QUE É QUE não entrou. Sem isto, o admin fica sem
+       saber se a pesquisa falhou ou se a base recusou. */
+    h+=`<div class="wc-note" style="margin-top:8px">O resto a pesquisa encontrou, mas o catálogo
+      já tinha coisa melhor — a fonte de lá é mais forte:</div>
+      <div class="pr-res-fora">${fora.map(p=>
+        `<div><span class="pr-nome">${esc(nome(p.campo))}</span>
+          <span class="wc-note">ficou o de <strong>${esc(wcOrigemTxt(p.ganhou,p.forca))}</strong>
+          (força ${esc(String(p.forca||0))})</span></div>`).join('')}</div>`;
+  }
+  if(res.aviso)h+=`<div class="wc-note" style="margin-top:8px">⚠️ ${esc(res.aviso)}</div>`;
+  if(!props.length&&!res.aviso){
+    h+='<div class="wc-note">A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: '+
+       'é o modelo a não inventar, que é o que se lhe pede.</div>';
+  }
+  h+='</div>';
+  return h;
+}
+
 
 /* ══════════════════════════════════════════════
    DUPLICADOS — a fusão manual
@@ -724,6 +1203,105 @@ async function wcDesmarcar(a,b){
     await catRpc('desmarcar_distintos',{p_chave_a:a,p_chave_b:b});
     toast('Desfeito ✓');
     wcVerDistintos();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+
+/* ══════════════════════════════════════════════
+   ALERTAS — o catálogo a ouvir de volta
+
+   Até aqui esta relação era de sentido único: as duas apps escreviam no
+   catálogo e nunca ouviam nada. Isso deixava a avaria mais chata de todas
+   sem sítio nenhum onde aparecer — o mesmo vinho com números diferentes nos
+   dois lados, e ninguém a saber qual está certo.
+
+   Cada alerta guarda os DOIS valores como estavam no momento em que foi
+   feito, e o ecrã mostra ao lado o que está lá AGORA. É essa terceira
+   coluna que faz um alerta de há três semanas continuar a servir para
+   alguma coisa: vê-se logo se já foi corrigido por outra via.
+
+   "Rejeitar" existe e não é falta de educação: metade dos alertas hão de
+   ser o catálogo a ter razão, e uma lista onde só se pode concordar é uma
+   lista que se deixa de abrir.
+   ══════════════════════════════════════════════ */
+let _wcRepEstado='aberto';
+
+async function wcContarAlertas(){
+  const el=document.getElementById('alertas-n');
+  if(!el)return;
+  try{
+    const n=await catRpc('contar_reportes',{});
+    el.textContent=Number(n)>0?String(n):'';
+    el.classList.toggle('on',Number(n)>0);
+  }catch(e){el.textContent='';}
+}
+
+async function wcCarregarReportes(estado){
+  _wcRepEstado=estado||'aberto';
+  const box=document.getElementById('rep-lista');
+  if(!box)return;
+  box.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';
+  try{
+    const l=await catRpc('listar_reportes',{p_estado:_wcRepEstado});
+    if(!Array.isArray(l)||!l.length){
+      box.innerHTML=`<div class="wc-card"><p class="wc-note">${
+        _wcRepEstado==='aberto'?'Nada por tratar. ':'Ainda não chegou alerta nenhum. '
+      }Os alertas chegam de dentro da Garrafeira, do botão ao lado de um campo que não bate certo com o catálogo.</p></div>`;
+      return;
+    }
+    box.innerHTML=l.map(wcReporteHTML).join('');
+  }catch(e){
+    box.innerHTML=`<div class="wc-card"><p class="wc-note erro">${esc(e.message)}</p></div>`;
+  }
+  wcContarAlertas();
+}
+
+function wcReporteHTML(r){
+  const nome=(()=>{const c=WC_CAMPOS.find(([x])=>x===r.campo);return c?c[1]:r.campo;})();
+  const v=x=>(x==null?'<em>vazio</em>':esc(Array.isArray(x)?x.join(', '):String(x)));
+  /* O valor de AGORA só aparece quando é DIFERENTE do que estava então —
+     senão era repetir a mesma coisa três vezes e fazer o cartão parecer
+     mais complicado do que é. */
+  const mudou=JSON.stringify(r.valorAgora??null)!==JSON.stringify(r.valorCatalogo??null);
+  const f=Number(r.forcaAgora||0);
+  return `<div class="wc-card rep">
+    <div class="rep-cab">
+      <div>
+        <div class="cat-nome">${esc(r.nome||'')}${r.ano?` <span class="cat-ano">${esc(String(r.ano))}</span>`:''}</div>
+        <div class="cat-sub">${esc(r.produtor||'—')} · campo <strong>${esc(nome)}</strong></div>
+      </div>
+      <span class="rep-est ${esc(r.estado)}">${esc(r.estado)}</span>
+    </div>
+    <div class="rep-vals">
+      <div><span>no catálogo</span><b>${v(r.valorCatalogo)}</b></div>
+      <div class="deles"><span>na garrafeira de quem avisou</span><b>${v(r.valorDeles)}</b></div>
+      ${mudou?`<div class="agora"><span>agora</span><b>${v(r.valorAgora)}</b>
+        <span class="og-tag ${wcOrigemCls(r.origemAgora,f)}">${esc(wcOrigemTxt(r.origemAgora,f))}</span></div>`:''}
+    </div>
+    ${r.nota?`<p class="wc-note rep-nota">“${esc(r.nota)}”</p>`:''}
+    <p class="wc-note">${esc(r.quem||'')} · ${esc(dataFmt(r.quando))} · ${esc(r.app||'')}</p>
+    ${r.resposta?`<p class="wc-note">Resposta: ${esc(r.resposta)}</p>`:''}
+    <div class="rep-acoes">
+      ${r.vinhoId?`<button class="btn-n" onclick="wcVerFicha(${r.vinhoId})">Abrir a ficha</button>`:
+        '<span class="wc-note">Este vinho já não existe no catálogo.</span>'}
+      ${r.estado==='aberto'?`
+        <button class="btn-n" onclick="wcResolverReporte(${r.id},'resolvido')">Corrigido ✓</button>
+        <button class="btn-n" onclick="wcResolverReporte(${r.id},'rejeitado')">O catálogo está certo</button>`
+      :`<button class="btn-n" onclick="wcResolverReporte(${r.id},'aberto')">Reabrir</button>`}
+    </div>
+  </div>`;
+}
+
+async function wcResolverReporte(id,estado){
+  let resposta=null;
+  if(estado==='rejeitado'){
+    resposta=prompt('Porquê? (fica guardado com o alerta; deixa vazio se não quiseres explicar)');
+    if(resposta===null)return;
+  }
+  try{
+    await catRpc('resolver_reporte',{p_id:id,p_estado:estado,p_resposta:resposta||null});
+    toast(estado==='aberto'?'Reaberto':'Tratado ✓');
+    wcCarregarReportes(_wcRepEstado);
   }catch(e){toast('Erro: '+e.message,1);}
 }
 
@@ -982,6 +1560,8 @@ async function sbAposLogin(){
 
   document.getElementById('fcard-utilizadores').style.display=_souAdmin?'':'none';
   document.getElementById('fcard-admin').style.display=_souAdmin?'':'none';
+  document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=_souAdmin?'':'none';});
+  if(_souAdmin)wcContarAlertas();
   /* A password temporária é do DONO DA CONTA, não do admin do catálogo:
      mexe em auth.users, e a conta continua a ser de quem a paga mesmo
      depois de o catálogo mudar de mãos. */

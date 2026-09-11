@@ -12,18 +12,28 @@ Este ficheiro nasceu do documento de arranque (setembro de 2026). Quase
 tudo o que aqui está foi pago com um erro.
 
 ## Estrutura
-- `index.html` — só markup: os quatro separadores + os três ecrãs de
-  autenticação (`page-login`, `page-nova-pass`, `page-sem-acesso`) + o
-  splash + o modal da ficha.
+- `index.html` — só markup: os cinco separadores (o quinto, Alertas, só
+  aparece ao admin) + os três ecrãs de autenticação (`page-login`,
+  `page-nova-pass`, `page-sem-acesso`) + o splash + os quatro modais: a
+  ficha, **Editar**, **Procurar informação** e Alertas vivem em `t-alertas`.
 - `app.js` — toda a lógica. Secções (`grep` pelo título): Sessão Supabase
   (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao catálogo** (`catRpc`)
-  · Escapes · Tabs · **De onde veio cada campo** · **Resumo** · **Catálogo**
-  · **Duplicados** · Utilizadores (admin) · **Auth (Supabase)** · Init.
+  · Escapes · Modais (`abrirModal`/`fecharModal`) · Tabs · **De onde veio
+  cada campo** · **Resumo** · **Catálogo** · **A ficha de um vinho**
+  (a capa + **Editar** + **Procurar informação**, ver abaixo) ·
+  **Alertas** · **Duplicados** · Utilizadores (admin) · **Auth (Supabase)**
+  · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
-- `db/` — `schema.sql` → **`winecatalog.sql`** → `functions.sql` →
-  `policies.sql` → `admin_pass_temp.sql` (+ `README.md` com os passos
-  manuais e `migracao-catalogo-para-winecatalog.sql`, a mudança de casa).
+- `catalogo-info.ts` — Edge Function (Deno). Pesquisa Google a sério para
+  UMA linha do catálogo, a pedido do admin (ver "Editar, Procurar,
+  Comparar, Reportar" abaixo). Deploy à parte:
+  `supabase functions deploy catalogo-info`.
+- `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
+  `functions.sql` → `policies.sql` → `admin_pass_temp.sql` (+ `README.md`
+  com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
+  mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
+  a `forca`, a `juntar` e a `achar` que já lá estão.
 - `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
   descartável (encoder PNG à mão, sem dependências); não há fonte vetorial
   guardada no repo. Para os refazer, escreve outro script assim.
@@ -136,6 +146,94 @@ encontrar "Quinta do Crasto"). Cada vinho abre numa ficha que mostra,
 **campo a campo, de onde veio** (origem, força, data) e as fontes.
 
 É o primeiro ecrã que alguma vez mostrou uma linha do catálogo.
+
+### A ficha de um vinho — *igual à da Garrafeira, com Editar e Procurar*
+O ecrã de detalhe passou a ser **o mesmo desenho da Garrafeira** — a capa
+bordô com a garrafa, os crachás, os botões, as secções com filete — e não
+por gosto: quem anda nas duas apps não tem de aprender dois ecrãs para ver
+um vinho, e a diferença que interessa (de onde veio cada campo) está no
+CONTEÚDO, não na moldura. O que **não** veio de lá: o cabeçalho que encolhe
+ao rolar (`modal.pagina`) — lá resolve um problema (a ficha é uma página
+cheia de garrafas e prateleiras) que aqui não existe.
+
+Dois botões, **só para o admin do catálogo** — não é avareza, é a mesma
+regra do resto: quem lê o catálogo é toda a gente aprovada, quem o manda
+mexer e gastar é quem é dono dele.
+
+**Editar** (`winecatalog.editar`) corrige um campo à mão. A força que isto
+usa é **4 no que está no rótulo** (castas, cor, teor, região — ninguém lhe
+passa por cima) e **3 na nota, no preço e na imagem** (esses ninguém os
+sabe por ser admin; uma pesquisa a sério fresca ainda os pode actualizar).
+Ver `winecatalog.forca` em `catalogo.sql`, onde isto está com o comentário
+todo. **Esvaziar um campo apaga-o, e apagar NÃO fixa nada** — fica livre
+para a próxima escrita de qualquer garrafeira o voltar a preencher, com o
+mesmo valor errado se for isso que ela tem escrito. Para travar um valor
+errado, corrige-se. A identidade (nome/produtor/ano) também se pode mexer,
+atrás de um interruptor fechado por omissão: muda a CHAVE, e se a chave
+nova já for de outra linha a função recusa e manda para Duplicados —
+juntar é a `fundir`, que é reversível; um UPDATE à socapa não seria.
+
+**Procurar informação** (`winecatalog.pesquisa_criar` + a Edge Function
+`catalogo-info.ts`) manda uma pesquisa Google a sério para a linha aberta,
+com o mesmo desenho assíncrono da `sugerir-vinho`/`verificar-vinhos`
+(`EdgeRuntime.waitUntil` + polling do browser, porque a pesquisa pode
+passar de um minuto). Escolhem-se os campos — pedir os vinte de uma vez
+põe o modelo a andar atrás de tudo e a voltar com meia dúzia de coisas
+mornas — e o resultado diz sempre **o que NÃO entrou e porquê**: se o
+catálogo já tinha uma fonte mais forte, isso é o sistema a funcionar, mas
+só se souber que aconteceu.
+
+**Sobre a escolha de modelo, uma confissão.** A secção "O que falta"
+abaixo dizia que a WineCatalog não devia ganhar uma TERCEIRA cópia da
+descoberta de modelo do Gemini. A `catalogo-info.ts` é uma quarta (as
+outras: `sugerir-vinho`, `verificar-vinhos`, `vinho-info`,
+`importar-vinhos`) — nenhuma das duas saídas que a secção propunha
+(reutilizar a `vinho-info` tornando `vinhoId` opcional, ou uma função nova
+que IMPORTA a escolha de um sítio só) chegou a acontecer. Ficou
+auto-contida, como as outras quatro, porque era isso que um pedido do
+utilizador — "quero o botão de pesquisar aqui, igual ao da Garrafeira" —
+pedia sem rodeios, e puxar isto para dentro de uma Edge Function de outro
+repo (com a autorização e a linha de trabalho de OUTRA app) trocava uma
+duplicação conhecida por um acoplamento entre repos pior. **A regra que
+fica**: se mexeres na escolha de modelo, nos parâmetros da chamada ou no
+tratamento de erros do Gemini AQUI, vai ver as outras quatro no mesmo dia
+— exatamente a disciplina que a WineSelection já pratica (ver o
+`CLAUDE.md` dela, "As lições da Garrafeira têm de atravessar para cá").
+
+### Comparar, Aplicar, Reportar — *o catálogo a ouvir a Garrafeira de volta*
+Até esta ronda a relação com a Garrafeira era de sentido único: ela
+escrevia no catálogo e nunca ouvia nada. Isso deixava a avaria mais chata
+de todas sem sítio nenhum onde aparecer — o mesmo vinho com números
+diferentes nos dois lados, e ninguém a saber qual está certo. Três funções
+resolvem isto, e vivem em `curadoria.sql`:
+
+- **`winecatalog.comparar`** — dado nome/produtor/ano e a ficha de quem
+  pergunta, devolve só os campos que DIFEREM ou que só o catálogo tem.
+  **É a única função deste schema aberta a QUALQUER pessoa com login** —
+  quem chama é a Garrafeira em nome de alguém que normalmente não está em
+  `winecatalog.allowed_users` (é dona da sua garrafeira, não tem nada que
+  ver com esta app), e exigir-lhe uma conta aqui matava a funcionalidade à
+  nascença. O que se abre é só a FICHA de UM vinho de cada vez — não
+  enumera nada, não há como varrer o catálogo com isto.
+- **`winecatalog.igual`** decide se dois valores são "diferentes" a
+  sério: "Tinto" e "tinto" não são, 13.5 e 13.50 não são, as mesmas castas
+  por outra ordem não são. Sem isto a marca do lado da Garrafeira aparecia
+  em metade dos campos de toda a gente no primeiro dia — o mesmo erro que
+  a lista de Duplicados já cometeu uma vez antes de ganhar o `generico()`.
+- **`winecatalog.reportar`** — "isto está errado no catálogo". Guarda os
+  DOIS valores no momento do alerta (não só um apontador para o campo: o
+  catálogo muda, e "o preço está mal" é inútil daqui a três semanas), com
+  índice único por pessoa+vinho+campo enquanto `aberto` — carregar duas
+  vezes não enche o ecrã do admin com a mesma queixa. `listar_reportes`/
+  `contar_reportes`/`resolver_reporte` são o lado do admin, no separador
+  **Alertas** (só visível a ele).
+
+Do lado da Garrafeira: `garrafeira.ficha_catalogo` (a MESMA tradução
+colunas→ficha que já alimentava `catalogar_vinho`, extraída para não
+haver duas cópias — ver `db/catalogo-partilhado.sql`), e as três que a
+app chama, `comparar_catalogo`/`aplicar_do_catalogo`/`reportar_ao_catalogo`.
+Nenhuma pode deitar a ficha de um vinho abaixo se o catálogo não
+responder: o catálogo é uma poupança e um espelho, nunca uma dependência.
 
 ### Duplicados — *a fusão manual*
 Três coisas que não são negociáveis:
@@ -332,25 +430,25 @@ agora) **e depois** de a Garrafeira passar a obrigar a escolher a cor (não
 passou — é trabalho no outro repo). E a mudança da chave em si é no ficheiro
 da Garrafeira, que é a fonte de verdade.
 
-### Enriquecer um vinho que ninguém tem (§4.4 do doc de arranque)
-Escrever nome + produtor + ano + cor, escolher os campos, e pesquisar — a
-`vinho-info` sem garrafeira por trás.
+### Enriquecer um vinho que ninguém tem (§4.4 do doc de arranque) — MEIO FEITO
+A `catalogo-info.ts` (ver "A ficha de um vinho" acima) resolve a metade que
+mais se pedia: pesquisar a sério UMA linha que **já existe** no catálogo.
+O que continua por fazer é a outra metade do §4.4 — escrever nome +
+produtor + ano + cor **do zero**, sem nenhuma linha prévia, e pesquisar a
+partir daí. Falta:
+1. um formulário "+ Vinho novo" no separador Catálogo (nome/produtor/ano/
+   `tipo`), que cria a linha com `winecatalog.editar`-como-`INSERT` (hoje
+   `editar` exige `p_id`; precisa de um caminho para nascer uma linha vazia
+   — ou reaproveitar a `achar`+`juntar` com uma ficha vazia) e abre logo a
+   ficha para "Procurar informação" tratar do resto;
+2. nada disto pede uma Edge Function nova — a `catalogo-info.ts` já existe
+   e já sabe pesquisar um `vinho_id`.
 
-**Porque não está feito, e não é por falta de tempo:** a regra dura é que a
-WineCatalog **não ganha uma terceira cópia da escolha de modelo do Gemini**.
-Foram precisas duas avarias silenciosas para se perceber o custo de duas
-cópias; três seria pedi-lo. As duas saídas, por ordem de preferência:
-1. **reutilizar a `vinho-info`**, tornando o `vinhoId` opcional — ela já faz
-   exatamente isto (recebe nome/produtor/ano/campos, pergunta ao catálogo,
-   chama a IA só pelo que falta, escreve de volta). O que a prende à
-   Garrafeira é a linha em `garrafeira.analises` e a autorização por
-   `is_editor()`. **É trabalho no repo Garrafeira**, não aqui;
-2. uma função nova que **importe** a escolha de modelo de um sítio só.
-
-A convenção das Edge Functions deste projeto é serem auto-contidas, e a
-duplicação entre elas é intencional — mas essa convenção nasceu antes de
-haver três. Se escolheres a 2, **escreve no `CLAUDE.md` das três apps que
-agora há um sítio só.**
+**Sobre a "terceira cópia" que este documento pedia para evitar**: não
+aconteceu. A `catalogo-info.ts` é uma cópia da escolha de modelo do Gemini
+— a quarta do projeto, não a terceira, porque a `importar-vinhos` da
+Garrafeira também tem a sua. Ver a confissão em "A ficha de um vinho"
+acima, e a regra que ficou no lugar da que não se seguiu.
 
 ### O selector no momento de gravar (vive na Garrafeira)
 "Já existe *X 2023* — é o mesmo?" É o que **previne** duplicados em vez de
@@ -359,4 +457,8 @@ do que o ecrã de Duplicados — mas é trabalho no outro repo.
 
 ## Deploy
 GitHub Pages a partir de `main`. Um push para `main` publica.
-Não há Edge Functions nesta app.
+Edge Function: `supabase functions deploy catalogo-info` (ou
+`mcp__Supabase__deploy_edge_function`). **PWA/cache:** se mexeres em
+`app.js`, `style.css` ou `index.html`, sobe `CACHE_NAME` no `sw.js` — os
+três são network-first, mas sem isto um deploy pode deixar o browser com o
+`index.html` novo e o `app.js` velho da cache.

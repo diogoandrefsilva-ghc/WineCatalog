@@ -120,6 +120,10 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       <svg class="ticon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       Duplicados
     </button>
+    <button class="it admin-only" data-tab="alertas" onclick="itab('alertas')" style="display:none">
+      <svg class="ticon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      Alertas<span class="it-n" id="alertas-n"></span>
+    </button>
     <button class="it" data-tab="cfg" onclick="itab('cfg')">
       <svg class="ticon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       Definições
@@ -159,6 +163,28 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
     <div id="dup-lista"></div>
+  </div>
+
+  <!-- ═══ ALERTAS (admin) ═══ -->
+  <div id="t-alertas" class="tp">
+    <div class="wc-card">
+      <h3>Alertas das garrafeiras</h3>
+      <p class="wc-note">
+        Quem vê um número errado na sua garrafeira pode avisar daqui —
+        <strong>corrigir só do lado dele deixava o erro cá</strong>, e portanto
+        deixava-o a toda a gente que lê o catálogo.
+      </p>
+      <p class="wc-note">
+        Cada alerta guarda os <strong>dois valores</strong> como estavam no momento
+        em que foi feito, e mostra ao lado o que está lá <em>agora</em>: um alerta
+        que diga só “o preço está mal” não serve de nada daqui a três semanas.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcCarregarReportes('aberto')">Por tratar</button>
+        <button class="btn-n" onclick="wcCarregarReportes('todos')">Todos</button>
+      </div>
+    </div>
+    <div id="rep-lista"></div>
   </div>
 
   <!-- ═══ DEFINIÇÕES ═══ -->
@@ -221,14 +247,16 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
     <div class="wc-card">
       <h3>Sobre</h3>
       <p class="wc-note">
-        O catálogo partilhado (schema <code>catalogo</code>) é a memória comum das
-        outras duas apps: o que uma já pesquisou, a outra aproveita em vez de
-        voltar a pagar. Esta app é o primeiro sítio onde ele se vê.
+        O catálogo (schema <code>winecatalog</code>) é a memória comum da Garrafeira
+        e da WineSelection: o que uma já pesquisou, a outra aproveita em vez de
+        voltar a pagar. Esta app é o sítio onde ele se vê — e, desde agora, onde
+        se corrige.
       </p>
       <p class="wc-note">
-        A fonte de verdade do schema é <code>db/catalogo-partilhado.sql</code> no
-        repo da Garrafeira. Aqui só se acrescenta — a chave que decide o que é o
-        mesmo vinho vive num sítio só, de propósito.
+        A fonte de verdade do schema é <code>db/catalogo.sql</code> neste repo. A
+        chave que decide o que é o mesmo vinho vive <strong>só no SQL</strong>, de
+        propósito: duas cópias um dia divergem e o catálogo parte-se em dois em
+        silêncio.
       </p>
     </div>
   </div>
@@ -236,14 +264,37 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
 
 </div><!-- /wrap -->
 
-<!-- Ficha de um vinho (o ecrã que mostra de onde veio cada campo) -->
+<!-- A ficha de um vinho. O cabeçalho próprio saiu daqui: a capa bordô
+     (`.mhero`, desenhada pelo `wcFichaHTML`) já traz o nome, a garrafa e o
+     ✕ — dois cabeçalhos empilhados era o que estava a acontecer. -->
 <div class="modal" id="modal-ficha" onclick="wcFecharFicha(event)">
   <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-body capa" id="ficha-corpo"></div>
+  </div>
+</div>
+
+<!-- Corrigir à mão (admin). Abre POR CIMA da ficha, de propósito: fechá-lo
+     devolve o vinho onde ele estava, já refrescado. -->
+<div class="modal" id="modal-editar" onclick="fecharFundo(event,'modal-editar')">
+  <div class="modal-box" onclick="event.stopPropagation()">
     <div class="modal-head">
-      <div id="ficha-titulo"></div>
-      <button class="modal-x" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
+      <div><div class="fi-nome" id="editar-titulo"></div>
+           <div class="fi-sub">Corrigir à mão</div></div>
+      <button class="modal-x" onclick="fecharModal('modal-editar')" aria-label="Fechar">✕</button>
     </div>
-    <div class="modal-body" id="ficha-corpo"></div>
+    <div class="modal-body" id="editar-corpo"></div>
+  </div>
+</div>
+
+<!-- Escolher o que pesquisar (admin) -->
+<div class="modal" id="modal-procurar" onclick="fecharFundo(event,'modal-procurar')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div><div class="fi-nome" id="procurar-titulo"></div>
+           <div class="fi-sub">Procurar informação</div></div>
+      <button class="modal-x" onclick="fecharModal('modal-procurar')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body" id="procurar-corpo"></div>
   </div>
 </div>
 
