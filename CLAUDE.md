@@ -1,8 +1,8 @@
 # WineCatalog — guia para o assistente
 
-App pessoal: a casa do **catálogo partilhado de vinhos** (schema
-`catalogo`), que já servia a **Garrafeira** e a **WineSelection** sem
-nunca ter tido um ecrã. Mostra o que lá está e de onde veio cada campo,
+App pessoal: a casa do **catálogo de vinhos** (schema `winecatalog`), que
+já servia a **Garrafeira** e a **WineSelection** sem nunca ter tido um
+ecrã — nem dono. Mostra o que lá está e de onde veio cada campo,
 diz quanto é que a partilha está a poupar, e é onde se resolvem os
 duplicados à mão. **Sem build, sem npm.** Site estático (GitHub Pages),
 PWA. Dados e login em **Supabase** — o mesmo projeto das outras apps
@@ -16,22 +16,22 @@ tudo o que aqui está foi pago com um erro.
   autenticação (`page-login`, `page-nova-pass`, `page-sem-acesso`) + o
   splash + o modal da ficha.
 - `app.js` — toda a lógica. Secções (`grep` pelo título): Sessão Supabase
-  (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao schema `catalogo`** (`catRpc`)
+  (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao catálogo** (`catRpc`)
   · Escapes · Tabs · **De onde veio cada campo** · **Resumo** · **Catálogo**
   · **Duplicados** · Utilizadores (admin) · **Auth (Supabase)** · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
-- `db/` — `schema.sql` → **`catalogo-winecatalog.sql`** → `functions.sql` →
+- `db/` — `schema.sql` → **`winecatalog.sql`** → `functions.sql` →
   `policies.sql` → `admin_pass_temp.sql` (+ `README.md` com os passos
-  manuais). **A ordem não é a das outras apps** — ver o `db/README.md`.
+  manuais e `migracao-catalogo-para-winecatalog.sql`, a mudança de casa).
 - `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
   descartável (encoder PNG à mão, sem dependências); não há fonte vetorial
   guardada no repo. Para os refazer, escreve outro script assim.
 
 ## Porque é que esta app existe
 As duas apps de vinhos pagavam ao Gemini para perguntar o mesmo sobre os
-mesmos vinhos. O schema `catalogo` passou a ser a memória comum: o que uma
-descobre, a outra aproveita. Funcionava — mas **não tinha casa**:
+mesmos vinhos. Criou-se um catálogo comum: o que uma descobre, a outra
+aproveita. Funcionava — mas **não tinha casa**:
 
 1. **Ninguém via o que lá estava.** RLS ligada e zero policies; só as Edge
    Functions (service_role) lhe chegavam.
@@ -46,19 +46,27 @@ a quem herdasse a Garrafeira poder sobre uma tabela que também serve a
 WineSelection.
 
 ## A REGRA QUE SEGURA TUDO O RESTO: uma cópia só não pode divergir
-**A fonte de verdade do schema `catalogo` é `db/catalogo-partilhado.sql` no
-repo Garrafeira.** A tabela, a chave (`tokens`/`chave_base`/`chave`/
+**`db/catalogo.sql` é a FONTE DE VERDADE do catálogo.** Não há cópia em
+lado nenhum: a tabela `vinhos`, a chave (`tokens`/`chave_base`/`chave`/
 `base_nome`/`chave_nome`/`achar`), a `forca()`, a `volatil()` e as três
-funções das Edge Functions (`juntar`/`procurar`/`procurar_lote`) vivem
-**lá e só lá**. O `db/catalogo-winecatalog.sql` deste repo **acrescenta** e
-**não redefine nada** disso.
+funções que as Edge Functions chamam (`juntar`/`procurar`/`procurar_lote`)
+estão todas ali.
 
 Porquê tão insistente: a chave esteve repetida em TypeScript nas três Edge
 Functions com um aviso a dizer para as manter iguais — e um aviso desses é
 uma dívida à espera. No dia em que uma divergisse, o catálogo partia-se em
 dois em silêncio (as mesmas garrafas em linhas diferentes) e a única coisa
-que se notava era a conta da IA a não descer. **Se precisares de mexer na
-chave ou na força, mexe lá.**
+que se notava era a conta da IA a não descer.
+
+Até setembro de 2026 este ficheiro vivia noutro schema (`catalogo`) e
+noutro repo (Garrafeira), e a WineCatalog só lhe podia acrescentar. Isso
+resolvia o governo mas deixava o catálogo órfão: sem ecrã, sem dono, e com
+a fonte de verdade dentro do repo de uma das apps que o consomem — que é
+precisamente o que se queria evitar. Ver
+`db/migracao-catalogo-para-winecatalog.sql`.
+
+**Mexer na chave ou na força é mexer aqui, e mexe com as três apps.** Não
+há nada a proteger-te disso a não ser teres lido isto.
 
 ## As invariantes — não se rediscutem
 Cada uma custou um erro.
@@ -102,7 +110,7 @@ Cada uma custou um erro.
 Nenhum deles é "a lista toda do catálogo" como ecrã inicial.
 
 ### Resumo (inicial) — *quanto é que isto está a poupar*
-Lê `catalogo.consumo_resumo()` e `catalogo.resumo()`.
+Lê `winecatalog.consumo_resumo()` e `winecatalog.resumo()`.
 - pedidos servidos pelo catálogo vs. total, por app e no total;
 - gasto estimado, poupança estimada, tokens;
 - tamanho do catálogo e **quantos campos vieram de cada origem** (é onde se
@@ -123,7 +131,7 @@ foi mesmo à IA). **Isto tem de continuar escrito no ecrã** (`.aviso-euro`)
 
 ### Catálogo — *ver e procurar o que já se sabe*
 Lista com procura por nome/produtor/região/casta (a procura passa pela
-mesma `catalogo.tokens` da chave, e é isso que faz "qta do crasto"
+mesma `winecatalog.tokens` da chave, e é isso que faz "qta do crasto"
 encontrar "Quinta do Crasto"). Cada vinho abre numa ficha que mostra,
 **campo a campo, de onde veio** (origem, força, data) e as fontes.
 
@@ -138,53 +146,63 @@ Três coisas que não são negociáveis:
   *esporao-nacional-touriga* — produtores diferentes a partilhar o nome de
   uma casta. **A semelhança serve para SUGERIR, nunca para DECIDIR**, e os
   números de cada par vão para o ecrã com ele.
-- **o "não são" fica GRAVADO** (`catalogo.distintos`). Senão a lista volta
+- **o "não são" fica GRAVADO** (`winecatalog.distintos`). Senão a lista volta
   a propor o mesmo par todas as semanas, e uma lista que insiste em erros
   deixa de se ler — é o caminho para alguém carregar em "são o mesmo" sem
   olhar e juntar um Vallado a um Esporão. Desmarcar também existe.
 - **fundir é reversível.**
-- **nunca se fundem colheitas diferentes.** `catalogo.fundir` recusa-o com
+- **nunca se fundem colheitas diferentes.** `winecatalog.fundir` recusa-o com
   erro, e a `candidatos` nem sequer propõe esses pares.
 
-**Como a reversibilidade é feita, e porque não é como o documento propunha.**
-O desenho original era um alias que a `catalogo.achar()` resolvesse — mas a
-`achar` vive na fonte de verdade, no repo Garrafeira, e uma cópia dela aqui
-era exatamente a avaria contra a qual está escrito o aviso grande lá em
-cima. Sem lhe tocar:
+**Como a reversibilidade é feita.** Exatamente como o documento de arranque
+pedia: um alias que a `winecatalog.achar()` resolve.
+
 1. os campos da linha perdedora passam para a alvo **um a um**, respeitando
    a `forca` que cada um já tinha dos dois lados — uma fusão nunca pode ser
    a porta dos fundos por onde uma leitura fraca tapa uma pesquisa paga;
-2. a linha perdedora fica com as chaves **estacionadas** (prefixo
-   `alias:`), e é só isso que a tira do caminho da `achar`. **A ficha dela
-   não se toca; não se apaga uma linha.** Por isso a `listar` e a
-   `candidatos` filtram `chave NOT LIKE 'alias:%'`;
-3. o que foi mexido fica escrito em `catalogo.alias.campos_movidos`, com o
-   estado ANTERIOR de cada campo.
+2. grava-se uma linha em `winecatalog.alias`, e é **só isso**. À perdedora
+   não se lhe toca: mesmas chaves, mesma ficha. O que muda é a `achar`, que
+   passa a responder com a alvo quando esbarra nela;
+3. o estado ANTERIOR de cada campo mexido fica em
+   `winecatalog.alias.campos_movidos`.
 
-`catalogo.separar` repõe as chaves e devolve cada campo ao que era — **mas
-só os campos que ninguém reescreveu entretanto** (compara a entrada de
-`origens` com a que a fusão lá pôs). Desfazer uma fusão de setembro não
-pode deitar fora uma verificação de outubro; a app diz quantos ficaram.
+`winecatalog.separar` apaga a linha do alias (a perdedora volta a responder
+por si no mesmo instante) e devolve cada campo ao que era — **mas só os que
+ninguém reescreveu entretanto**: compara a entrada de `origens` com a que a
+fusão lá pôs. Desfazer uma fusão de setembro não pode deitar fora uma
+verificação de outubro; a app diz quantos ficaram.
+
+**A primeira versão não fazia assim, e o porquê vale a pena guardar.**
+Quando a `achar` vivia noutro repo, a fusão resolvia-se a ESTACIONAR as
+chaves da perdedora (um prefixo `alias:`). Tirava-a do caminho, sim — mas
+tirava-a demais: a grafia antiga deixava de casar com fosse o que fosse, e
+a próxima carta que voltasse a escrevê-la não achava a perdedora (com a
+chave mexida) nem a alvo (que tem outra), e nascia uma **terceira** linha.
+O duplicado voltava, e voltava por causa da própria ferramenta que servia
+para o resolver. É o género de avaria que não dá erro nenhum — só a conta a
+não descer.
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
   `Content-Profile` em todos os pedidos** — é isso que aponta para o schema,
-  nunca vai no URL. Esta app fala com **dois**: `winecatalog` (REST normal,
-  quem entra) e `catalogo` (**só por RPC**, e só pelas funções
-  SECURITY DEFINER — a tabela tem RLS com zero policies e é assim que fica).
+  nunca vai no URL. É um schema só (`winecatalog`), mas com duas metades:
+  as tabelas de quem entra, por REST normal com RLS e policies; e o
+  CATÁLOGO, **só por RPC** e só pelas funções SECURITY DEFINER — esse tem
+  RLS com zero policies **e** nenhum GRANT a quem tem login, e é assim que
+  fica.
 - Fluxo de acesso igual às outras: login → `sbAposLogin` confirma
   `allowed_users` → se não estiver lá, ecrã "sem acesso" com "Solicitar
   acesso" → o admin aprova em Definições.
 - **Duas figuras diferentes, e não se confundem:**
-  - **admin do catálogo** (`catalogo.config.admin_email`, na BD e não em
+  - **admin do catálogo** (`winecatalog.config.admin_email`, na BD e não em
     código) — aprova quem entra e decide fusões. **Passa**, com
-    `catalogo.definir_admin()`;
+    `winecatalog.definir_admin()`;
   - **dono da conta Supabase** (`SUPABASE_DONO_EMAIL`, fixo no `app.js`) —
     atrás dele fica só o que mexe na CONTA e não na app: a password
     temporária (`admin_pass_temp`, que escreve em `auth.users`). **Não
     passa**, porque a conta continua a ser de quem a paga.
 - `isAdmin()` **não compara emails em código**: pergunta ao servidor
-  (`catalogo.sou_admin()`). A UI só decide que botões mostrar; todas as
+  (`winecatalog.sou_admin()`). A UI só decide que botões mostrar; todas as
   funções de escrita voltam a confirmar — um botão escondido não é
   segurança.
 - O admin entra sempre, mesmo sem linha em `allowed_users` (igual à
@@ -192,7 +210,7 @@ pode deitar fora uma verificação de outubro; a app diz quantos ficaram.
   não havia ninguém com direito a destrancá-la.
 
 ## O caminho de leitura, e porque não são policies
-`catalogo.vinhos` continua com RLS e **zero policies**. Quem lê são funções
+`winecatalog.vinhos` continua com RLS e **zero policies**. Quem lê são funções
 `SECURITY DEFINER` novas (`listar`/`ver`/`candidatos`/`resumo`/
 `consumo_resumo`/`listar_distintos`) com `REVOKE` de `PUBLIC`/`anon` e
 `GRANT` só a `authenticated` — e é **dentro** de cada uma que se confirma
@@ -200,16 +218,21 @@ quem é (`pode_ler()` para ler, `sou_admin()` para decidir).
 
 Uma policy de SELECT era mais simples, mas abria a tabela a qualquer pessoa
 com login em **qualquer** app do projeto que aponte para o schema
-`catalogo` — e o schema está **exposto** na API. A lista de vinhos que
+`winecatalog` — e o schema está **exposto** na API. A lista de vinhos que
 passaram por aqui diz alguma coisa sobre o que as pessoas têm em casa,
 mesmo que cada linha à parte não diga.
 
+E é por isso que os GRANTs deste schema são **tabela a tabela**. As apps
+irmãs fazem `GRANT ALL ON ALL TABLES IN SCHEMA <x> TO anon, authenticated`,
+e este repo chegou a copiá-lo — mas com o catálogo a viver no mesmo schema
+da app, um grant desses apanhava a `vinhos` de caminho e deixava-a só com a
+RLS. Continuava fechada, mas por **uma** trave em vez de duas.
+
 **Cada função nova nasce com `EXECUTE` para `PUBLIC`, e um `REVOKE`
 esquecido não dá erro — dá uma porta aberta calada.** Confirma sempre, com
-a consulta que está no fim do `db/catalogo-winecatalog.sql` e no
-`db/README.md`.
+a consulta que está no fim do `db/catalogo.sql` e no `db/README.md`.
 
-A vista `catalogo.consumo` (que une as duas `sync_log`) não se dá a
+A vista `winecatalog.consumo` (que une as duas `sync_log`) não se dá a
 ninguém: uma vista não é `security_invoker`, corre como o dono, e por isso
 vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
 `consumo_resumo()`, que agrega e nunca devolve o `quem`.
@@ -225,13 +248,12 @@ vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
 - **A chave `anon` no topo do `app.js` é pública por design**, protegida por
   RLS + login. **Não é bug nem risco — não a "corrijas" nem a escondas.**
 - **Alterar o schema:** edita primeiro `db/*.sql` e só depois corre no SQL
-  Editor do Supabase — nunca ao contrário. E se for no `catalogo`, ver a
-  regra grande lá em cima sobre onde é o "primeiro".
+  Editor do Supabase — nunca ao contrário.
 - **Escapar HTML:** `esc()` para conteúdo, `escJs()` para o que vai dentro
   de `onclick="…('…')"` — há vinhos com plica no nome ("Clefs D'or").
 - **`STABLE` numa função que escreve não é `STABLE`** — nem sequer num
   `CREATE TEMP TABLE`, e o Postgres só o diz quando a função CORRE. A
-  `catalogo.listar` usa uma CTE por causa disto.
+  `winecatalog.listar` usa uma CTE por causa disto.
 - **`RETURNS TABLE` com nomes iguais aos das colunas** dá ambiguidade em
   plpgsql — daí tudo aqui devolver `jsonb`.
 - Edições **cirúrgicas** (diffs pequenos).

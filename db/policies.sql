@@ -2,13 +2,13 @@
 -- WineCatalog — RLS Policies (schema `winecatalog`)
 --
 -- PRÉ-REQUISITO: depende de `winecatalog.is_admin()` (functions.sql), que
--- por sua vez depende de `catalogo.sou_admin()`
+-- por sua vez depende de `winecatalog.sou_admin()`
 -- (catalogo-winecatalog.sql). Correr os dois ANTES deste ficheiro.
 --
--- Repara que aqui NÃO há policy nenhuma sobre o catálogo. `catalogo.vinhos`
+-- Repara que aqui NÃO há policy nenhuma sobre o catálogo. `winecatalog.vinhos`
 -- continua com RLS e ZERO policies, como sempre esteve, e é assim que fica:
 -- quem lê o catálogo lê-o pelas funções SECURITY DEFINER
--- (`catalogo.listar`/`ver`/…), nunca pela tabela. Abrir a tabela com uma
+-- (`winecatalog.listar`/`ver`/…), nunca pela tabela. Abrir a tabela com uma
 -- policy dava-a a qualquer pessoa com login em QUALQUER app do projeto que
 -- aponte para o schema `catalogo` — e o schema está exposto na API.
 -- =====================================================================

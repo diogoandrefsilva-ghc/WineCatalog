@@ -3,12 +3,13 @@
    localStorage, refresh automático do access token (expira em ~1h), e
    Accept/Content-Profile a escolher o schema — NUNCA no URL.
 
-   Esta app fala com DOIS schemas, e a diferença importa:
-     · `winecatalog` — quem entra (allowed_users, access_requests). REST
-       normal, com RLS por trás.
-     · `catalogo`    — o catálogo partilhado. SÓ por RPC, e só pelas
-       funções SECURITY DEFINER: a tabela tem RLS com ZERO policies e é
-       assim que fica. Ver db/catalogo-winecatalog.sql.
+   Um schema só, `winecatalog`, mas com duas metades que se tratam de
+   maneira diferente:
+     · quem entra (allowed_users, access_requests) — REST normal, com RLS
+       e policies por trás;
+     · o CATÁLOGO (vinhos, alias, distintos) — SÓ por RPC, e só pelas
+       funções SECURITY DEFINER: tem RLS com ZERO policies E nenhum GRANT
+       a quem tem login, e é assim que fica. Ver db/catalogo.sql.
 
    A chave aqui em baixo é a `anon`, pública POR DESIGN (protegida por RLS
    + login). Não é bug nem risco — não a "corrijas" nem a escondas. */
@@ -16,13 +17,13 @@ const SB_URL='https://gjweqwfbnkgnibhajldc.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdqd2Vxd2ZibmtnbmliaGFqbGRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMDk4NzUsImV4cCI6MjA5NjY4NTg3NX0.h6st-RayGhQdsqH7E2Ko-rPWk2QZUpTevO6cbjvlSnk';
 
 /* O DONO DA CONTA SUPABASE — fixo, e NÃO é a mesma coisa que o admin do
-   catálogo. O admin passa (catalogo.definir_admin); a conta não, porque
+   catálogo. O admin passa (winecatalog.definir_admin); a conta não, porque
    continua a ser de quem a paga. Atrás disto fica só o que mexe na CONTA:
    a password temporária. Mesma distinção que a Garrafeira faz. */
 const SUPABASE_DONO_EMAIL='diogo.andre.f.silva@gmail.com';
 const SESSION_KEY='wc_sb_session';
 let _sbSession=null;
-/* Quem manda no catálogo vem da BD (catalogo.sou_admin), nunca de uma
+/* Quem manda no catálogo vem da BD (winecatalog.sou_admin), nunca de uma
    constante aqui: a UI só decide que botões mostrar, quem DECIDE é sempre
    o servidor — todas as funções de escrita voltam a confirmar. */
 let _souAdmin=false;
@@ -96,14 +97,18 @@ async function sbReq(method,path,body,extra){
   return tx?JSON.parse(tx):null;
 }
 
-/* ── RPC AO SCHEMA `catalogo` ─────────────────
-   O schema vai nos headers Accept/Content-Profile e nunca no URL — é a
-   mesma regra das outras apps, e é o que faz o PostgREST ir ao sítio
-   certo. Tudo o que esta app lê ou escreve no catálogo passa por aqui. */
+/* ── RPC AO CATÁLOGO ──────────────────────────
+   Tudo o que esta app lê ou escreve no catálogo passa por aqui.
+
+   Já não há troca de schema nenhuma: o catálogo mudou-se para o
+   `winecatalog` (setembro de 2026, ver db/migracao-catalogo-para-winecatalog.sql)
+   e por isso os headers são os mesmos do resto da app — o `sbHeaders()`
+   seco. Isto era, até aí, a única coisa nesta app que falava com dois
+   schemas. */
 async function catRpc(fn,args){
   const r=await sbFetch(`${SB_URL}/rest/v1/rpc/${fn}`,{
     method:'POST',
-    headers:sbHeaders({'Accept-Profile':'catalogo','Content-Profile':'catalogo'}),
+    headers:sbHeaders(),
     body:JSON.stringify(args||{})
   });
   const tx=await r.text();
@@ -113,7 +118,7 @@ async function catRpc(fn,args){
     /* A migração por correr é o erro mais provável no primeiro dia, e o
        "404 schema cache" não o diz a ninguém. */
     if(/does not exist|schema cache/i.test(m))
-      m='Falta correr db/catalogo-winecatalog.sql no Supabase.';
+      m='Falta correr db/catalogo.sql no Supabase (ver db/README.md).';
     throw new Error(m);
   }
   return tx?JSON.parse(tx):null;
@@ -203,7 +208,7 @@ function haQuanto(s){
    Sem isto não há como responder à pergunta que decide se se confia num
    número — "de onde é que isto veio?".
 
-   Os nomes das origens são os que a `catalogo.forca()` conhece. Se lá
+   Os nomes das origens são os que a `winecatalog.forca()` conhece. Se lá
    aparecer um que não está aqui, mostra-se o nome cru em vez de inventar
    uma legenda: um campo sem explicação é melhor do que uma explicação
    errada. */
@@ -251,7 +256,7 @@ const WC_CAMPOS=[
   ['notas_prova','Notas de prova'],['harmonizacao','Harmonização'],
   ['ai_resumo','Resumo'],['imagem_url','Imagem']
 ];
-/* Os que envelhecem (catalogo.volatil). A lista está repetida do SQL de
+/* Os que envelhecem (winecatalog.volatil). A lista está repetida do SQL de
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
    um preço de há oito meses, que é coisa que quem olha quer saber. */
@@ -274,8 +279,8 @@ function wcValorHTML(k,v){
 
    É a pergunta que deu origem ao catálogo e que não se via em lado
    nenhum. Duas metades: o que as outras duas apps gastaram (a vista
-   `catalogo.consumo`) e o que o catálogo tem lá dentro
-   (`catalogo.resumo`).
+   `winecatalog.consumo`) e o que o catálogo tem lá dentro
+   (`winecatalog.resumo`).
    ══════════════════════════════════════════════ */
 let _wcDias=null;   // null = desde sempre
 
@@ -553,7 +558,7 @@ function wcFichaHTML(v){
   h+=`<div class="divi"></div><div class="wc-card-label">Identidade</div>
   <p class="wc-note">
     É isto que decide se dois vinhos são o mesmo vinho. A chave vive
-    <strong>só no SQL</strong> (<code>catalogo.chave</code>) — nenhuma app a
+    <strong>só no SQL</strong> (<code>winecatalog.chave</code>) — nenhuma app a
     calcula, de propósito: duas cópias um dia divergem e o catálogo parte-se em
     dois em silêncio.
   </p>
@@ -978,7 +983,7 @@ async function sbAposLogin(){
   if(_souAdmin){
     /* Quem está a ver É o admin (foi o servidor que o disse) — daí o email
        dele servir de resposta a "quem manda". Não há função que o diga a
-       quem não é: a `catalogo.admin_email()` está revogada a
+       quem não é: a `winecatalog.admin_email()` está revogada a
        `authenticated` de propósito, que a lista de quem entra já chega. */
     _wcAdminEmail=String(email||'').toLowerCase();
     sbRenderPedidos();

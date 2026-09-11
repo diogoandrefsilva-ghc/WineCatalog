@@ -16,14 +16,14 @@
 -- É a diferença que justifica esta app existir. A Garrafeira tem o seu
 -- admin e a WineSelection tem o dela; o CATÁLOGO não é de nenhuma das
 -- duas, e quem manda nele tem de ser uma pessoa só, escrita num sítio só
--- (`catalogo.config.admin_email`). Uma `winecatalog.config.admin_email` à
+-- (`winecatalog.config.admin_email`). Uma `winecatalog.config.admin_email` à
 -- parte era uma segunda linha a dizer quem manda — e duas linhas dessas
 -- um dia discordam.
 CREATE OR REPLACE FUNCTION winecatalog.is_admin()
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
-  SET search_path TO 'winecatalog', 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
-  SELECT catalogo.sou_admin();
+  SELECT winecatalog.sou_admin();
 $$;
 
 -- Tem acesso? O admin conta sempre, mesmo que se esqueça de se pôr na
@@ -31,7 +31,7 @@ $$;
 -- e não haver ninguém com direito a destrancá-la.
 CREATE OR REPLACE FUNCTION winecatalog.is_allowed()
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
-  SET search_path TO 'winecatalog', 'catalogo', 'public'
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT winecatalog.is_admin() OR EXISTS (
     SELECT 1 FROM winecatalog.allowed_users

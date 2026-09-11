@@ -16,7 +16,7 @@
 --   · só o DONO DA CONTA SUPABASE a pode executar — e repara que não é o
 --     admin da app. Isto mexe em `auth.users`, que é a CONTA, e a conta é
 --     de quem a paga mesmo depois de o catálogo passar a outra pessoa por
---     `catalogo.definir_admin()`. O admin novo vê "Utilizadores" e aprova
+--     `winecatalog.definir_admin()`. O admin novo vê "Utilizadores" e aprova
 --     quem entra; mudar a password de alguém não é dele. Mesma distinção
 --     que a Garrafeira faz com o `SUPABASE_DONO_EMAIL`;
 --   · só para contas que já têm acesso à app (allowed_users);
