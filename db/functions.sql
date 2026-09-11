@@ -5,7 +5,7 @@
 --
 -- Nota de segurança: `is_admin` e `is_allowed` são SECURITY DEFINER com
 -- search_path fixo. Têm de o ser: leem tabelas que estão elas próprias
--- por trás de RLS (`catalogo.config`, `winecatalog.allowed_users`), e uma
+-- por trás de RLS (`winecatalog.config`, `winecatalog.allowed_users`), e uma
 -- policy que chama uma função que volta a bater na mesma tabela protegida
 -- é recursão infinita (42P17) ou, pior, um `false` calado que tranca a app
 -- toda sem erro visível.

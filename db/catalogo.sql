@@ -1015,7 +1015,7 @@ $$;
 --     documento de arranque já tinha apanhado (`nacional-touriga-vallado`
 --     com `esporao-nacional-touriga`);
 --   · o PRODUTOR — este não se resolve com uma lista, resolve-se abaixo:
---     a chave junta nome E produtor (de propósito, ver `catalogo.achar`),
+--     a chave junta nome E produtor (de propósito, ver `winecatalog.achar`),
 --     por isso dois vinhos diferentes da MESMA casa partilham sempre os
 --     tokens dela. O "Leo d'Honor" e o "Ermelinda Freitas Syrah" são os
 --     dois da Ermelinda Freitas e não têm mais nada em comum.
