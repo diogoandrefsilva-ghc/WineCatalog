@@ -911,34 +911,32 @@ async function wcGuardarEdicao(){
 const FN_CATALOGO_INFO=SB_URL+'/functions/v1/catalogo-info';
 let _wcProcTimer=null, _wcProcId=null, _wcProcAte=0;
 
-/* PISTAS: o que o catálogo já sabe deste vinho, para ajudar a IA a não o
-   confundir com um homónimo (produtor, ano, região, cor, castas) — nunca
-   são pedidas de volta, só servem de contexto no prompt (`processarPesquisa`
-   em `catalogo-info.ts` lê-as do lado do servidor; `wcManualPrompt` espelha
-   isto do lado do browser). Vêm marcadas quando o valor já existe; um campo
-   vazio não é pista nenhuma, por isso nem aparece marcável. */
-const WC_PISTAS_CAMPOS=[
-  {k:'produtor',rot:'Produtor',v:()=>_wcFicha.produtor},
-  {k:'ano',rot:'Ano',v:()=>_wcFicha.ano},
-  {k:'regiao',rot:'Região',v:()=>(_wcFicha.ficha||{}).regiao},
-  {k:'tipo',rot:'Cor',v:()=>(_wcFicha.ficha||{}).tipo},
-  {k:'castas',rot:'Castas',v:()=>{const c=(_wcFicha.ficha||{}).castas;return Array.isArray(c)&&c.length?c.join(', '):'';}},
-];
-function wcPistasHTML(){
-  const linhas=WC_PISTAS_CAMPOS.map(c=>{
-    const val=c.v();
-    const tem=val!=null&&val!=='';
-    return `<label class="ed-check pr-pista${tem?'':' disabled'}">
-      <input type="checkbox" class="pr-pista-c" value="${c.k}"${tem?' checked':' disabled'}>
-      ${esc(c.rot)}${tem?': '+esc(String(val)):' — desconhecido'}</label>`;
-  }).join('');
-  return `<p class="wc-note" style="margin-bottom:4px"><strong>Pistas para identificar o vinho certo</strong> —
-    não são pedidas à IA, só ajudam a não confundir isto com um homónimo. Desmarca as que achares
-    que possam estar erradas.</p>
-    <div class="pr-pistas">${linhas}</div>`;
+/* CONTEXTO LIVRE: duas caixas de texto em vez de campos fechados — mais
+   flexível para o que ajuda a desambiguar ("grande reserva", "edição
+   limitada", um produtor parecido com outro) do que um conjunto fixo de
+   checkboxes alguma vez cobre. Nenhuma das duas é pedida de volta à IA —
+   servem só de contexto (`processarPesquisa` em `catalogo-info.ts` lê-as
+   do lado do servidor; `wcManualPrompt` espelha isto do lado do browser). */
+function wcContextoHTML(){
+  return `<div class="ed-campo">
+      <label>Notas para ajudar a identificar o vinho (opcional)</label>
+      <textarea id="pr-notas" rows="2" maxlength="300"
+        placeholder="ex.: vinho tinto, grande reserva, da casa Ferreirinha, edição limitada"></textarea>
+      <p class="wc-note" style="margin-top:5px">Não é pedido à IA — é só contexto para não
+        confundir este vinho com um homónimo.</p>
+    </div>
+    <div class="ed-campo">
+      <label>Sites de confiança (opcional)</label>
+      <textarea id="pr-sites" rows="1" placeholder="ex.: vivino.com, wine-searcher.com"></textarea>
+      <p class="wc-note" style="margin-top:5px">Um ou mais, separados por vírgula — a pesquisa dá
+        prioridade a estes.</p>
+    </div>`;
 }
-function wcPistasSelecionadas(){
-  return [...document.querySelectorAll('.pr-pista-c:checked')].map(e=>e.value);
+function wcContextoLer(){
+  const notas=(document.getElementById('pr-notas')?.value||'').trim().slice(0,300);
+  const sites=(document.getElementById('pr-sites')?.value||'')
+    .split(/[,\n]/).map(s=>s.trim().replace(/^https?:\/\//i,'').replace(/\/.*$/,'')).filter(Boolean).slice(0,5);
+  return {notas,sites};
 }
 
 function wcAbrirProcurar(){
@@ -951,7 +949,7 @@ function wcAbrirProcurar(){
     para o que tenhas corrigido à mão.</p>
   <p class="wc-note">Escolhe <strong>poucos campos</strong>. Pedir os vinte de uma vez põe o
     modelo a andar atrás de tudo e a voltar com meia dúzia de coisas mornas.</p>
-  ${wcPistasHTML()}
+  ${wcContextoHTML()}
   <label class="ed-check"><input type="checkbox" id="pr-colheita-esp">
     Tem de ser exatamente a colheita ${esc(String(_wcFicha.ano||''))}</label>
   <p class="wc-note">Por omissão a pesquisa é sobre o vinho em geral — a nota do Vivino, por
@@ -1015,12 +1013,12 @@ async function wcProcurarArrancar(){
        o mesmo trabalho. Sonda-se a que já lá está. */
     if(!p.jaAndava){
       const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
-      const pistas=wcPistasSelecionadas();
+      const ctx=wcContextoLer();
       const r=await fetch(FN_CATALOGO_INFO,{
         method:'POST',
         headers:{'Content-Type':'application/json',apikey:SB_KEY,
                  Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-        body:JSON.stringify({pesquisaId:p.id,campos,colheitaEspecifica,pistas})
+        body:JSON.stringify({pesquisaId:p.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites})
       });
       if(!r.ok&&r.status!==202){
         let msg='';try{msg=(await r.json()).error||'';}catch(_){}
@@ -1147,24 +1145,25 @@ function wcManualRegraVivino(colheitaEspecifica){
 }
 const WC_MANUAL_REGRA_CUVEE='Se o produtor tiver mais do que um vinho com este nome (variantes de gama: Reserva, Grande Reserva, Colheita, Terroir, etc.) e não se souber qual, prefere a versão SEM qualificador extra; se essa não existir, escolhe a que tiver mais avaliações no Vivino (a principal da gama, normalmente) e diz no "aviso" que outras versões encontraste e qual escolheste.';
 
-function wcManualPrompt(campos,colheitaEspecifica,pistas){
+function wcManualPrompt(campos,colheitaEspecifica,notas,sites){
   const v=_wcFicha, ficha=(v&&v.ficha)||{};
   const hoje=new Date().toISOString().slice(0,10);
   const linhas=[`Nome: ${v.nome||''}`];
-  if(pistas.includes('ano')&&v.ano)linhas.push(`Ano (colheita): ${v.ano}`);
-  if(pistas.includes('produtor')&&v.produtor)linhas.push(`Produtor: ${v.produtor}`);
-  if(pistas.includes('regiao')&&ficha.regiao)linhas.push(`Região indicada: ${ficha.regiao}`);
-  if(pistas.includes('tipo')&&ficha.tipo)linhas.push(`Cor: ${ficha.tipo}`);
-  if(pistas.includes('castas')&&Array.isArray(ficha.castas)&&ficha.castas.length)
-    linhas.push(`Castas conhecidas: ${ficha.castas.join(', ')}`);
+  if(v.ano)linhas.push(`Ano (colheita): ${v.ano}`);
+  if(v.produtor)linhas.push(`Produtor: ${v.produtor}`);
+  if(ficha.regiao)linhas.push(`Região indicada: ${ficha.regiao}`);
+  if(ficha.tipo)linhas.push(`Cor: ${ficha.tipo}`);
+  if(notas)linhas.push(`Notas de quem procura: ${notas}`);
   const so=campos&&campos.length&&campos.length<WC_CAMPOS.length
     ?`\nSÓ INTERESSAM ESTES CAMPOS: ${campos.map(k=>WC_CAMPOS_JSON[k]||k).join(', ')}.\nConcentra-te neles e deixa os outros fora da resposta.\n`:'';
+  const sitesTxt=sites&&sites.length
+    ?`\nFONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(', ')}. Só uses outra fonte se estas não tiverem a resposta.\n`:'';
   return `Usa a tua pesquisa na internet para preencheres a ficha deste vinho, como faria um enólogo a construir um catálogo de referência.
 
 VINHO A IDENTIFICAR:
   ${linhas.join('\n  ')}
 Hoje é ${hoje}.
-${so}
+${sitesTxt}${so}
 REGRAS, e são a sério:
 1. NÃO INVENTES. Um campo que não confirmes por pesquisa fica FORA do JSON (ou null) — este catálogo é lido por outras aplicações, e um palpite aqui propaga-se.
 2. ${WC_MANUAL_REGRA_CUVEE}
@@ -1211,8 +1210,8 @@ function wcProcurarManual(){
   if(!campos.length)return;
   _wcManualCampos=campos.length<WC_CAMPOS.length?campos:null;
   const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
-  const pistas=wcPistasSelecionadas();
-  const txt=wcManualPrompt(_wcManualCampos,colheitaEspecifica,pistas);
+  const ctx=wcContextoLer();
+  const txt=wcManualPrompt(_wcManualCampos,colheitaEspecifica,ctx.notas,ctx.sites);
   const box=document.getElementById('procurar-corpo');
   if(!box)return;
   box.innerHTML=`

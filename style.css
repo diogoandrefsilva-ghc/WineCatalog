@@ -354,9 +354,6 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .ed-oculto{display:none}
 
 /* ── PROCURAR ── */
-.pr-pistas{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:0 14px;margin-bottom:10px}
-.pr-pista{margin:2px 0}
-.pr-pista.disabled{opacity:.5;cursor:default}
 .pr-acoes{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:12px 0 4px}
 .pr-acoes .wc-note{margin:0 0 0 auto}
 .pr-campos{display:flex;flex-direction:column;margin-top:6px}
