@@ -938,11 +938,14 @@ function wcAbrirNovo(){
       <input type="text" id="nv-ano" inputmode="numeric"></div>
 
     <div class="divi"></div>
+    <p class="wc-note">Duas portas para encher o resto — com o nome (e produtor/ano, se
+      souberes) já dá para as duas.</p>
     <label class="btn-n larg" style="text-align:center;cursor:pointer;display:block">
-      📷 Ler o rótulo de uma fotografia (opcional)
+      📷 Ler o rótulo de uma fotografia
       <input type="file" accept="image/*" id="nv-foto" style="display:none" onchange="wcNovoFoto(this)">
     </label>
     <p class="wc-note" id="nv-foto-status"></p>
+    <button class="btn-n larg" id="nv-procurar" onclick="wcNovoProcurar()">🔎 Procurar informação</button>
 
     <div class="divi"></div>
     ${wcCamposEditHTML('nv-',{},{})}
@@ -1033,13 +1036,20 @@ async function wcNovoFoto(input){
   }
 }
 
-async function wcCriarVinho(){
-  if(!isAdmin())return;
+/* Nome/produtor/ano lidos uma vez só — partilhado entre "Criar vinho" e
+   "Procurar informação" (`wcNovoProcurar`), que também precisa da
+   identidade para poder criar a linha antes de mandar pesquisar. */
+function wcNovoIdentidade(){
   const nome=String((document.getElementById('nv-nome')||{}).value||'').trim();
-  if(!nome){toast('Falta o nome.',1);return;}
   const produtor=String((document.getElementById('nv-produtor')||{}).value||'').trim();
   const anoTxt=String((document.getElementById('nv-ano')||{}).value||'').trim();
   const ano=anoTxt===''?null:(parseInt(anoTxt,10)||null);
+  return {nome,produtor,ano};
+}
+async function wcCriarVinho(){
+  if(!isAdmin())return;
+  const {nome,produtor,ano}=wcNovoIdentidade();
+  if(!nome){toast('Falta o nome.',1);return;}
   const b=document.getElementById('nv-criar');
   if(b){b.disabled=true;b.textContent='A criar…';}
   try{
@@ -1051,6 +1061,33 @@ async function wcCriarVinho(){
   }catch(e){
     toast('Erro: '+e.message,1);
     if(b){b.disabled=false;b.textContent='Criar vinho';}
+  }
+}
+
+/* "🔎 Procurar informação" na própria "Vinho novo": em vez de obrigar a
+   criar a linha primeiro e só depois ir buscá-la à lista para abrir a
+   ficha e mandar pesquisar, cria-se a linha (com o que já estiver
+   preenchido, rótulo lido incluído) e entra-se DIRETO no mesmo ecrã de
+   pesquisa de uma ficha existente (`wcAbrirProcurar`) — que já bifurca em
+   automática e manual. Nenhum código novo de pesquisa: é a MESMA porta,
+   só que a linha nasce um instante antes de se bater a ela. */
+async function wcNovoProcurar(){
+  if(!isAdmin())return;
+  const {nome,produtor,ano}=wcNovoIdentidade();
+  if(!nome){toast('Falta o nome.',1);return;}
+  const b=document.getElementById('nv-procurar');
+  if(b){b.disabled=true;b.textContent='A criar…';}
+  try{
+    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
+    fecharModal('modal-novo');
+    wcCarregarCatalogo(true);
+    if(r&&r.id){
+      await wcVerFicha(r.id);
+      wcAbrirProcurar();
+    }
+  }catch(e){
+    toast('Erro: '+e.message,1);
+    if(b){b.disabled=false;b.textContent='🔎 Procurar informação';}
   }
 }
 

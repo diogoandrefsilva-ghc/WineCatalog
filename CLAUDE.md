@@ -193,6 +193,16 @@ que aliás é o que deixa pedir `responseMimeType:"application/json"` direto
 ao Gemini, sem a extração de texto que a pesquisa com grounding obriga.
 Ver a confissão sobre a escolha de modelo, abaixo.
 
+**A terceira porta, ao lado da fotografia: "🔎 Procurar informação"
+direto do formulário** (`wcNovoProcurar`). Não é pesquisa nova nenhuma —
+é a MESMA porta que já existe na ficha de um vinho (`wcAbrirProcurar`,
+que por sua vez bifurca em automática e manual), só que chamada um
+instante mais cedo: a linha ainda não existe, por isso `wcNovoProcurar`
+primeiro chama `winecatalog.criar` (com o que já estiver no formulário —
+um rótulo lido a seguir a completar, por exemplo) e só depois abre a
+ficha nova já com o ecrã de pesquisa por cima. Zero código de pesquisa
+novo — o botão só decide QUANDO criar a linha, nunca COMO se pesquisa.
+
 ### A ficha de um vinho — *igual à da Garrafeira, com Editar e Procurar*
 O ecrã de detalhe passou a ser **o mesmo desenho da Garrafeira** — a capa
 bordô com a garrafa, os crachás, os botões, as secções com filete — e não
