@@ -140,8 +140,19 @@ function daLista(v: unknown, lista: string[]): string {
   const achado = lista.find((x) => x && x.toLowerCase() === t.toLowerCase());
   return achado ?? "";
 }
+/* Aspas tipográficas (“ ” ‘ ’) não são JSON válido, e um chat-UI troca-as
+   por conta própria ao mostrar texto normal (não costuma acontecer dentro
+   de blocos de código) — apanhado com uma resposta manual colada com
+   TODAS as aspas assim, que o JSON.parse recusava logo na primeira
+   chave. Trocar aqui por retas resolve o caso automático e o manual de
+   uma vez, sem arriscar strings verdadeiras: uma aspa tipográfica dentro
+   de uma frase vira reta na mesma, mas fica dentro da MESMA string — só
+   muda um caracter, nunca a estrutura. */
+function normalizarAspas(s: string): string {
+  return s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+}
 function extrairJson(txt: string): any | null {
-  const s = String(txt || "").trim();
+  const s = normalizarAspas(String(txt || "").trim());
   if (!s) return null;
   try { return JSON.parse(s); } catch (_) { /* segue */ }
   const semFences = s.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
