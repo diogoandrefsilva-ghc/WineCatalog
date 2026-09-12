@@ -239,6 +239,18 @@ mornas — e o resultado diz sempre **o que NÃO entrou e porquê**: se o
 catálogo já tinha uma fonte mais forte, isso é o sistema a funcionar, mas
 só se souber que aconteceu.
 
+**O Produtor é sempre uma das opções a pedir, mesmo já preenchido** — só uma
+leitura errada o faz vir diferente, e é exatamente isso que vale a pena
+confirmar (foi o que faltava quando "+ Vinho novo" começou a criar linhas
+com nome mas sem produtor: a pesquisa nunca era chamada a preenchê-lo).
+Mas o Produtor não é campo de FICHA — é IDENTIDADE, faz parte da `chave` —
+e por isso não passa pela `juntar` como os outros: uma pesquisa não pode
+mudar de que vinho se trata só por ter sido pedida. O que volta é uma
+SUGESTÃO à parte no relatório (`identidade:true` na proposta, nunca
+`entrou`), a aplicar à mão em **Editar**, com o interruptor de identidade
+que já verifica duplicados. Vale para as duas pesquisas — automática e
+manual, que passam pelo mesmo `processarPesquisa`.
+
 **Sobre a escolha de modelo, uma confissão.** A secção "O que falta"
 abaixo dizia que a WineCatalog não devia ganhar uma TERCEIRA cópia da
 descoberta de modelo do Gemini. A `catalogo-info.ts` é uma quarta (as

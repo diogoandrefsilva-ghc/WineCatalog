@@ -122,6 +122,12 @@ const CAMPOS: Record<string, string> = {
   imagem_url: "imagemUrl", preco_medio: "precoMedio",
   beber_de: "beberDe", beber_ate: "beberAte", notas_prova: "notasProva",
   harmonizacao: "harmonizacao", ai_resumo: "resumo",
+  // O PRODUTOR não é campo da FICHA — é IDENTIDADE (faz parte da `chave`,
+  // ver catalogo.sql) — mas continua a ser sempre uma opção a pedir, MESMO
+  // já preenchido: só pode vir diferente por engano de quem escreveu, e é
+  // isso que vale a pena confirmar. Por não ser ficha, nunca passa pela
+  // `juntar` — ver `processarPesquisa`, mais abaixo, para o porquê.
+  produtor: "produtorConfirmado",
 };
 
 const texto = (v: unknown, max: number) =>
@@ -349,10 +355,14 @@ REGRAS:
 6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
 7. "precoMedio" é o preço de RETALHO em euros, garrafa de 0,75 L.
 8. "beberDe"/"beberAte" são anos.
+9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja
+   oficial — usa o que vier em "Produtor" acima se estiver certo, ou
+   corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
 
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
 {
   "encontrado": true,
+  "produtorConfirmado": "${produtor || "(o produtor deste vinho)"}",
   "tipo": "um de: ${TIPOS.join(" | ")}",
   "estilo": "vazio, ou um de: Maduro | Verde | Colheita Tardia | Palhete",
   "regiao": "região vitivinícola (Douro, Alentejo, Bairrada, Dão, Tejo, …)",
@@ -571,7 +581,19 @@ async function processarPesquisa(
     const chamadasGemini = respostaManual !== null ? 0 : 1;
     const custoEstimado = respostaManual !== null ? 0 : CUSTO_PESQUISA_EUR;
 
-    if (!Object.keys(ficha).length) {
+    /* O PRODUTOR não é campo de ficha — não passa pela `juntar` nem pela
+       `forca()` que decide os outros. É IDENTIDADE (parte da `chave`), e
+       mudar identidade é sempre um passo consciente do admin, pelo
+       `editar` com `p_mexer_identidade` (que verifica duplicados) — nunca
+       algo que uma pesquisa escreve de passagem. Continua a poder ser
+       PEDIDO — é sempre uma das opções, mesmo já preenchido — mas o que
+       volta é só uma SUGESTÃO no relatório. */
+    const produtorPedido = !campos || campos.includes("produtor");
+    const produtorSugerido = produtorPedido ? texto(parsed?.produtorConfirmado, 90) : "";
+    const produtorMudou = !!produtorSugerido &&
+      produtorSugerido.toLowerCase() !== antes.produtor.trim().toLowerCase();
+
+    if (!Object.keys(ficha).length && !produtorMudou) {
       await registar("ok", { passo: "sem_campos", modelo: model, vinho_id: vinhoId, campos: 0,
         ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: chamadasGemini,
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
@@ -587,10 +609,14 @@ async function processarPesquisa(
     // tem direito de passagem só por ter sido pedida à mão — e a manual
     // entra com a MESMA origem `catalogo-pesquisa` (força 3) da automática:
     // o que muda é como se chegou ao JSON, não a confiança que ele merece.
-    await rpc("juntar", {
-      p_nome: antes.nome, p_produtor: antes.produtor, p_ano: antes.ano,
-      p_ficha: ficha, p_origem: "catalogo-pesquisa", p_fontes: fontes,
-    }, undefined, ctrl.signal);
+    // Só se chama se sobrar ALGUM campo de ficha — o produtor nunca vai
+    // nesta chamada, é o `editar` que trata dele.
+    if (Object.keys(ficha).length) {
+      await rpc("juntar", {
+        p_nome: antes.nome, p_produtor: antes.produtor, p_ano: antes.ano,
+        p_ficha: ficha, p_origem: "catalogo-pesquisa", p_fontes: fontes,
+      }, undefined, ctrl.signal);
+    }
 
     /* E AGORA O QUE DÁ SENTIDO AO ECRÃ: dizer o que entrou e o que NÃO
        entrou, e porquê. Sem isto, o admin manda pesquisar, vê metade dos
@@ -598,8 +624,8 @@ async function processarPesquisa(
        recusou — que são coisas muito diferentes. A recusa é o sistema a
        funcionar (alguém com a garrafa na mão sabe melhor), mas só se
        souber que aconteceu. */
-    const depois = await lerVinho(vinhoId, ctrl.signal);
-    const propostas = Object.keys(ficha).map((k) => {
+    const depois = Object.keys(ficha).length ? await lerVinho(vinhoId, ctrl.signal) : antes;
+    const propostas: Record<string, unknown>[] = Object.keys(ficha).map((k) => {
       const origemDepois = String(depois?.origens?.[k]?.o ?? "");
       const entrou = origemDepois === "catalogo-pesquisa";
       return {
@@ -611,7 +637,17 @@ async function processarPesquisa(
         forca: entrou ? null : Number(antes.origens?.[k]?.f ?? 0),
       };
     });
-    const entraram = propostas.filter((p) => p.entrou).length;
+    // O produtor entra à parte — `identidade:true` é o que diz ao ecrã para
+    // NUNCA o tratar como um campo normal (nem "entrou", nem "perdeu para
+    // outra fonte": não faz sentido nenhum dos dois para uma coisa que não
+    // se escreveu).
+    if (produtorMudou) {
+      propostas.push({
+        campo: "produtor", valor: produtorSugerido, entrou: false,
+        identidade: true, atual: antes.produtor || null,
+      });
+    }
+    const entraram = propostas.filter((p) => (p as any).entrou).length;
 
     console.log("CATALOGO-INFO ok:", entraram, "de", propostas.length, "modelo:", model);
     await registar("ok", {

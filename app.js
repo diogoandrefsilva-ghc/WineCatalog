@@ -282,8 +282,20 @@ const WC_CAMPOS_JSON={
   estagio_meses:'estagioMeses',estagio_texto:'estagioTexto',vivino_nota:'vivinoNota',
   vivino_avaliacoes:'vivinoAvaliacoes',vivino_url:'vivinoUrl',imagem_url:'imagemUrl',
   preco_medio:'precoMedio',beber_de:'beberDe',beber_ate:'beberAte',notas_prova:'notasProva',
-  harmonizacao:'harmonizacao',ai_resumo:'resumo'
+  harmonizacao:'harmonizacao',ai_resumo:'resumo',
+  /* O PRODUTOR não é campo da ficha — é IDENTIDADE (faz parte da `chave`) —
+     mas continua a ser sempre uma das opções que se pode pedir à pesquisa,
+     mesmo já preenchido: só pode vir DIFERENTE por engano de quem escreveu.
+     O que a pesquisa devolve nunca escreve sozinho (ver `catalogo-info.ts`,
+     `processarPesquisa`) — aparece à parte no resultado, para aplicar em
+     Editar com o interruptor de identidade. */
+  produtor:'produtorConfirmado'
 };
+/* Total de campos que se podem PEDIR à pesquisa — os da ficha (WC_CAMPOS)
+   mais o Produtor, que não está lá por não ser campo de ficha. Usa-se para
+   decidir quando "todos estão marcados" (e por isso não vale a pena escrever
+   "SÓ INTERESSAM ESTES CAMPOS" no prompt manual). */
+const WC_PROC_TOTAL=WC_CAMPOS.length+1;
 /* Os que envelhecem (winecatalog.volatil). A lista está repetida do SQL de
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
@@ -1162,6 +1174,17 @@ function wcAbrirProcurar(){
     <span class="wc-note" id="pr-conta"></span>
   </div>
   <div class="pr-campos">`;
+  /* O PRODUTOR fica de fora do WC_EDIT (não é campo da ficha, é identidade —
+     ver `WC_CAMPOS_JSON`), mas é sempre uma opção aqui, MESMO já preenchido:
+     só uma leitura errada o faz vir diferente, e é exatamente isso que vale
+     a pena confirmar. Nunca escreve sozinho — a pesquisa devolve-o como
+     sugestão à parte, para aplicar em Editar. */
+  const temProdutor=!!_wcFicha.produtor;
+  h+=`<label class="pr-campo">
+    <input type="checkbox" value="produtor"${temProdutor?'':' checked'} onchange="wcProcContar()">
+    <span class="pr-nome">Produtor</span>
+    ${temProdutor?`<span class="pr-falta">atual: ${esc(_wcFicha.produtor)}</span>`:'<span class="pr-falta">vazio</span>'}
+  </label>`;
   for(const [k,lbl] of WC_EDIT.map(([k,l])=>[k,l])){
     const tem=k in ficha;
     const o=origens[k]||{}, f=Number(o.f||0);
@@ -1187,7 +1210,7 @@ function wcProcCaixas(){return [...document.querySelectorAll('#procurar-corpo .p
 function wcProcTodos(on){wcProcCaixas().forEach(c=>c.checked=on);wcProcContar();}
 function wcProcVazios(){
   const ficha=(_wcFicha&&_wcFicha.ficha)||{};
-  wcProcCaixas().forEach(c=>c.checked=!(c.value in ficha));
+  wcProcCaixas().forEach(c=>c.checked=c.value==='produtor'?!(_wcFicha&&_wcFicha.produtor):!(c.value in ficha));
   wcProcContar();
 }
 function wcProcContar(){
@@ -1287,8 +1310,9 @@ async function wcProcPollTick(){
 function wcProcResultadoHTML(res){
   const props=Array.isArray(res.propostas)?res.propostas:[];
   const entraram=props.filter(p=>p.entrou);
-  const fora=props.filter(p=>!p.entrou);
-  const nome=k=>{const c=WC_CAMPOS.find(([x])=>x===k);return c?c[1]:k;};
+  const ident=props.filter(p=>p.identidade&&!p.entrou);
+  const fora=props.filter(p=>!p.entrou&&!p.identidade);
+  const nome=k=>{if(k==='produtor')return 'Produtor';const c=WC_CAMPOS.find(([x])=>x===k);return c?c[1]:k;};
   let h=`<div class="pr-res">
     <div class="pr-res-cab"><strong>${entraram.length?`${entraram.length} campo${entraram.length>1?'s':''} ${entraram.length>1?'entraram':'entrou'}`:'Nada de novo entrou'}</strong>
       <span class="wc-note">${esc(res.modelo||'')}</span></div>`;
@@ -1305,6 +1329,18 @@ function wcProcResultadoHTML(res){
         `<div><span class="pr-nome">${esc(nome(p.campo))}</span>
           <span class="wc-note">ficou o de <strong>${esc(wcOrigemTxt(p.ganhou,p.forca))}</strong>
           (força ${esc(String(p.forca||0))})</span></div>`).join('')}</div>`;
+  }
+  if(ident.length){
+    /* O Produtor é IDENTIDADE, não ficha — nunca entra sozinho (mudaria a
+       `chave`). Fica só como sugestão; aplicar é sempre um passo consciente
+       em Editar, com o interruptor de identidade e a verificação de
+       duplicados que ele já faz. */
+    h+=`<div class="wc-note" style="margin-top:8px">A pesquisa sugere outro <strong>produtor</strong> —
+      isto é identidade, não ficha, por isso não entra sozinho:</div>
+      <div class="pr-res-fora">${ident.map(p=>
+        `<div><span class="pr-nome">Produtor</span>
+          <span class="wc-note">"${esc(p.atual||'(vazio)')}" → <strong>"${esc(p.valor)}"</strong> —
+          usa <strong>Editar</strong> (Mexer na identidade) para aplicar, se estiver certo.</span></div>`).join('')}</div>`;
   }
   if(res.aviso)h+=`<div class="wc-note" style="margin-top:8px">⚠️ ${esc(res.aviso)}</div>`;
   if(!props.length&&!res.aviso){
@@ -1354,7 +1390,7 @@ function wcManualPrompt(campos,colheitaEspecifica,notas,sites){
   if(ficha.regiao)linhas.push(`Região indicada: ${ficha.regiao}`);
   if(ficha.tipo)linhas.push(`Cor: ${ficha.tipo}`);
   if(notas)linhas.push(`Notas de quem procura: ${notas}`);
-  const so=campos&&campos.length&&campos.length<WC_CAMPOS.length
+  const so=campos&&campos.length&&campos.length<WC_PROC_TOTAL
     ?`\nSÓ INTERESSAM ESTES CAMPOS: ${campos.map(k=>WC_CAMPOS_JSON[k]||k).join(', ')}.\nConcentra-te neles e deixa os outros fora da resposta.\n`:'';
   const sitesTxt=sites&&sites.length
     ?`\nFONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(', ')}. Só uses outra fonte se estas não tiverem a resposta.\n`:'';
@@ -1373,10 +1409,12 @@ REGRAS, e são a sério:
 6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
 7. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
 8. "beberDe"/"beberAte" são anos.
+9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja oficial — usa o que vier em "Produtor" acima se estiver certo, ou corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
 
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
 {
   "encontrado": true,
+  "produtorConfirmado": "${v.produtor||'(o produtor deste vinho)'}",
   "tipo": "um de: ${WC_TIPOS.filter(Boolean).join(' | ')}",
   "estilo": "vazio, ou um de: ${WC_ESTILOS.filter(Boolean).join(' | ')}",
   "regiao": "região vitivinícola",
@@ -1408,7 +1446,7 @@ function wcProcurarManual(){
   if(!_wcFicha||!isAdmin())return;
   const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
   if(!campos.length)return;
-  _wcManualCampos=campos.length<WC_CAMPOS.length?campos:null;
+  _wcManualCampos=campos.length<WC_PROC_TOTAL?campos:null;
   const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
   const ctx=wcContextoLer();
   const txt=wcManualPrompt(_wcManualCampos,colheitaEspecifica,ctx.notas,ctx.sites);
