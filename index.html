@@ -142,6 +142,7 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       <input type="text" id="cat-procura" placeholder="nome, produtor, região ou casta…"
              oninput="wcProcuraMudou()" autocomplete="off">
       <p class="wc-note" id="cat-conta"></p>
+      <button class="btn-prim admin-only" style="display:none;margin-top:10px" onclick="wcAbrirNovo()">+ Vinho novo</button>
     </div>
     <div id="cat-lista"></div>
     <div id="cat-mais"></div>
@@ -283,6 +284,20 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       <button class="modal-x" onclick="fecharModal('modal-editar')" aria-label="Fechar">✕</button>
     </div>
     <div class="modal-body" id="editar-corpo"></div>
+  </div>
+</div>
+
+<!-- Criar um vinho do zero (admin). A outra metade de "Editar": o mesmo
+     formulário, a começar vazio, com uma porta a mais — ler o rótulo de
+     uma fotografia — para o pré-preencher. -->
+<div class="modal" id="modal-novo" onclick="fecharFundo(event,'modal-novo')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div><div class="fi-nome">Vinho novo</div>
+           <div class="fi-sub">Criar do zero</div></div>
+      <button class="modal-x" onclick="fecharModal('modal-novo')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body" id="novo-corpo"></div>
   </div>
 </div>
 

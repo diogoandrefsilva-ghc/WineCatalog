@@ -295,6 +295,108 @@ $$;
 
 
 -- =====================================================================
+-- 3B. CRIAR — um vinho que ninguém tem, do zero
+--
+-- Metade do §4.4 do documento de arranque que ainda faltava (ver o
+-- CLAUDE.md, "O que falta"): a `catalogo-info` já sabia pesquisar UMA
+-- linha que já existe; esta função é o que falta para ela nascer. Sem
+-- isto, um vinho que nenhuma garrafeira tem e nenhuma carta leu ainda não
+-- tinha ONDE nascer no catálogo — o `juntar` cria linhas, mas só a
+-- service_role lhe chega (é para as Edge Functions, a reboque de um
+-- trabalho que a pessoa já pediu para si); aqui é uma PESSOA, do ecrã, a
+-- pedir a linha diretamente, e por isso a mesma regra do resto: só o
+-- admin do catálogo.
+--
+-- Os campos entram com a MESMA força de um `editar` (`catalogo-admin`):
+-- 4 no que está no rótulo, 3 na nota/preço/imagem — ninguém os sabe por
+-- ser admin, e uma pesquisa a sério fresca ainda os deve poder actualizar.
+-- É o mesmo campo `p_campos` que a `editar` já usa, para o ecrã poder
+-- reaproveitar o mesmo formulário (e ler uma fotografia do rótulo para o
+-- pré-preencher, do lado da app — esta função nunca vê imagem nenhuma).
+--
+-- NÃO deixa nascer uma SEGUNDA linha do mesmo vinho: `achar` olha às
+-- DUAS chaves (nome+produtor e só nome), dos dois lados, exatamente como
+-- o `juntar` faz antes de escrever — se já existir, recusa e diz qual é,
+-- para o ecrã abrir essa em vez de duplicar.
+-- =====================================================================
+CREATE OR REPLACE FUNCTION winecatalog.criar(
+  p_nome text,
+  p_produtor text DEFAULT '',
+  p_ano integer DEFAULT NULL,
+  p_campos jsonb DEFAULT '{}'::jsonb
+) RETURNS jsonb
+  LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v_nome    text := btrim(COALESCE(p_nome, ''));
+  v_prod    text := COALESCE(p_produtor, '');
+  v_base    text;
+  v_chave   text;
+  v_cnome   text;
+  v_bnome   text;
+  v_existe  bigint;
+  v_id      bigint;
+  v_ficha   jsonb := '{}'::jsonb;
+  v_origens jsonb := '{}'::jsonb;
+  k text; v jsonb; v_f integer;
+BEGIN
+  IF NOT winecatalog.sou_admin() THEN
+    RAISE EXCEPTION 'Só o admin do catálogo pode criar uma linha.';
+  END IF;
+  IF v_nome = '' THEN
+    RAISE EXCEPTION 'Um vinho novo precisa de um nome.';
+  END IF;
+
+  v_base := winecatalog.chave_base(v_nome, v_prod);
+  IF v_base = '' THEN
+    RAISE EXCEPTION 'Esse nome não deixa identidade nenhuma — não distingue este vinho de mais nenhum.';
+  END IF;
+
+  -- A MESMA pergunta que o `juntar` faz antes de escrever: se este vinho
+  -- (por qualquer uma das duas chaves) já tiver linha nesta colheita, não
+  -- nasce uma segunda — abre-se a que já existe.
+  v_existe := winecatalog.achar(v_nome, v_prod, p_ano, true);
+  IF v_existe IS NOT NULL THEN
+    RAISE EXCEPTION 'Já existe uma linha para este vinho e colheita — é a #%. Abre-a em vez de criar outra.', v_existe;
+  END IF;
+
+  v_chave := winecatalog.chave(v_nome, v_prod, p_ano);
+  v_cnome := winecatalog.chave_nome(v_nome, p_ano);
+  v_bnome := winecatalog.base_nome(v_nome);
+
+  IF p_campos IS NOT NULL AND jsonb_typeof(p_campos) = 'object' THEN
+    FOR k, v IN SELECT key, value FROM jsonb_each(p_campos) LOOP
+      CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$';
+      CONTINUE WHEN winecatalog.vazio(v);
+      v_f := winecatalog.forca('catalogo-admin', k);
+      v_ficha   := v_ficha   || jsonb_build_object(k, v);
+      v_origens := v_origens || jsonb_build_object(
+        k, jsonb_build_object('o', 'catalogo-admin', 'f', v_f, 'em', now()));
+    END LOOP;
+  END IF;
+
+  BEGIN
+    INSERT INTO winecatalog.vinhos
+      (chave, chave_base, chave_nome, base_nome, nome, produtor, ano, ficha, origens)
+    VALUES
+      (v_chave, v_base, v_cnome, v_bnome, v_nome, v_prod, p_ano, v_ficha, v_origens)
+    RETURNING id INTO v_id;
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'Já existe uma linha com essa identidade — outra escrita chegou primeiro.';
+  END;
+
+  INSERT INTO winecatalog.sync_log (origem, acao, estado, quem, detalhe)
+  VALUES ('app', 'criar', 'ok', auth.email(), jsonb_build_object(
+    'vinho_id', v_id, 'nome', v_nome, 'produtor', v_prod, 'ano', p_ano,
+    'campos', (SELECT count(*) FROM jsonb_object_keys(v_ficha))));
+
+  RETURN jsonb_build_object('ok', true, 'id', v_id);
+END;
+$$;
+
+
+-- =====================================================================
 -- 4. PESQUISAR — o pedido, e a espera
 --
 -- `pesquisa_criar` só CRIA a linha; quem faz o trabalho é a Edge Function
@@ -593,12 +695,14 @@ REVOKE ALL ON FUNCTION winecatalog.vazio(jsonb)       FROM PUBLIC, anon;
 -- As do admin, chamadas do browser com o JWT dele. A confirmação de quem
 -- é está DENTRO de cada uma (`sou_admin()`), como nas outras.
 REVOKE ALL ON FUNCTION winecatalog.editar(bigint, jsonb, text, text, integer, boolean) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.criar(text, text, integer, jsonb)   FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pesquisa_criar(bigint)          FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pesquisa_ver(bigint)            FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.listar_reportes(text)           FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.contar_reportes()               FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.resolver_reporte(bigint, text, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION winecatalog.editar(bigint, jsonb, text, text, integer, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.criar(text, text, integer, jsonb)   TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_criar(bigint)          TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_ver(bigint)            TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.listar_reportes(text)           TO authenticated;

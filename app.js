@@ -776,6 +776,61 @@ function wcValorEdit(k,v){
   if(Array.isArray(v))return v.join(', ');
   return String(v);
 }
+/* Um campo de "Editar" (rótulo/nota/etc.) — partilhado com "Vinho novo"
+   (`wcAbrirNovo`), que é o mesmo formulário a começar vazio em vez de a
+   partir do que já lá está. O `prefixo` dos ids é o que separa os dois
+   modais no DOM (`ed-`/`nv-`) sem duplicar este bloco. */
+function wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca){
+  let h=`<div class="ed-campo">
+    <label for="${prefixo}${esc(k)}">${esc(lbl)}${marca||''}</label>`;
+  if(tp==='sel'){
+    h+=`<select id="${prefixo}${esc(k)}">${ops.map(op=>
+      `<option value="${esc(op)}"${String(val)===op?' selected':''}>${esc(op||'— vazio —')}</option>`).join('')}</select>`;
+  }else if(tp==='area'){
+    h+=`<textarea id="${prefixo}${esc(k)}" rows="3">${esc(val)}</textarea>`;
+  }else{
+    const ph=tp==='lista'?'separadas por vírgula':'';
+    h+=`<input type="text" id="${prefixo}${esc(k)}" value="${esc(val)}" placeholder="${esc(ph)}"
+           inputmode="${tp==='num'||tp==='int'?'decimal':'text'}">`;
+  }
+  h+='</div>';
+  return h;
+}
+function wcCamposEditHTML(prefixo,ficha,origens){
+  ficha=ficha||{};origens=origens||{};
+  return WC_EDIT.map(([k,lbl,tp,ops])=>{
+    const o=origens[k]||{}, f=Number(o.f||0);
+    const val=wcValorEdit(k,ficha[k]);
+    const marca=(k in ficha)
+      ? `<span class="ed-de"><span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span></span>`
+      : '';
+    return wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca);
+  }).join('');
+}
+/* O que vai para a base a partir de um formulário destes: `null` quando o
+   campo ficou vazio (a `editar`/`criar` leem isso como "não escrevas nada"
+   ou "apaga", conforme o caso) e o valor com o TIPO certo quando não. Um
+   número guardado como texto quebrava a comparação da Garrafeira (13.5 vs.
+   "13.5") — ver o comentário grande onde isto vivia antes de ganhar um
+   `prefixo`. */
+function wcLerCampos(prefixo){
+  const out={};
+  for(const [k,,tp] of WC_EDIT){
+    const el=document.getElementById(prefixo+k);
+    if(!el)continue;
+    const cru=String(el.value||'').trim();
+    if(cru===''){out[k]=null;continue;}
+    if(tp==='lista'){
+      const l=cru.split(',').map(x=>x.trim()).filter(Boolean);
+      out[k]=l.length?l:null;
+    }else if(tp==='num'||tp==='int'){
+      const n=parseFloat(cru.replace(',','.'));
+      if(!isFinite(n)){out[k]=null;continue;}
+      out[k]=tp==='int'?Math.round(n):n;
+    }else out[k]=cru;
+  }
+  return out;
+}
 function wcAbrirEditar(){
   if(!_wcFicha||!isAdmin())return;
   const v=_wcFicha, ficha=v.ficha||{}, origens=v.origens||{};
@@ -788,28 +843,8 @@ function wcAbrirEditar(){
   <p class="wc-note"><strong>Esvaziar um campo apaga-o</strong> — e apagar não o fixa: fica livre
     para a próxima escrita de qualquer garrafeira o voltar a preencher. Para travar um valor
     errado, corrige-o em vez de o apagares.</p>
-  <div class="divi"></div>`;
-
-  for(const [k,lbl,tp,ops] of WC_EDIT){
-    const o=origens[k]||{}, f=Number(o.f||0);
-    const val=wcValorEdit(k,ficha[k]);
-    const marca=(k in ficha)
-      ? `<span class="ed-de"><span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span></span>`
-      : '';
-    h+=`<div class="ed-campo">
-      <label for="ed-${esc(k)}">${esc(lbl)}${marca}</label>`;
-    if(tp==='sel'){
-      h+=`<select id="ed-${esc(k)}">${ops.map(op=>
-        `<option value="${esc(op)}"${String(val)===op?' selected':''}>${esc(op||'— vazio —')}</option>`).join('')}</select>`;
-    }else if(tp==='area'){
-      h+=`<textarea id="ed-${esc(k)}" rows="3">${esc(val)}</textarea>`;
-    }else{
-      const ph=tp==='lista'?'separadas por vírgula':'';
-      h+=`<input type="text" id="ed-${esc(k)}" value="${esc(val)}" placeholder="${esc(ph)}"
-             inputmode="${tp==='num'||tp==='int'?'decimal':'text'}">`;
-    }
-    h+='</div>';
-  }
+  <div class="divi"></div>
+  ${wcCamposEditHTML('ed-',ficha,origens)}`;
 
   /* A identidade fica atrás de um interruptor, e não por timidez: mexer no
      nome muda a CHAVE, que é o que faz duas linhas serem a mesma. Aberto
@@ -841,35 +876,11 @@ function wcEdIdent(){
   document.getElementById('ed-ident-box').classList.toggle('ed-oculto',!on);
 }
 
-/* O que vai para a base: `null` quando o campo ficou vazio (a `editar`
-   lê isso como apagar) e o valor com o TIPO certo quando não. Um número
-   guardado como texto entrava no catálogo e quebrava a comparação da
-   Garrafeira — que é uma avaria caladíssima: dava divergência entre 13.5 e
-   "13.5". (A `winecatalog.igual` já apara isso do lado do SQL, mas
-   mandar lixo de propósito porque alguém o apara é outra coisa.) */
-function wcLerEdicao(){
-  const out={};
-  for(const [k,,tp] of WC_EDIT){
-    const el=document.getElementById('ed-'+k);
-    if(!el)continue;
-    const cru=String(el.value||'').trim();
-    if(cru===''){out[k]=null;continue;}
-    if(tp==='lista'){
-      const l=cru.split(',').map(x=>x.trim()).filter(Boolean);
-      out[k]=l.length?l:null;
-    }else if(tp==='num'||tp==='int'){
-      const n=parseFloat(cru.replace(',','.'));
-      if(!isFinite(n)){out[k]=null;continue;}
-      out[k]=tp==='int'?Math.round(n):n;
-    }else out[k]=cru;
-  }
-  return out;
-}
 async function wcGuardarEdicao(){
   if(!_wcFicha)return;
   const b=document.getElementById('ed-guardar');
   const ident=!!(document.getElementById('ed-ident')||{}).checked;
-  const args={p_id:_wcFicha.id,p_campos:wcLerEdicao()};
+  const args={p_id:_wcFicha.id,p_campos:wcLerCampos('ed-')};
   if(ident){
     const ano=String((document.getElementById('ed-ano')||{}).value||'').trim();
     args.p_nome=String((document.getElementById('ed-nome')||{}).value||'').trim();
@@ -888,6 +899,158 @@ async function wcGuardarEdicao(){
   }catch(e){
     toast('Erro: '+e.message,1);
     if(b){b.disabled=false;b.textContent='Guardar';}
+  }
+}
+
+
+/* ══════════════════════════════════════════════
+   VINHO NOVO — um vinho que ninguém tem, do zero
+
+   A outra metade do §4.4 do documento de arranque (ver o CLAUDE.md, "O que
+   falta"): a `catalogo-info` já sabia pesquisar UMA linha que já existe;
+   isto é o que faz essa linha nascer. Só a identidade é obrigatória — o
+   resto é o MESMO formulário do "Editar" (`wcCamposEditHTML`), a começar
+   vazio, porque um vinho novo pode já vir com o que se leu no rótulo ou o
+   que o admin já sabe de cor. O que faltar fica para "Procurar informação"
+   tratar a seguir, assim que a ficha abrir.
+
+   DUAS PORTAS PARA O MESMO FORMULÁRIO: escrever à mão, ou carregar uma
+   fotografia do rótulo (`wcNovoFoto`) que o PRÉ-preenche — nunca escreve
+   sozinha. A leitura é só visão (a Edge Function `catalogo-foto` nunca
+   pesquisa a internet, só lê o que está impresso), por isso só entra o que
+   um rótulo pode mesmo mostrar: cor, castas, região, teor, menção — nunca
+   a nota do Vivino nem o preço, que são coisa de pesquisa a sério.
+   ══════════════════════════════════════════════ */
+const FN_CATALOGO_FOTO=SB_URL+'/functions/v1/catalogo-foto';
+
+function wcAbrirNovo(){
+  if(!isAdmin())return;
+  const box=document.getElementById('novo-corpo');
+  if(!box)return;
+  box.innerHTML=`<p class="wc-note">Só o <strong>nome</strong> é obrigatório. O resto fica para
+      <strong>Procurar informação</strong> tratar a seguir — ou preenche à mão o que já souberes,
+      por exemplo lido no rótulo.</p>
+    <div class="ed-campo"><label for="nv-nome">Nome *</label>
+      <input type="text" id="nv-nome" placeholder="ex.: Quinta do Crasto Reserva"></div>
+    <div class="ed-campo"><label for="nv-produtor">Produtor</label>
+      <input type="text" id="nv-produtor"></div>
+    <div class="ed-campo"><label for="nv-ano">Colheita (ano, vazio se não tiver)</label>
+      <input type="text" id="nv-ano" inputmode="numeric"></div>
+
+    <div class="divi"></div>
+    <label class="btn-n larg" style="text-align:center;cursor:pointer;display:block">
+      📷 Ler o rótulo de uma fotografia (opcional)
+      <input type="file" accept="image/*" id="nv-foto" style="display:none" onchange="wcNovoFoto(this)">
+    </label>
+    <p class="wc-note" id="nv-foto-status"></p>
+
+    <div class="divi"></div>
+    ${wcCamposEditHTML('nv-',{},{})}
+
+    <div class="macoes fim">
+      <button class="btn-n" onclick="fecharModal('modal-novo')">Cancelar</button>
+      <button class="btn-prim auto" id="nv-criar" onclick="wcCriarVinho()">Criar vinho</button>
+    </div>`;
+  abrirModal('modal-novo');
+  const nomeEl=document.getElementById('nv-nome');
+  if(nomeEl)nomeEl.focus();
+}
+
+/* Reduz a foto no browser antes de enviar — o mesmo truque da Garrafeira
+   (`encolherImagem`): o rótulo lê-se perfeitamente a 1000px no lado maior,
+   e uma foto de telemóvel são vários MB que não vale a pena mandar
+   inteiros. `imageOrientation:'from-image'` trata do EXIF, senão uma foto
+   tirada na vertical chegava deitada à Edge Function. */
+function wcEncolherImagem(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const acabou=(img)=>{
+      const lado=Math.max(img.width,img.height);
+      const escala=lado>1000?1000/lado:1;
+      const w=Math.max(1,Math.round(img.width*escala)), h=Math.max(1,Math.round(img.height*escala));
+      const c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      c.toBlob(blob=>{
+        if(!blob){reject(new Error('não consegui preparar a imagem'));return;}
+        const fr=new FileReader();
+        fr.onload=()=>resolve(String(fr.result).split(',')[1]||'');
+        fr.onerror=()=>reject(new Error('não consegui ler a imagem'));
+        fr.readAsDataURL(blob);
+      },'image/jpeg',0.85);
+    };
+    if('createImageBitmap' in window){
+      createImageBitmap(file,{imageOrientation:'from-image'}).then(acabou).catch(()=>{
+        const img=new Image();
+        img.onload=()=>acabou(img);
+        img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('não consegui abrir essa imagem'));};
+        img.src=url;
+      });
+    }else{
+      const img=new Image();
+      img.onload=()=>acabou(img);
+      img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('não consegui abrir essa imagem'));};
+      img.src=url;
+    }
+  });
+}
+
+async function wcNovoFoto(input){
+  const file=input.files&&input.files[0];
+  if(!file)return;
+  const status=document.getElementById('nv-foto-status');
+  if(status){status.textContent='A ler o rótulo…';status.classList.remove('erro');}
+  try{
+    const data=await wcEncolherImagem(file);
+    const r=await fetch(FN_CATALOGO_FOTO,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',apikey:SB_KEY,
+               Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
+      body:JSON.stringify({imagem:{mime:'image/jpeg',data}})
+    });
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||('a função respondeu '+r.status));
+    if(d.encontrado===false){
+      if(status){status.textContent=d.aviso||'Não consegui ler um rótulo nesta foto.';status.classList.add('erro');}
+      return;
+    }
+    if(d.nome)document.getElementById('nv-nome').value=d.nome;
+    if(d.produtor)document.getElementById('nv-produtor').value=d.produtor;
+    if(d.ano)document.getElementById('nv-ano').value=String(d.ano);
+    const campos=d.campos||{};
+    for(const [k,,tp] of WC_EDIT){
+      if(!(k in campos))continue;
+      const el=document.getElementById('nv-'+k);
+      if(!el)continue;
+      el.value=(tp==='lista'&&Array.isArray(campos[k]))?campos[k].join(', '):String(campos[k]);
+    }
+    if(status)status.textContent=d.aviso?('Lido do rótulo — '+d.aviso):'Lido do rótulo ✓ — confirma os campos antes de criar.';
+  }catch(e){
+    if(status){status.textContent='Erro: '+e.message;status.classList.add('erro');}
+  }finally{
+    input.value='';
+  }
+}
+
+async function wcCriarVinho(){
+  if(!isAdmin())return;
+  const nome=String((document.getElementById('nv-nome')||{}).value||'').trim();
+  if(!nome){toast('Falta o nome.',1);return;}
+  const produtor=String((document.getElementById('nv-produtor')||{}).value||'').trim();
+  const anoTxt=String((document.getElementById('nv-ano')||{}).value||'').trim();
+  const ano=anoTxt===''?null:(parseInt(anoTxt,10)||null);
+  const b=document.getElementById('nv-criar');
+  if(b){b.disabled=true;b.textContent='A criar…';}
+  try{
+    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
+    fecharModal('modal-novo');
+    toast('Vinho criado ✓');
+    wcCarregarCatalogo(true);
+    if(r&&r.id)await wcVerFicha(r.id);
+  }catch(e){
+    toast('Erro: '+e.message,1);
+    if(b){b.disabled=false;b.textContent='Criar vinho';}
   }
 }
 

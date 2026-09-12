@@ -14,21 +14,26 @@ tudo o que aqui está foi pago com um erro.
 ## Estrutura
 - `index.html` — só markup: os cinco separadores (o quinto, Alertas, só
   aparece ao admin) + os três ecrãs de autenticação (`page-login`,
-  `page-nova-pass`, `page-sem-acesso`) + o splash + os quatro modais: a
-  ficha, **Editar**, **Procurar informação** e Alertas vivem em `t-alertas`.
+  `page-nova-pass`, `page-sem-acesso`) + o splash + os cinco modais: a
+  ficha, **Editar**, **Vinho novo**, **Procurar informação** e Alertas
+  vivem em `t-alertas`.
 - `app.js` — toda a lógica. Secções (`grep` pelo título): Sessão Supabase
   (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao catálogo** (`catRpc`)
   · Escapes · Modais (`abrirModal`/`fecharModal`) · Tabs · **De onde veio
   cada campo** · **Resumo** · **Catálogo** · **A ficha de um vinho**
-  (a capa + **Editar** + **Procurar informação**, ver abaixo) ·
-  **Alertas** · **Duplicados** · Utilizadores (admin) · **Auth (Supabase)**
-  · Init.
+  (a capa + **Editar** + **Vinho novo** + **Procurar informação**, ver
+  abaixo) · **Alertas** · **Duplicados** · Utilizadores (admin) ·
+  **Auth (Supabase)** · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
 - `catalogo-info.ts` — Edge Function (Deno). Pesquisa Google a sério para
   UMA linha do catálogo, a pedido do admin (ver "Editar, Procurar,
   Comparar, Reportar" abaixo). Deploy à parte:
   `supabase functions deploy catalogo-info`.
+- `catalogo-foto.ts` — Edge Function (Deno). Lê o RÓTULO de uma fotografia
+  para pré-preencher o formulário "Vinho novo" — visão, nunca pesquisa web
+  (ver "Vinho novo" abaixo). Deploy à parte:
+  `supabase functions deploy catalogo-foto`.
 - `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
@@ -147,6 +152,47 @@ encontrar "Quinta do Crasto"). Cada vinho abre numa ficha que mostra,
 
 É o primeiro ecrã que alguma vez mostrou uma linha do catálogo.
 
+**"+ Vinho novo"**, só para o admin (ver "Vinho novo" abaixo), é a outra
+metade do §4.4 do documento de arranque: até aqui só se podia enriquecer
+um vinho que **já existia** — nascer um do zero não tinha ecrã nenhum.
+
+### Vinho novo — *um vinho que ninguém tem, do zero*
+O botão **"+ Vinho novo"** no Catálogo (só admin) cria uma linha vazia
+(`winecatalog.criar`) e abre logo a ficha para "Procurar informação"
+tratar do resto — exatamente o plano que ficou por fazer em "O que falta"
+até esta ronda. Só o **nome** é obrigatório; o formulário é o MESMO da
+Editar (`wcCamposEditHTML`, partilhado entre os dois modais por um
+`prefixo` de ids, `ed-`/`nv-`), a começar vazio em vez de a partir do que
+já lá está — o admin pode escrever à mão o que já souber (região, castas,
+teor…) em vez de deixar tudo para uma pesquisa.
+
+A `criar` faz a MESMA pergunta que o `juntar` faz antes de escrever
+(`achar`, às duas chaves): se este vinho e esta colheita já tiverem linha,
+recusa e diz qual é — nunca nasce uma segunda linha do mesmo vinho só
+porque alguém carregou em "+ Vinho novo" em vez de procurar primeiro. Os
+campos entram com a mesma força de um `editar` (`catalogo-admin`: 4 no
+rótulo, 3 na nota/preço/imagem).
+
+**A segunda porta para o mesmo formulário: ler o rótulo de uma
+fotografia.** Um botão dentro do próprio modal encolhe a foto no browser
+(`wcEncolherImagem`, o mesmo truque `imageOrientation:'from-image'`/1000px
+da Garrafeira) e manda-a para a Edge Function `catalogo-foto.ts`, que a lê
+com o Gemini e devolve nome/produtor/ano + os campos de RÓTULO (cor,
+castas, região, teor, menção, classificação) — **nunca escreve na base de
+dados**: só pré-preenche o formulário, para o admin rever e corrigir antes
+de "Criar vinho". Por ser leitura de RÓTULO e não pesquisa, a
+`catalogo-foto` nunca vê nota do Vivino, preço de mercado, notas de prova
+nem harmonização — isso é sempre trabalho de "Procurar informação",
+depois de o vinho já existir.
+
+**Porque é uma Edge Function à parte, e não a `catalogo-info` a aceitar
+uma imagem.** São perguntas diferentes: a `catalogo-info` PESQUISA a
+internet (grounding search) sobre uma referência que já existe; a
+`catalogo-foto` faz VISÃO sobre uma fotografia — sem `google_search`, o
+que aliás é o que deixa pedir `responseMimeType:"application/json"` direto
+ao Gemini, sem a extração de texto que a pesquisa com grounding obriga.
+Ver a confissão sobre a escolha de modelo, abaixo.
+
 ### A ficha de um vinho — *igual à da Garrafeira, com Editar e Procurar*
 O ecrã de detalhe passou a ser **o mesmo desenho da Garrafeira** — a capa
 bordô com a garrafa, os crachás, os botões, as secções com filete — e não
@@ -194,9 +240,14 @@ auto-contida, como as outras quatro, porque era isso que um pedido do
 utilizador — "quero o botão de pesquisar aqui, igual ao da Garrafeira" —
 pedia sem rodeios, e puxar isto para dentro de uma Edge Function de outro
 repo (com a autorização e a linha de trabalho de OUTRA app) trocava uma
-duplicação conhecida por um acoplamento entre repos pior. **A regra que
+duplicação conhecida por um acoplamento entre repos pior. E a
+`catalogo-foto.ts` (ver "Vinho novo" acima) é a QUINTA: a mesma decisão,
+pela mesma razão, desta vez porque um "+ Vinho novo" com leitura de
+rótulo não existe em nenhuma das outras apps para se reutilizar — a mais
+parecida é a `importar-vinhos` da Garrafeira, que lê fotos de garrafeira,
+não de catálogo, e vive noutro repo com outra autorização. **A regra que
 fica**: se mexeres na escolha de modelo, nos parâmetros da chamada ou no
-tratamento de erros do Gemini AQUI, vai ver as outras quatro no mesmo dia
+tratamento de erros do Gemini AQUI, vai ver as outras cinco no mesmo dia
 — exatamente a disciplina que a WineSelection já pratica (ver o
 `CLAUDE.md` dela, "As lições da Garrafeira têm de atravessar para cá").
 
@@ -382,10 +433,11 @@ modelo fixos (1 de setembro) e os 400 do `thinkingBudget:0` com
 `google_search` (10 de setembro), corrigiu-se, e a WineSelection ficou com
 as duas avarias intactas durante semanas.
 
-Esta app **não chama o Gemini** — não tem, hoje, nenhuma escolha de modelo
-para divergir, e isso é de propósito (ver "O que falta"). Mas o Resumo é
-onde isso se vê: **compara a última chamada de cada app antes de assumir
-que a que está calada está bem.**
+Esta app agora TAMBÉM chama o Gemini (`catalogo-info.ts` e
+`catalogo-foto.ts`) — ver a confissão em "A ficha de um vinho" sobre a
+descoberta de modelo duplicada de propósito cinco vezes no projeto. Mas o
+Resumo continua a ser onde a calada se apanha: **compara a última chamada
+de cada app antes de assumir que a que está calada está bem.**
 
 ## Coisas que já aconteceram e que é bom conhecer
 - **O Grous Moon Harvested.** Três linhas para o que pareciam ser o mesmo
@@ -430,25 +482,34 @@ agora) **e depois** de a Garrafeira passar a obrigar a escolher a cor (não
 passou — é trabalho no outro repo). E a mudança da chave em si é no ficheiro
 da Garrafeira, que é a fonte de verdade.
 
-### Enriquecer um vinho que ninguém tem (§4.4 do doc de arranque) — MEIO FEITO
-A `catalogo-info.ts` (ver "A ficha de um vinho" acima) resolve a metade que
-mais se pedia: pesquisar a sério UMA linha que **já existe** no catálogo.
-O que continua por fazer é a outra metade do §4.4 — escrever nome +
-produtor + ano + cor **do zero**, sem nenhuma linha prévia, e pesquisar a
-partir daí. Falta:
-1. um formulário "+ Vinho novo" no separador Catálogo (nome/produtor/ano/
-   `tipo`), que cria a linha com `winecatalog.editar`-como-`INSERT` (hoje
-   `editar` exige `p_id`; precisa de um caminho para nascer uma linha vazia
-   — ou reaproveitar a `achar`+`juntar` com uma ficha vazia) e abre logo a
-   ficha para "Procurar informação" tratar do resto;
-2. nada disto pede uma Edge Function nova — a `catalogo-info.ts` já existe
-   e já sabe pesquisar um `vinho_id`.
+### Um vinho que ninguém tem, do zero (§4.4 do doc de arranque) — FEITO
+A `catalogo-info.ts` já resolvia a metade que mais se pedia: pesquisar a
+sério UMA linha que **já existe** no catálogo (ver "A ficha de um vinho").
+Faltava a outra metade do §4.4 — escrever nome + produtor + ano **do
+zero**, sem nenhuma linha prévia — e é o que o botão **"+ Vinho novo"**
+(ver a secção própria, acima) passou a fazer: `winecatalog.criar` nasce a
+linha, e o admin abre logo "Procurar informação" para tratar do resto — ou
+lê o rótulo de uma fotografia (`catalogo-foto.ts`) para não ter de escrever
+tudo à mão.
 
-**Sobre a "terceira cópia" que este documento pedia para evitar**: não
-aconteceu. A `catalogo-info.ts` é uma cópia da escolha de modelo do Gemini
-— a quarta do projeto, não a terceira, porque a `importar-vinhos` da
-Garrafeira também tem a sua. Ver a confissão em "A ficha de um vinho"
-acima, e a regra que ficou no lugar da que não se seguiu.
+**Duas diferenças do que este documento tinha planeado, e porquê:**
+- não foi `winecatalog.editar`-como-`INSERT` — ganhou uma função própria
+  (`criar`), porque um INSERT e uma correção são pedidos diferentes: a
+  `criar` tem de recusar quando o vinho já existe (a mesma pergunta que o
+  `juntar` já fazia), e forçar isso dentro da `editar` obrigava a um `p_id`
+  opcional a mudar de sentido consoante viesse preenchido ou não — mais
+  confuso do que duas funções pequenas;
+- a **cor não é obrigatória** para criar a linha, ao contrário do que a
+  primeira versão deste plano dizia ("nome/produtor/ano/`tipo`"). O
+  formulário de "Vinho novo" acabou por ser o MESMO da "Editar" (só o nome
+  obrigatório), para poder receber o que a leitura do rótulo trouxer sem um
+  segundo formulário mais restrito ao lado. Se um dia a mudança da cor na
+  chave (ver acima) avançar, é aqui que a cor passa a obrigatória — e é
+  o mesmo aviso que já vale para a Garrafeira (`iaCorGuard`).
+
+Sobre a "terceira cópia" que este documento pedia para evitar: não
+aconteceu, e agora são CINCO. Ver a confissão em "A ficha de um vinho",
+acima.
 
 ### O selector no momento de gravar (vive na Garrafeira)
 "Já existe *X 2023* — é o mesmo?" É o que **previne** duplicados em vez de
@@ -457,7 +518,8 @@ do que o ecrã de Duplicados — mas é trabalho no outro repo.
 
 ## Deploy
 GitHub Pages a partir de `main`. Um push para `main` publica.
-Edge Function: `supabase functions deploy catalogo-info` (ou
+Edge Functions: `supabase functions deploy catalogo-info` e
+`supabase functions deploy catalogo-foto` (ou
 `mcp__Supabase__deploy_edge_function`). **PWA/cache:** se mexeres em
 `app.js`, `style.css` ou `index.html`, sobe `CACHE_NAME` no `sw.js` — os
 três são network-first, mas sem isto um deploy pode deixar o browser com o
