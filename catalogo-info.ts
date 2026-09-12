@@ -272,9 +272,45 @@ function fontesGrounding(body: any): { titulo: string; url: string }[] {
    isto passar de curiosidade a orçamento. */
 const CUSTO_PESQUISA_EUR = 0.01;
 
+/* ── A REGRA DO VIVINO, e porque tem DUAS versões ──
+   Espelho da mesma correção em `vinho-info.ts` (Garrafeira) — ver o
+   comentário grande lá para o porquê e para o teste que a validou (Villa
+   Platanus 2022: com o ano a fazer parte da identidade da página do
+   Vivino, nota/avaliações/link vinham sempre vazios; sem essa exigência,
+   vieram certos e estáveis em três tentativas seguidas). O Vivino é do
+   VINHO, não da colheita — a nota que mostra por omissão é uma média entre
+   colheitas.
+
+   Duas versões, e quem escolhe é `colheitaEspecifica` (vem do ecrã de
+   escolha de campos, nunca por omissão): a ESTRITA exige o ano, para
+   quando a pergunta é mesmo sobre ESTA colheita; a RELAXADA (o novo
+   default) não exige, e diz ao modelo onde ler cada número. */
+const regraVivino = (colheitaEspecifica: boolean) => colheitaEspecifica
+  ? `Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA
+   página do Vivino e do vinho certo — confirma produtor, ano e região antes
+   de aceitar. Em dúvida, deixa os três vazios.`
+  : `A página do Vivino é do VINHO, não de uma colheita específica: o ANO NÃO
+   faz parte da identidade da página, e a nota que lá aparece é uma média
+   entre colheitas. Para confirmares que é a página certa, basta o nome (já
+   desambiguado na regra anterior) e o produtor baterem certo — não deixes
+   "vivinoNota"/"vivinoAvaliacoes"/"vivinoUrl" vazios só por causa do ano. A
+   nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm
+   logo a seguir, entre parêntesis — não uses números de outra zona da
+   página. Mesmo sem confirmares a nota, mantém o link se tiveres a certeza
+   da página.`;
+/* Villa Platanus voltou a mostrar isto nos testes: o mesmo produtor tinha
+   "Reserva" e "Terroir Blend" — escolher a cuvée errada é um erro tão real
+   como não encontrar nada. */
+const regraCuvee = `Se o produtor tiver mais do que um vinho com este nome
+   (variantes de gama: Reserva, Grande Reserva, Colheita, Terroir, etc.) e
+   não se souber qual, prefere a versão SEM qualificador extra; se essa não
+   existir, escolhe a que tiver mais avaliações no Vivino (a principal da
+   gama, normalmente) e diz no "aviso" que outras versões encontraste e
+   qual escolheste.`;
+
 const promptFicha = (
   nome: string, produtor: string, ano: number | null, regiao: string,
-  hoje: string, campos: string[] | null,
+  hoje: string, campos: string[] | null, colheitaEspecifica: boolean,
 ) => `
 És um enólogo a preencher a ficha de um vinho para um catálogo de referência.
 Usa PESQUISA WEB (grounding search) para confirmar os dados — não respondas de memória.
@@ -290,15 +326,15 @@ Concentra a pesquisa NELES e deixa os outros fora da resposta.
 REGRAS:
 1. NÃO INVENTES. Um campo que não confirmes fica FORA do JSON (ou null).
    Este catálogo é lido por outras aplicações — um palpite aqui propaga-se.
-2. Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA
-   página do Vivino e do vinho certo.
-3. "imagemUrl" tem de ser link DIRETO de imagem (.jpg/.jpeg/.png/.webp/.avif),
+2. ${regraCuvee}
+3. ${regraVivino(colheitaEspecifica)}
+4. "imagemUrl" tem de ser link DIRETO de imagem (.jpg/.jpeg/.png/.webp/.avif),
    nunca o link da página.
-4. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que
+5. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que
    ficou por confirmar no "aviso".
-5. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
-6. "precoMedio" é o preço de RETALHO em euros, garrafa de 0,75 L.
-7. "beberDe"/"beberAte" são anos.
+6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
+7. "precoMedio" é o preço de RETALHO em euros, garrafa de 0,75 L.
+8. "beberDe"/"beberAte" são anos.
 
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
 {
@@ -417,7 +453,7 @@ async function lerVinho(id: number, signal?: AbortSignal): Promise<Linha | null>
    fazia à resposta automática. */
 async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
-  respostaManual: string | null = null,
+  respostaManual: string | null = null, colheitaEspecifica: boolean = false,
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -448,7 +484,7 @@ async function processarPesquisa(
       const texto0 = promptFicha(
         antes.nome, antes.produtor, antes.ano,
         String(antes.ficha.regiao ?? ""),
-        new Date().toISOString().slice(0, 10), campos,
+        new Date().toISOString().slice(0, 10), campos, colheitaEspecifica,
       );
 
       /* O `google_search` está SEMPRE ligado — é a razão de esta função
@@ -633,12 +669,17 @@ Deno.serve(async (req) => {
     const campos = Array.isArray(body?.campos)
       ? [...new Set(body.campos.map((c: unknown) => String(c)).filter((c: string) => c in CAMPOS))]
       : null;
-    // PESQUISA MANUAL: a resposta que o admin colou, já tirada da app do
-    // Gemini. Presente ou não é o que decide se esta função chama a API ou
-    // só lê o que veio — ver o comentário grande no `processarPesquisa`.
+    // PESQUISA MANUAL: a resposta que o admin colou, já tirada do assistente
+    // de IA que usou (Gemini, ChatGPT, o que for). Presente ou não é o que
+    // decide se esta função chama a API ou só lê o que veio — ver o
+    // comentário grande no `processarPesquisa`.
     const respostaManual = typeof body?.resposta === "string" && body.resposta.trim()
       ? body.resposta.trim().slice(0, 20_000)
       : null;
+    // Por omissão a pesquisa é sobre o vinho em geral (ver a regra do
+    // Vivino em `regraVivino`) — só estrita quando o ecrã de campos manda
+    // isto explicitamente.
+    const colheitaEspecifica = body?.colheitaEspecifica === true;
 
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
@@ -660,7 +701,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {

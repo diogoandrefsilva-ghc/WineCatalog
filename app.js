@@ -921,6 +921,11 @@ function wcAbrirProcurar(){
     para o que tenhas corrigido à mão.</p>
   <p class="wc-note">Escolhe <strong>poucos campos</strong>. Pedir os vinte de uma vez põe o
     modelo a andar atrás de tudo e a voltar com meia dúzia de coisas mornas.</p>
+  <label class="ed-check"><input type="checkbox" id="pr-colheita-esp">
+    Tem de ser exatamente a colheita ${esc(String(_wcFicha.ano||''))}</label>
+  <p class="wc-note">Por omissão a pesquisa é sobre o vinho em geral — a nota do Vivino, por
+    exemplo, é uma média entre colheitas. Liga só se precisares mesmo dos factos desta colheita
+    específica.</p>
   <div class="pr-acoes">
     <button class="btn-n" onclick="wcProcTodos(true)">Todos</button>
     <button class="btn-n" onclick="wcProcTodos(false)">Nenhum</button>
@@ -943,7 +948,7 @@ function wcAbrirProcurar(){
     <button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button>
     <button class="btn-prim auto" id="pr-ir" onclick="wcProcurarArrancar()">🔎 Pesquisar</button>
   </div>
-  <button class="btn-n larg" onclick="wcProcurarManual()">✍️ Pesquisa manual — grátis, colar resposta do Gemini</button>`;
+  <button class="btn-n larg" onclick="wcProcurarManual()">✍️ Pesquisa manual — grátis, colar a resposta de um assistente de IA</button>`;
   box.innerHTML=h;
   document.getElementById('procurar-titulo').textContent=_wcFicha.nome||'(sem nome)';
   wcProcContar();
@@ -978,11 +983,12 @@ async function wcProcurarArrancar(){
        nesse caso NÃO se chama outra vez a função, que era pagar duas vezes
        o mesmo trabalho. Sonda-se a que já lá está. */
     if(!p.jaAndava){
+      const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
       const r=await fetch(FN_CATALOGO_INFO,{
         method:'POST',
         headers:{'Content-Type':'application/json',apikey:SB_KEY,
                  Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-        body:JSON.stringify({pesquisaId:p.id,campos})
+        body:JSON.stringify({pesquisaId:p.id,campos,colheitaEspecifica})
       });
       if(!r.ok&&r.status!==202){
         let msg='';try{msg=(await r.json()).error||'';}catch(_){}
@@ -1081,8 +1087,10 @@ function wcProcResultadoHTML(res){
 
 /* ── PESQUISA MANUAL — copiar prompt, colar resposta ──
    Mesmo botão "Procurar informação", um segundo caminho: em vez de a Edge
-   Function pagar ao Gemini, o admin copia um prompt pronto, cola-o na app
-   do Gemini (a dele, sem custo para o catálogo) e cola aqui a resposta.
+   Function pagar ao Gemini, o admin copia um prompt pronto, cola-o no
+   assistente de IA que preferir (a conta dele, sem custo para o catálogo —
+   quanto mais capaz o modelo, melhor costuma ser o resultado) e cola aqui
+   a resposta.
 
    Entra pela MESMA porta que a automática: cria-se a mesma linha em
    `winecatalog.pesquisas` (`pesquisa_criar` — é o que evita duas pessoas a
@@ -1096,7 +1104,18 @@ function wcProcResultadoHTML(res){
    (`wcProcIniciarPolling`) não sabe a diferença — e não precisa de saber. */
 let _wcManualCampos=null;
 
-function wcManualPrompt(campos){
+/* Espelho das duas versões da regra do Vivino em `catalogo-info.ts`
+   (`regraVivino`) — ver o comentário grande lá para o porquê. A ESTRITA
+   exige o ano; a RELAXADA (o novo default) não, porque a página do Vivino
+   é do vinho e não da colheita. */
+function wcManualRegraVivino(colheitaEspecifica){
+  return colheitaEspecifica
+    ? 'Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA página do Vivino e do vinho certo — confirma produtor, ano e região antes de aceitar. Em dúvida, deixa os três vazios.'
+    : 'A página do Vivino é do VINHO, não de uma colheita específica: o ANO NÃO faz parte da identidade da página, e a nota que lá aparece é uma média entre colheitas. Para confirmares que é a página certa, basta o nome (já desambiguado na regra anterior) e o produtor baterem certo — não deixes a nota, as avaliações nem o link vazios só por causa do ano. A nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm logo a seguir, entre parêntesis — não uses números de outra zona da página. Mesmo sem confirmares a nota, mantém o link se tiveres a certeza da página.';
+}
+const WC_MANUAL_REGRA_CUVEE='Se o produtor tiver mais do que um vinho com este nome (variantes de gama: Reserva, Grande Reserva, Colheita, Terroir, etc.) e não se souber qual, prefere a versão SEM qualificador extra; se essa não existir, escolhe a que tiver mais avaliações no Vivino (a principal da gama, normalmente) e diz no "aviso" que outras versões encontraste e qual escolheste.';
+
+function wcManualPrompt(campos,colheitaEspecifica){
   const v=_wcFicha, ficha=(v&&v.ficha)||{};
   const hoje=new Date().toISOString().slice(0,10);
   const linhas=[`Nome: ${v.nome||''}`];
@@ -1113,12 +1132,13 @@ Hoje é ${hoje}.
 ${so}
 REGRAS, e são a sério:
 1. NÃO INVENTES. Um campo que não confirmes por pesquisa fica FORA do JSON (ou null) — este catálogo é lido por outras aplicações, e um palpite aqui propaga-se.
-2. A nota do Vivino, o nº de avaliações e o "vivinoUrl" têm de vir da MESMA página do Vivino, e tens de confirmar que é DESTE vinho exato (produtor, ano e região a bater certo) — há homónimos. Em dúvida, deixa os três vazios.
-3. "imagemUrl" é o link DIRETO de uma fotografia (acaba em .jpg/.jpeg/.png/.webp/.avif), nunca o link da página.
-4. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que ficou por confirmar em "aviso".
-5. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
-6. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
-7. "beberDe"/"beberAte" são anos.
+2. ${WC_MANUAL_REGRA_CUVEE}
+3. ${wcManualRegraVivino(colheitaEspecifica)}
+4. "imagemUrl" é o link DIRETO de uma fotografia (acaba em .jpg/.jpeg/.png/.webp/.avif), nunca o link da página.
+5. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que ficou por confirmar em "aviso".
+6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
+7. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
+8. "beberDe"/"beberAte" são anos.
 
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
 {
@@ -1155,19 +1175,21 @@ function wcProcurarManual(){
   const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
   if(!campos.length)return;
   _wcManualCampos=campos.length<WC_CAMPOS.length?campos:null;
-  const txt=wcManualPrompt(_wcManualCampos);
+  const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
+  const txt=wcManualPrompt(_wcManualCampos,colheitaEspecifica);
   const box=document.getElementById('procurar-corpo');
   if(!box)return;
   box.innerHTML=`
     <div class="pr-manual">
-      <p class="wc-note">1. Copia o prompt. 2. Cola-o na app ou no site do Gemini. 3. Copia a
-        resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda — entra no catálogo com a mesma
-        força 3 de uma pesquisa automática, sem gastar nada.</p>
+      <p class="wc-note">1. Copia o prompt. 2. Cola-o no assistente de IA que preferires (quanto
+        mais capaz o modelo, melhor costuma ser o resultado — Gemini, ChatGPT, Claude, o que
+        tiveres à mão). 3. Copia a resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda —
+        entra no catálogo com a mesma força 3 de uma pesquisa automática, sem gastar nada.</p>
       <label>Prompt a copiar</label>
       <textarea id="pr-manual-prompt" rows="6" readonly onclick="this.select()">${esc(txt)}</textarea>
       <button class="btn-n larg" onclick="wcManualCopiar()">📋 Copiar prompt</button>
-      <label>Resposta do Gemini (cola aqui)</label>
-      <textarea id="pr-manual-resposta" rows="10" placeholder="Cola aqui o JSON que o Gemini devolveu…"></textarea>
+      <label>Resposta (cola aqui)</label>
+      <textarea id="pr-manual-resposta" rows="10" placeholder="Cola aqui o JSON que o modelo devolveu…"></textarea>
       <p class="wc-note erro" id="pr-manual-erro"></p>
     </div>
     <div class="macoes fim">
@@ -1190,7 +1212,7 @@ async function wcProcurarManualEnviar(){
   if(!_wcFicha||!isAdmin())return;
   const texto=(document.getElementById('pr-manual-resposta')||{}).value||'';
   const erroEl=document.getElementById('pr-manual-erro');
-  if(!texto.trim()){if(erroEl)erroEl.textContent='Cola primeiro a resposta do Gemini.';return;}
+  if(!texto.trim()){if(erroEl)erroEl.textContent='Cola primeiro a resposta.';return;}
   if(erroEl)erroEl.textContent='';
   const b=document.getElementById('pr-manual-ir');
   if(b){b.disabled=true;b.textContent='A guardar…';}
