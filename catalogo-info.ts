@@ -320,7 +320,7 @@ const regraCuvee = `Se o produtor tiver mais do que um vinho com este nome
    qual escolheste.`;
 
 const promptFicha = (
-  nome: string, produtor: string, ano: number | null, regiao: string,
+  nome: string, produtor: string, ano: number | null, regiao: string, tipo: string, castas: string[],
   hoje: string, campos: string[] | null, colheitaEspecifica: boolean,
 ) => `
 És um enólogo a preencher a ficha de um vinho para um catálogo de referência.
@@ -328,7 +328,7 @@ Usa PESQUISA WEB (grounding search) para confirmar os dados — não respondas d
 
 VINHO A IDENTIFICAR:
   Nome: ${nome}
-${ano ? `  Ano (colheita): ${ano}\n` : ""}${produtor ? `  Produtor: ${produtor}\n` : ""}${regiao ? `  Região indicada: ${regiao}\n` : ""}
+${ano ? `  Ano (colheita): ${ano}\n` : ""}${produtor ? `  Produtor: ${produtor}\n` : ""}${regiao ? `  Região indicada: ${regiao}\n` : ""}${tipo ? `  Cor: ${tipo}\n` : ""}${castas.length ? `  Castas conhecidas: ${castas.join(", ")}\n` : ""}
 Hoje é ${hoje}.
 ${campos && campos.length ? `
 SÓ INTERESSAM ESTES CAMPOS: ${campos.map((k) => CAMPOS[k]).filter(Boolean).join(", ")}.
@@ -465,6 +465,7 @@ async function lerVinho(id: number, signal?: AbortSignal): Promise<Linha | null>
 async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
   respostaManual: string | null = null, colheitaEspecifica: boolean = false,
+  pistas: string[] = ["produtor", "ano", "regiao"],
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -492,9 +493,20 @@ async function processarPesquisa(
         return;
       }
     } else {
+      /* PISTAS: o que já se sabe do vinho, para ajudar a IA a não o
+         confundir com um homónimo (produtor, ano, região, cor, castas) —
+         a app só as manda quando quem procura as deixou marcadas
+         (`wcPistas…`), e só entram no prompt quando o catálogo já as tem.
+         Nunca são pedidas de volta só por virem daqui — isso é o que a
+         lista `campos` decide. */
+      const identProdutor = pistas.includes("produtor") ? antes.produtor : "";
+      const identAno = pistas.includes("ano") ? antes.ano : null;
+      const identRegiao = pistas.includes("regiao") ? String(antes.ficha.regiao ?? "") : "";
+      const identTipo = pistas.includes("tipo") ? String(antes.ficha.tipo ?? "") : "";
+      const identCastas = pistas.includes("castas") && Array.isArray(antes.ficha.castas)
+        ? (antes.ficha.castas as unknown[]).map((c) => String(c)) : [];
       const texto0 = promptFicha(
-        antes.nome, antes.produtor, antes.ano,
-        String(antes.ficha.regiao ?? ""),
+        antes.nome, identProdutor, identAno, identRegiao, identTipo, identCastas,
         new Date().toISOString().slice(0, 10), campos, colheitaEspecifica,
       );
 
@@ -691,6 +703,14 @@ Deno.serve(async (req) => {
     // Vivino em `regraVivino`) — só estrita quando o ecrã de campos manda
     // isto explicitamente.
     const colheitaEspecifica = body?.colheitaEspecifica === true;
+    // PISTAS (produtor/ano/regiao/tipo/castas): o que a pessoa deixou
+    // marcado no seletor como contexto para desambiguar o vinho. Só entram
+    // no prompt automático — a manual gera o seu próprio texto do lado do
+    // browser. Sem nada válido, cai no de sempre (produtor+ano+região).
+    const PISTAS_VALIDAS = ["produtor", "ano", "regiao", "tipo", "castas"];
+    const pistas = Array.isArray(body?.pistas)
+      ? [...new Set(body.pistas.map((p: unknown) => String(p)).filter((p: string) => PISTAS_VALIDAS.includes(p)))] as string[]
+      : ["produtor", "ano", "regiao"];
 
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
@@ -712,7 +732,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, pistas),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {
