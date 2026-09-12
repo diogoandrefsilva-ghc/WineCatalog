@@ -406,13 +406,22 @@ async function lerVinho(id: number, signal?: AbortSignal): Promise<Linha | null>
   };
 }
 
-/* O trabalho a sério — via EdgeRuntime.waitUntil. */
+/* O trabalho a sério — via EdgeRuntime.waitUntil.
+
+   `respostaManual`, quando vem preenchido, é a PESQUISA MANUAL: o admin já
+   colou o prompt no Gemini dele e trouxe a resposta — não se chama a API
+   nenhuma, só se faz `extrairJson`/`normalizar` no texto que veio e segue-se
+   dali para a frente EXATAMENTE como a automática (mesma `juntar`, força 3,
+   mesmo relatório do que entrou e porquê). Zero chamadas ao Gemini, zero
+   custo — só o trabalho de ler e validar, que é o mesmo trabalho que já se
+   fazia à resposta automática. */
 async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
+  respostaManual: string | null = null,
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
-  let model = "gemini-flash-latest";
+  let model = respostaManual !== null ? "manual (colado)" : "gemini-flash-latest";
 
   try {
     const antes = await lerVinho(vinhoId, ctrl.signal);
@@ -421,73 +430,95 @@ async function processarPesquisa(
       return;
     }
 
-    const texto0 = promptFicha(
-      antes.nome, antes.produtor, antes.ano,
-      String(antes.ficha.regiao ?? ""),
-      new Date().toISOString().slice(0, 10), campos,
-    );
+    let parsed: any;
+    let usage: UsageMetadata | null = null;
+    let fontes: { titulo: string; url: string }[] = [];
 
-    /* O `google_search` está SEMPRE ligado — é a razão de esta função
-       existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
-       recusa as duas juntas com 400 ("Request contains an invalid
-       argument"), e a pesquisa precisa mesmo de pensar para decidir o que
-       pesquisar. Era a primeira variante tentada nas funções irmãs e só
-       deitava fora uma ida ao Gemini de cada vez, sem nada no ecrã a
-       dizê-lo. */
-    const chamarGemini = (m: string) =>
-      fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: texto0 }] }],
-          generationConfig: { temperature: 0 },
-          tools: [{ google_search: {} }],
-        }),
-      });
+    if (respostaManual !== null) {
+      parsed = extrairJson(respostaManual);
+      if (!parsed) {
+        await registar("erro", { passo: "manual_json", vinho_id: vinhoId }, quem);
+        await fechar(pesquisaId, {
+          estado: "erro",
+          erro: "não consegui ler a resposta colada como JSON — confirma que colaste o texto todo, incluindo as chavetas { }.",
+        });
+        return;
+      }
+    } else {
+      const texto0 = promptFicha(
+        antes.nome, antes.produtor, antes.ano,
+        String(antes.ficha.regiao ?? ""),
+        new Date().toISOString().slice(0, 10), campos,
+      );
 
-    const transitorio = (st: number) => st === 429 || st === 500 || st === 503;
-    const candidatos = await candidatosModelo(ctrl.signal);
-    if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
-    console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
-    let g: Response | null = null;
+      /* O `google_search` está SEMPRE ligado — é a razão de esta função
+         existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
+         recusa as duas juntas com 400 ("Request contains an invalid
+         argument"), e a pesquisa precisa mesmo de pensar para decidir o que
+         pesquisar. Era a primeira variante tentada nas funções irmãs e só
+         deitava fora uma ida ao Gemini de cada vez, sem nada no ecrã a
+         dizê-lo. */
+      const chamarGemini = (m: string) =>
+        fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: texto0 }] }],
+            generationConfig: { temperature: 0 },
+            tools: [{ google_search: {} }],
+          }),
+        });
 
-    for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
-      model = candidatos[ci];
-      g = await chamarGemini(model);
-      console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
-      if (g.ok) break;
-      if (g.status === 404) { _models = null; continue; }
-      if (!transitorio(g.status)) break;
+      const transitorio = (st: number) => st === 429 || st === 500 || st === 503;
+      const candidatos = await candidatosModelo(ctrl.signal);
+      if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
+      console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
+      let g: Response | null = null;
+
+      for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
+        model = candidatos[ci];
+        g = await chamarGemini(model);
+        console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
+        if (g.ok) break;
+        if (g.status === 404) { _models = null; continue; }
+        if (!transitorio(g.status)) break;
+      }
+
+      if (!g || !g.ok) {
+        const status = g?.status ?? 502;
+        const detail = g ? await g.text() : "";
+        let msg = "";
+        try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
+        await registar("erro", { passo: "gemini", status, modelo: model, vinho_id: vinhoId, erro: (msg || detail).slice(0, 800) }, quem);
+        await fechar(pesquisaId, {
+          estado: "erro",
+          erro: transitorio(status)
+            ? "o serviço está com muita procura agora — tenta outra vez"
+            : `gemini ${status} (${model})${msg ? ": " + msg.slice(0, 200) : ""}`,
+        });
+        return;
+      }
+
+      const gd = await g.json();
+      usage = usageMetadata(gd);
+      const bruto = (gd?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+      parsed = extrairJson(bruto);
+      fontes = fontesGrounding(gd);
     }
 
-    if (!g || !g.ok) {
-      const status = g?.status ?? 502;
-      const detail = g ? await g.text() : "";
-      let msg = "";
-      try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
-      await registar("erro", { passo: "gemini", status, modelo: model, vinho_id: vinhoId, erro: (msg || detail).slice(0, 800) }, quem);
-      await fechar(pesquisaId, {
-        estado: "erro",
-        erro: transitorio(status)
-          ? "o serviço está com muita procura agora — tenta outra vez"
-          : `gemini ${status} (${model})${msg ? ": " + msg.slice(0, 200) : ""}`,
-      });
-      return;
-    }
-
-    const gd = await g.json();
-    const usage = usageMetadata(gd);
-    const bruto = (gd?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
-    const parsed = extrairJson(bruto);
     const ficha = normalizar(parsed, campos);
     const aviso = texto(parsed?.aviso, 300);
-    const fontes = fontesGrounding(gd);
+    // A pesquisa manual não tem forma de citar fontes de verdade (não há
+    // `groundingMetadata` nenhum a colar aqui) — inventar uma era pior do
+    // que não ter nenhuma.
+    const chamadasGemini = respostaManual !== null ? 0 : 1;
+    const custoEstimado = respostaManual !== null ? 0 : CUSTO_PESQUISA_EUR;
 
     if (!Object.keys(ficha).length) {
       await registar("ok", { passo: "sem_campos", modelo: model, vinho_id: vinhoId, campos: 0,
-        ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: 1,
-        custo_estimado_eur: CUSTO_PESQUISA_EUR }, quem);
+        ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: chamadasGemini,
+        custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
         estado: "concluido",
         resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes },
@@ -497,7 +528,9 @@ async function processarPesquisa(
 
     // A escrita passa pela `juntar` como qualquer outra: é ela que decide,
     // campo a campo, se isto ganha ao que já lá estava. Uma pesquisa não
-    // tem direito de passagem só por ter sido pedida à mão.
+    // tem direito de passagem só por ter sido pedida à mão — e a manual
+    // entra com a MESMA origem `catalogo-pesquisa` (força 3) da automática:
+    // o que muda é como se chegou ao JSON, não a confiança que ele merece.
     await rpc("juntar", {
       p_nome: antes.nome, p_produtor: antes.produtor, p_ano: antes.ano,
       p_ficha: ficha, p_origem: "catalogo-pesquisa", p_fontes: fontes,
@@ -529,7 +562,8 @@ async function processarPesquisa(
       modelo: model, vinho_id: vinhoId,
       campos: entraram, propostos: propostas.length,
       ...(usage ? { usageMetadata: usage } : {}),
-      chamadas_gemini: 1, custo_estimado_eur: CUSTO_PESQUISA_EUR,
+      chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
+      manual: respostaManual !== null,
     }, quem);
     await fechar(pesquisaId, {
       estado: "concluido",
@@ -599,6 +633,12 @@ Deno.serve(async (req) => {
     const campos = Array.isArray(body?.campos)
       ? [...new Set(body.campos.map((c: unknown) => String(c)).filter((c: string) => c in CAMPOS))]
       : null;
+    // PESQUISA MANUAL: a resposta que o admin colou, já tirada da app do
+    // Gemini. Presente ou não é o que decide se esta função chama a API ou
+    // só lê o que veio — ver o comentário grande no `processarPesquisa`.
+    const respostaManual = typeof body?.resposta === "string" && body.resposta.trim()
+      ? body.resposta.trim().slice(0, 20_000)
+      : null;
 
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
@@ -620,7 +660,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {

@@ -272,6 +272,18 @@ const WC_CAMPOS=[
   ['notas_prova','Notas de prova'],['harmonizacao','Harmonização'],
   ['ai_resumo','Resumo'],['imagem_url','Imagem']
 ];
+/* Nome do campo no JSON que se pede ao Gemini — a mesma tabela do `CAMPOS`
+   em catalogo-info.ts. Só serve à PESQUISA MANUAL (`wcManualPrompt`), para
+   escrever no prompt os nomes que o `normalizar()` do lado do servidor
+   sabe ler; se um dia mudares os nomes lá, muda aqui no mesmo commit. */
+const WC_CAMPOS_JSON={
+  tipo:'tipo',estilo:'estilo',regiao:'regiao',sub_regiao:'subRegiao',pais:'pais',
+  mencao:'mencao',classificacao:'classificacao',castas:'castas',teor:'teor',
+  estagio_meses:'estagioMeses',estagio_texto:'estagioTexto',vivino_nota:'vivinoNota',
+  vivino_avaliacoes:'vivinoAvaliacoes',vivino_url:'vivinoUrl',imagem_url:'imagemUrl',
+  preco_medio:'precoMedio',beber_de:'beberDe',beber_ate:'beberAte',notas_prova:'notasProva',
+  harmonizacao:'harmonizacao',ai_resumo:'resumo'
+};
 /* Os que envelhecem (winecatalog.volatil). A lista está repetida do SQL de
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
@@ -930,7 +942,8 @@ function wcAbrirProcurar(){
   <div class="macoes fim">
     <button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button>
     <button class="btn-prim auto" id="pr-ir" onclick="wcProcurarArrancar()">🔎 Pesquisar</button>
-  </div>`;
+  </div>
+  <button class="btn-n larg" onclick="wcProcurarManual()">✍️ Pesquisa manual — grátis, colar resposta do Gemini</button>`;
   box.innerHTML=h;
   document.getElementById('procurar-titulo').textContent=_wcFicha.nome||'(sem nome)';
   wcProcContar();
@@ -1064,6 +1077,144 @@ function wcProcResultadoHTML(res){
   }
   h+='</div>';
   return h;
+}
+
+/* ── PESQUISA MANUAL — copiar prompt, colar resposta ──
+   Mesmo botão "Procurar informação", um segundo caminho: em vez de a Edge
+   Function pagar ao Gemini, o admin copia um prompt pronto, cola-o na app
+   do Gemini (a dele, sem custo para o catálogo) e cola aqui a resposta.
+
+   Entra pela MESMA porta que a automática: cria-se a mesma linha em
+   `winecatalog.pesquisas` (`pesquisa_criar` — é o que evita duas pessoas a
+   mandar pesquisar o mesmo vinho ao mesmo tempo) e chama-se a MESMA Edge
+   Function, só que com `resposta` no corpo em vez de a deixar chamar o
+   Gemini. Do lado do servidor, `catalogo-info.ts` salta a escolha de
+   modelo e a chamada à API, faz `extrairJson`/`normalizar` no que veio
+   colado, e segue exactamente o mesmo caminho a partir daí — a MESMA
+   `juntar` (força 3, como qualquer pesquisa Google a sério), e o MESMO
+   relatório de "o que entrou e porquê". O polling do lado da app
+   (`wcProcIniciarPolling`) não sabe a diferença — e não precisa de saber. */
+let _wcManualCampos=null;
+
+function wcManualPrompt(campos){
+  const v=_wcFicha, ficha=(v&&v.ficha)||{};
+  const hoje=new Date().toISOString().slice(0,10);
+  const linhas=[`Nome: ${v.nome||''}`];
+  if(v.ano)linhas.push(`Ano (colheita): ${v.ano}`);
+  if(v.produtor)linhas.push(`Produtor: ${v.produtor}`);
+  if(ficha.regiao)linhas.push(`Região indicada: ${ficha.regiao}`);
+  const so=campos&&campos.length&&campos.length<WC_CAMPOS.length
+    ?`\nSÓ INTERESSAM ESTES CAMPOS: ${campos.map(k=>WC_CAMPOS_JSON[k]||k).join(', ')}.\nConcentra-te neles e deixa os outros fora da resposta.\n`:'';
+  return `Usa a tua pesquisa na internet para preencheres a ficha deste vinho, como faria um enólogo a construir um catálogo de referência.
+
+VINHO A IDENTIFICAR:
+  ${linhas.join('\n  ')}
+Hoje é ${hoje}.
+${so}
+REGRAS, e são a sério:
+1. NÃO INVENTES. Um campo que não confirmes por pesquisa fica FORA do JSON (ou null) — este catálogo é lido por outras aplicações, e um palpite aqui propaga-se.
+2. A nota do Vivino, o nº de avaliações e o "vivinoUrl" têm de vir da MESMA página do Vivino, e tens de confirmar que é DESTE vinho exato (produtor, ano e região a bater certo) — há homónimos. Em dúvida, deixa os três vazios.
+3. "imagemUrl" é o link DIRETO de uma fotografia (acaba em .jpg/.jpeg/.png/.webp/.avif), nunca o link da página.
+4. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que ficou por confirmar em "aviso".
+5. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
+6. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
+7. "beberDe"/"beberAte" são anos.
+
+Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
+{
+  "encontrado": true,
+  "tipo": "um de: ${WC_TIPOS.filter(Boolean).join(' | ')}",
+  "estilo": "vazio, ou um de: ${WC_ESTILOS.filter(Boolean).join(' | ')}",
+  "regiao": "região vitivinícola",
+  "subRegiao": "",
+  "pais": "Portugal",
+  "mencao": "vazio, ou um de: ${WC_MENCOES.filter(Boolean).join(' | ')}",
+  "classificacao": "vazio, ou um de: ${WC_CLASSIF.filter(Boolean).join(' | ')}",
+  "castas": ["Touriga Nacional", "Touriga Franca"],
+  "teor": 14.5,
+  "estagioMeses": 18,
+  "estagioTexto": "18 meses em barrica de carvalho francês",
+  "vivinoNota": 4.1,
+  "vivinoAvaliacoes": 1234,
+  "vivinoUrl": "",
+  "imagemUrl": "",
+  "precoMedio": 18.5,
+  "beberDe": 2026,
+  "beberAte": 2034,
+  "notasProva": "duas ou três frases sobre aroma, boca e final",
+  "harmonizacao": "com que pratos",
+  "resumo": "duas ou três frases sobre o vinho e o produtor",
+  "aviso": "vazio, ou o que ficou por confirmar"
+}
+
+Se não conseguires identificar o vinho de todo, responde {"encontrado": false, "aviso": "porquê"}.`;
+}
+
+function wcProcurarManual(){
+  if(!_wcFicha||!isAdmin())return;
+  const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
+  if(!campos.length)return;
+  _wcManualCampos=campos.length<WC_CAMPOS.length?campos:null;
+  const txt=wcManualPrompt(_wcManualCampos);
+  const box=document.getElementById('procurar-corpo');
+  if(!box)return;
+  box.innerHTML=`
+    <div class="pr-manual">
+      <p class="wc-note">1. Copia o prompt. 2. Cola-o na app ou no site do Gemini. 3. Copia a
+        resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda — entra no catálogo com a mesma
+        força 3 de uma pesquisa automática, sem gastar nada.</p>
+      <label>Prompt a copiar</label>
+      <textarea id="pr-manual-prompt" rows="6" readonly onclick="this.select()">${esc(txt)}</textarea>
+      <button class="btn-n larg" onclick="wcManualCopiar()">📋 Copiar prompt</button>
+      <label>Resposta do Gemini (cola aqui)</label>
+      <textarea id="pr-manual-resposta" rows="10" placeholder="Cola aqui o JSON que o Gemini devolveu…"></textarea>
+      <p class="wc-note erro" id="pr-manual-erro"></p>
+    </div>
+    <div class="macoes fim">
+      <button class="btn-n" onclick="wcAbrirProcurar()">‹ Voltar</button>
+      <button class="btn-prim auto" id="pr-manual-ir" onclick="wcProcurarManualEnviar()">Guardar no catálogo</button>
+    </div>`;
+}
+async function wcManualCopiar(){
+  const ta=document.getElementById('pr-manual-prompt');
+  if(!ta)return;
+  try{
+    await navigator.clipboard.writeText(ta.value);
+    toast('Prompt copiado ✓');
+  }catch(e){
+    ta.focus();ta.select();
+    toast('Não deu para copiar sozinho — o texto já está selecionado, usa Ctrl/Cmd+C',1);
+  }
+}
+async function wcProcurarManualEnviar(){
+  if(!_wcFicha||!isAdmin())return;
+  const texto=(document.getElementById('pr-manual-resposta')||{}).value||'';
+  const erroEl=document.getElementById('pr-manual-erro');
+  if(!texto.trim()){if(erroEl)erroEl.textContent='Cola primeiro a resposta do Gemini.';return;}
+  if(erroEl)erroEl.textContent='';
+  const b=document.getElementById('pr-manual-ir');
+  if(b){b.disabled=true;b.textContent='A guardar…';}
+  try{
+    const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
+    fecharModal('modal-procurar');
+    wcProcEspera();
+    if(!p.jaAndava){
+      const r=await fetch(FN_CATALOGO_INFO,{
+        method:'POST',
+        headers:{'Content-Type':'application/json',apikey:SB_KEY,
+                 Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
+        body:JSON.stringify({pesquisaId:p.id,campos:_wcManualCampos,resposta:texto})
+      });
+      if(!r.ok&&r.status!==202){
+        let msg='';try{msg=(await r.json()).error||'';}catch(_){}
+        throw new Error(msg||('a função respondeu '+r.status));
+      }
+    }
+    wcProcIniciarPolling(p.id);
+  }catch(e){
+    wcProcErro(e.message);
+    if(b){b.disabled=false;b.textContent='Guardar no catálogo';}
+  }
 }
 
 
