@@ -873,6 +873,7 @@ $$;
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.preco_num(f jsonb)
   RETURNS numeric LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT CASE WHEN jsonb_typeof(f -> 'preco_medio') = 'number'
               THEN (f ->> 'preco_medio')::numeric END;
@@ -883,6 +884,7 @@ $$;
 -- alguém mexe numa só.
 CREATE OR REPLACE FUNCTION winecatalog.faixa_preco(p numeric)
   RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
 AS $$
   SELECT CASE
            WHEN p IS NULL THEN NULL
