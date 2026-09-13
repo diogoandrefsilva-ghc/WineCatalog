@@ -171,10 +171,67 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .og-fraca,.og-bar i.og-fraca{color:var(--mu)}
 .og-bar i.og-fraca{background:var(--mu)}
 
+/* ══════════════════════════════════════════════════════════════════
+   CATÁLOGO — a camada de filtros
+
+   Cartões e não um formulário: a pergunta que se faz a um catálogo é
+   "mostra-me os brancos do Douro até 30 €", e isso são quatro toques, não
+   quatro menus. Cada cartão traz a CONTAGEM que vem do mesmo pedido da
+   lista (`facetas` no SQL) — um filtro que devolve zero não se carrega.
+
+   E encolhe: a lista é o que interessa, os filtros são o caminho para
+   lá. Minimizado fica uma barra com o que está ligado e quantos são.
+   ══════════════════════════════════════════════════════════════════ */
+.cf{padding:14px}
+.cf-cab{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.cf-min-btn{background:var(--bg);border:1px solid var(--bo);border-radius:99px;padding:5px 11px;
+  font-size:11.5px;font-weight:600;color:var(--wine);cursor:pointer}
+.cf-procura{position:relative;margin-bottom:14px}
+.cf-procura span{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:13px;color:var(--mu)}
+.cf-procura input{width:100%;padding:11px 12px 11px 34px;border:1px solid var(--bo);border-radius:10px;
+  font-size:14px;background:#fdfbfa;color:var(--tx)}
+.cf-procura input:focus{outline:none;border-color:var(--wine)}
+.cf-grupo{margin-bottom:14px}
+.cf-tit{font-size:10px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.7px;margin-bottom:7px}
+.cf-ops{display:flex;flex-wrap:wrap;gap:6px}
+.cf-op{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1 1 108px;min-width:108px;
+  padding:8px 10px;border-radius:10px;border:1px solid var(--bo);background:#fdfbfa;color:var(--tx);
+  font-size:12px;text-align:left;cursor:pointer}
+.cf-op.on{background:var(--wine);border-color:var(--wine);color:#fff}
+.cf-op-tx{display:flex;align-items:center;gap:6px;font-weight:600;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-conta{font-size:10.5px;font-weight:700;color:#a2908f;flex-shrink:0}
+.cf-op.on .cf-conta{color:rgba(255,255,255,.75)}
+.cf-ponto{width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block}
+.cf-op.on .cf-ponto{box-shadow:0 0 0 1.5px rgba(255,255,255,.5)}
+.cf-fim{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+  padding-top:12px;border-top:1px solid var(--bo)}
+.cf-fim-b{display:flex;align-items:center;gap:10px}
+.cf-limpar{background:none;border:none;font-size:12px;font-weight:600;color:var(--wine);
+  text-decoration:underline;cursor:pointer;padding:4px}
+.cf-novo{white-space:nowrap}
+
+.cf-min{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:10px 12px;
+  margin-bottom:12px;cursor:pointer;text-align:left}
+.cf-min-tx{font-size:13px;color:var(--mu);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-min-lado{display:flex;align-items:center;gap:7px;flex-shrink:0}
+.cf-n{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;color:#fff;background:#c9bdba}
+.cf-n.on{background:var(--wine)}
+.cf-seta{font-size:12px;color:var(--mu)}
+
+.cat-barra{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 10px}
+.cat-barra-n{font-size:12px;color:var(--mu)}
+.cat-barra-n strong{color:var(--tx)}
+.cat-modo{display:flex;gap:3px;background:var(--card);border:1px solid var(--bo);border-radius:9px;padding:3px}
+.cm{border:none;background:none;border-radius:7px;padding:6px 10px;font-size:11.5px;font-weight:600;
+  color:var(--mu);cursor:pointer}
+.cm.on{background:var(--wine);color:#fff}
+
 /* ── CATÁLOGO ── */
 .cat-row{
-  display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--bo);
-  border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer;
+  display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--bo);
+  border-radius:12px;padding:10px 12px;margin-bottom:8px;cursor:pointer;
 }
 .cat-row:active{background:#fdfbfa}
 .cat-main{min-width:0;flex:1}
@@ -183,7 +240,28 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .cat-ano{font-family:'Inter',sans-serif;font-size:11.5px;font-weight:600;color:var(--mu)}
 .cat-sub{font-size:11.5px;color:var(--mu);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cat-sub em{font-style:normal}
-.cat-lado{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.cat-lado{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
+/* A garrafa da linha: a mesma moldura de papel da capa da ficha, em
+   pequeno. `overflow:hidden` porque a fotografia entra por cima do
+   desenho — sem ele ficava um quadrado branco com a garrafa a espreitar. */
+.cat-g{width:40px;height:60px;flex-shrink:0;position:relative;display:flex;align-items:center;
+  justify-content:center;overflow:hidden;border-radius:8px;
+  background:linear-gradient(160deg,#fff,var(--bg));border:1px solid var(--bo)}
+.cat-g svg{width:100%;height:auto;max-height:54px;padding:3px 2px}
+.cat-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.cat-g.gr{width:60px;height:92px;border-radius:10px}
+.cat-g.gr svg{max-height:84px}
+.cat-castas{font-size:11px;color:#a2908f;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-preco{font-size:12px;font-weight:600;color:var(--tx);white-space:nowrap}
+.cat-sub .cf-ponto{margin-right:6px;vertical-align:middle;width:7px;height:7px}
+
+.cat-grelha{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cat-cartao{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:12px 10px;
+  cursor:pointer;display:flex;flex-direction:column;align-items:center;text-align:center}
+.cat-cartao:active{background:#fdfbfa}
+.cat-cartao .cat-nome{font-size:13.5px;white-space:normal;margin-top:10px}
+.cat-cartao .cat-sub{white-space:normal}
+.cat-cartao-n{display:flex;align-items:center;gap:6px;margin-top:8px}
 .cat-nota{background:#fdf6e8;border:1px solid #f0e0b8;color:#7a5b0a;font-size:11.5px;font-weight:700;padding:3px 7px;border-radius:20px}
 .cat-campos{font-size:11px;color:var(--mu);font-weight:600}
 .forca{
@@ -227,6 +305,30 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .og-tag.og-fraca{background:#f3f0ef;border:1px solid var(--bo)}
 .fi-em{font-size:10.5px;color:var(--mu)}
 .fi-em b{color:var(--wr);font-weight:600}
+
+/* Um campo volátil passado da validade continua a dizê-lo ao lado do
+   valor — é a única marca de proveniência que ficou na ficha, porque é a
+   única que muda o que se deve fazer com o número. */
+.fi-velho{font-size:10px;font-weight:600;color:var(--wr);background:#fdf6e8;border:1px solid #eddfba;
+  border-radius:99px;padding:1px 7px;margin-left:6px;white-space:nowrap}
+
+/* ── PROVENIÊNCIA (fim da ficha) ── */
+.pv-grid{display:flex;gap:6px;margin:10px 0}
+.pv-n{flex:1;border-radius:10px;padding:8px 10px;min-width:0}
+.pv-n strong{display:block;font-family:'Playfair Display',serif;font-size:19px;line-height:1}
+.pv-n span{display:block;font-size:10px;margin-top:2px;line-height:1.3}
+.pv-n.forte{background:#fdf6e8;border:1px solid #f0e0b8;color:#7a5b0a}
+.pv-n.media{background:#f7eef1;border:1px solid #ecdde2;color:var(--wine)}
+.pv-n.fraca{background:#f3f0ef;border:1px solid var(--bo);color:var(--mu)}
+.pv-btn{width:100%;display:flex;align-items:center;justify-content:space-between;background:var(--bg);
+  border:1px solid var(--bo);border-radius:10px;padding:9px 12px;font-size:12.5px;font-weight:600;
+  color:var(--wine);cursor:pointer}
+.pv-det{margin-top:8px}
+.pv-linha{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bo)}
+.pv-linha:last-child{border-bottom:none}
+.pv-campo{flex:1;min-width:0;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pv-em{font-size:10.5px;color:var(--mu);width:62px;text-align:right;flex-shrink:0}
+.pv-em b{color:var(--wr);font-weight:600}
 
 .fi-fontes{display:flex;flex-direction:column;gap:5px}
 .fi-fontes a{font-size:12px;color:var(--wine);word-break:break-all}

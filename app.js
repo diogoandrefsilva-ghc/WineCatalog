@@ -472,6 +472,143 @@ let _wcProcura='';
 let _wcSaltar=0;
 let _wcTotal=0;
 let _wcTimer=null;
+let _wcLinhas=[];
+
+/* ── A CAMADA DE FILTROS ──
+
+   Os filtros vão INTEIROS ao SQL a cada pedido, e não se aplicam aqui no
+   browser: a lista é paginada (50 de cada vez), e filtrar do lado de cá
+   filtrava só a página que por acaso já tinha vindo — o utilizador via
+   "3 tintos do Douro" quando havia trinta.
+
+   As CONTAGENS que cada cartão mostra vêm do mesmo pedido (`facetas`), e
+   são contadas com os OUTROS grupos aplicados mas não o próprio: é o que
+   faz "Branco 7" continuar a aparecer quando já se escolheu Tinto. */
+const WC_FAIXAS=[['<15','menos de 15 €'],['15-30','15 – 30 €'],['30-60','30 – 60 €'],['60+','60 € ou mais']];
+const WC_GRUPOS=[['tipos','Tipo'],['regioes','Região'],['castas','Castas'],['precos','Preço médio']];
+let _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
+let _wcFacetas=null;
+let _wcPainel=true;
+let _wcModo='lista';
+try{
+  _wcPainel=localStorage.getItem('wc_painel')!=='0';
+  _wcModo=localStorage.getItem('wc_modo')==='grelha'?'grelha':'lista';
+}catch(e){}
+
+function wcNFiltros(){
+  return _wcFiltros.tipos.length+_wcFiltros.regioes.length+
+         _wcFiltros.castas.length+_wcFiltros.precos.length+(_wcProcura?1:0);
+}
+function wcFiltrosAtivos(){
+  const faixa=id=>(WC_FAIXAS.find(f=>f[0]===id)||[id,id])[1];
+  const l=[].concat(_wcFiltros.tipos,_wcFiltros.regioes,_wcFiltros.castas,
+                    _wcFiltros.precos.map(faixa));
+  if(_wcProcura)l.unshift('“'+_wcProcura+'”');
+  return l;
+}
+function wcArg(g){return _wcFiltros[g].length?_wcFiltros[g]:null;}
+
+/* O invólucro só se reescreve quando o painel abre ou fecha — a caixa de
+   procura não pode ser reposta a cada tecla, ou perde-se o cursor. O que
+   se repinta a cada pedido são as contagens (`wcPintarGrupos`). */
+function wcShellFiltros(){
+  const el=document.getElementById('cat-filtros');
+  if(!el)return;
+  const n=wcNFiltros();
+  const novo=isAdmin()?'<button class="btn-n cf-novo" onclick="wcAbrirNovo()">+ Vinho novo</button>':'';
+  if(!_wcPainel){
+    el.innerHTML=`<button class="cf-min" onclick="wcAlternarPainel()">
+      <span class="cf-min-tx">🔍 ${n?esc(wcFiltrosAtivos().join(' · ')):'Procurar e filtrar'}</span>
+      <span class="cf-min-lado"><span class="cf-n${n?' on':''}">${n}</span><span class="cf-seta">▼</span></span>
+    </button>`;
+    return;
+  }
+  el.innerHTML=`<div class="wc-card cf">
+    <div class="cf-cab">
+      <div class="wc-card-label" style="margin:0">Filtrar</div>
+      <button class="cf-min-btn" onclick="wcAlternarPainel()">Minimizar ▲</button>
+    </div>
+    <div class="cf-procura">
+      <span>🔍</span>
+      <input type="text" id="cat-procura" value="${esc(_wcProcura)}"
+             placeholder="nome, produtor, região ou casta…"
+             oninput="wcProcuraMudou()" autocomplete="off">
+    </div>
+    <div id="cat-grupos"></div>
+    <div class="cf-fim">
+      <span class="wc-note" id="cat-conta" style="margin:0"></span>
+      <span class="cf-fim-b">
+        <button class="cf-limpar" onclick="wcLimparFiltros()">Limpar filtros</button>
+        ${novo}
+      </span>
+    </div>
+  </div>`;
+  wcPintarGrupos();
+}
+
+function wcPintarGrupos(){
+  const el=document.getElementById('cat-grupos');
+  if(!el)return;
+  const f=_wcFacetas||{};
+  el.innerHTML=WC_GRUPOS.map(([g,titulo])=>{
+    let ops=(f[g]||[]).slice();
+    /* Uma opção escolhida nunca desaparece da lista, mesmo que as facetas
+       já não a devolvam — senão não havia como a desmarcar. */
+    _wcFiltros[g].forEach(v=>{if(!ops.some(o=>o.v===v))ops.push({v,n:0});});
+    if(g==='precos')ops.sort((a,b)=>WC_FAIXAS.findIndex(x=>x[0]===a.v)-WC_FAIXAS.findIndex(x=>x[0]===b.v));
+    if(!ops.length)return '';
+    return `<div class="cf-grupo">
+      <div class="cf-tit">${esc(titulo)}</div>
+      <div class="cf-ops">${ops.map(o=>{
+        const on=_wcFiltros[g].includes(o.v);
+        const lbl=g==='precos'?(WC_FAIXAS.find(x=>x[0]===o.v)||[o.v,o.v])[1]:o.v;
+        const cor=g==='tipos'?(WC_VIDRO[o.v]||'#8a7a7d'):null;
+        return `<button class="cf-op${on?' on':''}" onclick="wcFiltroToggle('${escJs(g)}','${escJs(o.v)}')">
+          <span class="cf-op-tx">${cor?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(lbl)}</span>
+          <span class="cf-conta">${nFmt(o.n)}</span>
+        </button>`;
+      }).join('')}</div>
+    </div>`;
+  }).join('');
+}
+
+function wcFiltroToggle(g,v){
+  const l=_wcFiltros[g];
+  const i=l.indexOf(v);
+  if(i<0)l.push(v);else l.splice(i,1);
+  wcPintarGrupos();
+  wcCarregarCatalogo(true);
+}
+function wcLimparFiltros(){
+  _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
+  _wcProcura='';
+  const c=document.getElementById('cat-procura');
+  if(c)c.value='';
+  wcPintarGrupos();
+  wcCarregarCatalogo(true);
+}
+function wcAlternarPainel(){
+  _wcPainel=!_wcPainel;
+  try{localStorage.setItem('wc_painel',_wcPainel?'1':'0');}catch(e){}
+  wcShellFiltros();
+  wcPintarBarra();
+}
+function wcVerModo(m){
+  _wcModo=m;
+  try{localStorage.setItem('wc_modo',m);}catch(e){}
+  wcPintarLista();
+  wcPintarBarra();
+}
+
+function wcPintarBarra(){
+  const el=document.getElementById('cat-barra');
+  if(!el)return;
+  const bt=(m,txt)=>`<button class="cm${_wcModo===m?' on':''}" onclick="wcVerModo('${m}')">${txt}</button>`;
+  el.innerHTML=`<div class="cat-barra">
+    <span class="cat-barra-n"><strong>${nFmt(_wcTotal)}</strong> ${_wcTotal===1?'vinho':'vinhos'}</span>
+    <span class="cat-modo">${bt('lista','☰ Lista')}${bt('grelha','▦ Grelha')}</span>
+  </div>`;
+}
 
 function wcProcuraMudou(){
   clearTimeout(_wcTimer);
@@ -486,20 +623,25 @@ function wcProcuraMudou(){
 async function wcCarregarCatalogo(reset){
   const lista=document.getElementById('cat-lista');
   const mais=document.getElementById('cat-mais');
-  const conta=document.getElementById('cat-conta');
   if(!lista)return;
-  if(reset){_wcSaltar=0;lista.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';}
+  const painel=document.getElementById('cat-filtros');
+  if(painel&&!painel.innerHTML)wcShellFiltros();
+  if(reset){_wcSaltar=0;_wcLinhas=[];lista.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';}
   if(mais)mais.innerHTML='';
   try{
-    const d=await catRpc('listar',{p_procura:_wcProcura||null,p_limite:50,p_saltar:_wcSaltar});
+    const d=await catRpc('listar',{
+      p_procura:_wcProcura||null,p_limite:50,p_saltar:_wcSaltar,
+      p_tipos:wcArg('tipos'),p_regioes:wcArg('regioes'),
+      p_castas:wcArg('castas'),p_precos:wcArg('precos')
+    });
     const linhas=(d&&d.linhas)||[];
     _wcTotal=Number((d&&d.total)||0);
-    if(reset)lista.innerHTML='';
-    if(!linhas.length&&!_wcSaltar){
-      lista.innerHTML=`<div class="wc-card"><p class="wc-note">${_wcProcura?'Nada no catálogo com isso.':'O catálogo está vazio.'}</p></div>`;
-    }else{
-      lista.insertAdjacentHTML('beforeend',linhas.map(wcLinhaHTML).join(''));
-    }
+    _wcFacetas=(d&&d.facetas)||null;
+    _wcLinhas=reset?linhas:_wcLinhas.concat(linhas);
+    wcPintarGrupos();
+    wcPintarBarra();
+    wcPintarLista();
+    const conta=document.getElementById('cat-conta');
     if(conta)conta.textContent=_wcTotal
       ? `${nFmt(_wcTotal)} ${_wcTotal===1?'vinho':'vinhos'}${_wcProcura?' encontrados':' no catálogo'}`
       : '';
@@ -513,18 +655,65 @@ async function wcCarregarCatalogo(reset){
 }
 function wcMais(){_wcSaltar+=50;wcCarregarCatalogo(false);}
 
+function wcPintarLista(){
+  const lista=document.getElementById('cat-lista');
+  if(!lista)return;
+  if(!_wcLinhas.length){
+    lista.innerHTML=`<div class="wc-card"><p class="wc-note">${
+      wcNFiltros()?'Nenhum vinho com estes filtros.':'O catálogo está vazio.'}</p></div>`;
+    return;
+  }
+  lista.innerHTML=_wcModo==='grelha'
+    ? `<div class="cat-grelha">${_wcLinhas.map(wcCartaoHTML).join('')}</div>`
+    : _wcLinhas.map(wcLinhaHTML).join('');
+}
+
+/* A garrafa da linha: a FOTOGRAFIA quando o catálogo já a tem, e a mesma
+   garrafa desenhada da ficha quando não tem — nunca um quadrado vazio. A
+   cor do desenho sai do `tipo`, que é o que o `resumo_linha` já devolve. */
+function wcMiniGarrafa(v,cls){
+  const img=String(v.imagem||'').trim();
+  return `<div class="${cls}">${wcGarrafaSVG(v.tipo,v.ano)}${
+    img?`<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">`:''}</div>`;
+}
+function wcPrecoTxt(p){
+  const n=Number(p);
+  return (p==null||isNaN(n))?'':eurFmt(n);
+}
+
+/* O que fica na linha: a garrafa, quem é o vinho, e os dois números por
+   que se escolhe um — a nota e o preço. O número de campos e a bola da
+   força saíram daqui de propósito: são sobre a QUALIDADE DO REGISTO, não
+   sobre o vinho, e essa conversa é da ficha (secção "Proveniência"). */
 function wcLinhaHTML(v){
   const sub=[v.produtor,v.regiao].filter(Boolean).join(' · ');
   const castas=Array.isArray(v.castas)?v.castas.join(', '):'';
+  const cor=WC_VIDRO[v.tipo]||'#8a7a7d';
+  const preco=wcPrecoTxt(v.preco);
   return `<div class="cat-row" onclick="wcVerFicha(${v.id})">
+    ${wcMiniGarrafa(v,'cat-g')}
     <div class="cat-main">
       <div class="cat-nome">${esc(v.nome||'(sem nome)')}${v.ano?` <span class="cat-ano">${esc(String(v.ano))}</span>`:''}</div>
-      <div class="cat-sub">${esc(sub||'—')}${castas?` · <em>${esc(castas)}</em>`:''}</div>
+      <div class="cat-sub">${v.tipo?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(sub||'—')}</div>
+      ${castas?`<div class="cat-castas">${esc(castas)}</div>`:''}
     </div>
     <div class="cat-lado">
-      ${v.nota!=null?`<span class="cat-nota">${esc(String(v.nota))}</span>`:''}
-      <span class="cat-campos" title="campos preenchidos">${nFmt(v.campos)}</span>
-      <span class="forca f${esc(String(v.forca))}" title="força máxima de um campo desta linha">${esc(String(v.forca))}</span>
+      ${v.nota!=null?`<span class="cat-nota">★ ${esc(String(v.nota))}</span>`:''}
+      ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}
+    </div>
+  </div>`;
+}
+
+function wcCartaoHTML(v){
+  const sub=[v.produtor,v.regiao].filter(Boolean).join(' · ');
+  const preco=wcPrecoTxt(v.preco);
+  return `<div class="cat-cartao" onclick="wcVerFicha(${v.id})">
+    ${wcMiniGarrafa(v,'cat-g gr')}
+    <div class="cat-nome">${esc(v.nome||'(sem nome)')}</div>
+    <div class="cat-sub">${esc(sub||'—')}${v.ano?' · '+esc(String(v.ano)):''}</div>
+    <div class="cat-cartao-n">
+      ${v.nota!=null?`<span class="cat-nota">★ ${esc(String(v.nota))}</span>`:''}
+      ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}
     </div>
   </div>`;
 }
@@ -620,14 +809,70 @@ function wcLinhaFicha(k,lbl,ficha,origens){
   return `<div class="fi-campo">
     <div class="fi-k">${esc(lbl)}</div>
     <div class="fi-c">
-      <div class="fi-v">${wcValorHTML(k,ficha[k])}</div>
-      <div class="fi-o">
-        <span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span>
-        <span class="forca f${esc(String(f))}">${esc(String(f))}</span>
-        <span class="fi-em">${esc(dataFmt(o.em))}${velho?' <b title="campo volátil com mais de 30 dias — as apps voltam a pedi-lo à IA">envelhecido</b>':''}</span>
-      </div>
+      <div class="fi-v">${wcValorHTML(k,ficha[k])}${
+        velho?' <span class="fi-velho" title="campo volátil com mais de 30 dias — as apps voltam a pedi-lo à IA">envelhecido</span>':''}</div>
     </div>
   </div>`;
+}
+
+/* ── PROVENIÊNCIA ──
+
+   De onde veio cada campo continua a ser a razão de a app existir, mas
+   deixou de estar POR BAIXO DE CADA VALOR: era uma etiqueta, uma bola e
+   uma data a repetir-se dezanove vezes, e o vinho desaparecia debaixo do
+   registo. Agora é uma secção no fim — três números que se leem de
+   relance, e o campo a campo por baixo de um botão para quem o quer. */
+let _wcProvAberta=false;
+try{_wcProvAberta=localStorage.getItem('wc_prov')==='1';}catch(e){}
+
+function wcAlternarProv(){
+  _wcProvAberta=!_wcProvAberta;
+  try{localStorage.setItem('wc_prov',_wcProvAberta?'1':'0');}catch(e){}
+  const d=document.getElementById('pv-det');
+  const b=document.getElementById('pv-btn');
+  if(d)d.style.display=_wcProvAberta?'block':'none';
+  if(b)b.innerHTML=`<span>${_wcProvAberta?'Esconder campo a campo':'Ver campo a campo'}</span><span>${_wcProvAberta?'▲':'▼'}</span>`;
+}
+
+function wcProvenienciaHTML(v){
+  const ficha=v.ficha||{};
+  const origens=v.origens||{};
+  const nome={};
+  WC_CAMPOS.forEach(([k,l])=>{nome[k]=l;});
+  const chaves=WC_CAMPOS.map(([k])=>k).filter(k=>k in origens)
+    .concat(Object.keys(origens).filter(k=>!WC_CAMPOS.some(([c])=>c===k)));
+  if(!chaves.length)return '';
+
+  let forte=0,media=0,fraca=0;
+  chaves.forEach(k=>{
+    const f=Number((origens[k]||{}).f||0);
+    if(f>=3)forte++;else if(f===2)media++;else fraca++;
+  });
+
+  const linhas=chaves.map(k=>{
+    const o=origens[k]||{};
+    const f=Number(o.f||0);
+    const velho=WC_VOLATEIS.includes(k)&&o.em&&
+      (Date.now()-new Date(o.em).getTime())>30*86400000;
+    return `<div class="pv-linha">
+      <span class="pv-campo">${esc(nome[k]||k)}</span>
+      <span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span>
+      <span class="forca f${esc(String(f))}">${esc(String(f))}</span>
+      <span class="pv-em">${esc(dataFmt(o.em))}${velho?' <b>envelhecido</b>':''}</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="msec">Proveniência</div>
+  <p class="wc-note">Cada campo diz <strong>de onde veio</strong> e <strong>com que força</strong>. É a força que decide quem ganha quando duas leituras discordam — e é ela que impede um número copiado à pressa de tapar uma pesquisa que se pagou.</p>
+  <div class="pv-grid">
+    <div class="pv-n forte"><strong>${nFmt(forte)}</strong><span>pesquisa ou rótulo</span></div>
+    <div class="pv-n media"><strong>${nFmt(media)}</strong><span>copiados na garrafeira</span></div>
+    <div class="pv-n fraca"><strong>${nFmt(fraca)}</strong><span>palpite</span></div>
+  </div>
+  <button class="pv-btn" id="pv-btn" onclick="wcAlternarProv()">
+    <span>${_wcProvAberta?'Esconder campo a campo':'Ver campo a campo'}</span><span>${_wcProvAberta?'▲':'▼'}</span>
+  </button>
+  <div class="pv-det" id="pv-det" style="display:${_wcProvAberta?'block':'none'}">${linhas}</div>`;
 }
 
 function wcFichaHTML(v){
@@ -683,8 +928,7 @@ function wcFichaHTML(v){
     h+='<p class="wc-note">Esta linha ainda não tem campo nenhum — só a identidade.'+
        (isAdmin()?' Manda pesquisar ou preenche-a à mão.':'')+'</p>';
   }else{
-    h+=`<p class="wc-note">Cada linha diz <strong>de onde veio</strong> e <strong>com que força</strong>. É a força que decide quem ganha quando duas leituras discordam — e é ela que impede um número copiado à pressa de tapar uma pesquisa que se pagou.</p>
-    <div class="fi-campos">`;
+    h+=`<div class="fi-campos">`;
     for(const [k,lbl] of todos)h+=wcLinhaFicha(k,lbl,ficha,origens);
     h+='</div>';
   }
@@ -700,6 +944,8 @@ function wcFichaHTML(v){
     <div class="fi-fontes">${fontes.map(f=>
       `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join('')}</div>`;
   }
+
+  h+=wcProvenienciaHTML(v);
 
   h+=`<div class="msec">Identidade</div>
   <p class="wc-note">
