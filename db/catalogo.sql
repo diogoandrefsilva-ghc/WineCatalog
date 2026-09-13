@@ -432,6 +432,66 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------
+-- A REGIÃO, normalizada — "DOURO" e "Douro" não podem responder por
+-- facetas diferentes no Catálogo, e "Península de Setúbal" é a mesma
+-- região que "Setúbal", só escrita como uma carta a escreveria.
+--
+-- Duas regras, e só duas:
+--   1. "Setúbal" ganha a qualquer grafia da Península — é a mesma região,
+--      o nome mais curto é o que fica;
+--   2. um valor todo em CAPS LOCK ou todo em minúsculas passa a Title
+--      Case. Não se toca em mais nada: "Beira Interior" e
+--      "Trás-os-Montes" já estão certos, e um `initcap()` ingénuo
+--      estragava o hífen e as preposições.
+--
+-- Chamada em CADA sítio por onde uma região pode entrar no catálogo —
+-- `juntar` (garrafeira/pesquisa) e `editar`/`criar` (admin, em
+-- curadoria.sql) — para a mesma inconsistência não voltar a entrar por
+-- outra porta.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.normalizar_regiao(p_regiao text)
+  RETURNS text LANGUAGE plpgsql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v      text := btrim(regexp_replace(COALESCE(p_regiao, ''), '\s+', ' ', 'g'));
+  v_low  text;
+  small  text[] := ARRAY['de','da','do','das','dos','e'];
+  words  text[];
+  out_arr text[] := '{}';
+  i      integer;
+BEGIN
+  IF v = '' THEN RETURN NULL; END IF;
+  v_low := lower(v);
+
+  IF v_low IN ('setúbal', 'setubal', 'península de setúbal',
+               'peninsula de setubal', 'peninsula de setúbal',
+               'península de setubal') THEN
+    RETURN 'Setúbal';
+  END IF;
+
+  -- Só se mexe quando o valor é TUDO maiúsculas ou TUDO minúsculas — um
+  -- valor já com mistura das duas ("Beira Interior", "Trás-os-Montes")
+  -- está certo, e um `initcap()` ingénuo é que lhe estragava o hífen e as
+  -- preposições.
+  IF v <> upper(v) AND v <> lower(v) THEN
+    RETURN v;
+  END IF;
+
+  words := regexp_split_to_array(v_low, ' ');
+  FOR i IN 1..array_length(words, 1) LOOP
+    IF i > 1 AND words[i] = ANY(small) THEN
+      out_arr := out_arr || words[i];
+    ELSE
+      out_arr := out_arr || (upper(substring(words[i] FROM 1 FOR 1)) || substring(words[i] FROM 2));
+    END IF;
+  END LOOP;
+
+  RETURN array_to_string(out_arr, ' ');
+END;
+$$;
+
+-- ---------------------------------------------------------------------
 -- A FORÇA de cada origem: quem é que ganha quando duas leituras discordam
 --
 -- Não é uma opinião sobre quem é mais inteligente — é sobre o que cada uma
@@ -588,6 +648,12 @@ BEGIN
     CONTINUE WHEN v IS NULL
                   OR jsonb_typeof(v) = 'null'
                   OR v = '""'::jsonb OR v = '[]'::jsonb OR v = '{}'::jsonb;
+    -- "DOURO" e "Península de Setúbal" não podem responder por facetas
+    -- diferentes de "Douro"/"Setúbal" — ver `winecatalog.normalizar_regiao`.
+    IF k = 'regiao' AND jsonb_typeof(v) = 'string' THEN
+      v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
+      CONTINUE WHEN v IS NULL;
+    END IF;
     v_fcampo := winecatalog.forca(p_origem, k);
     v_ant    := COALESCE((v_origens -> k ->> 'f')::integer, 0);
     IF v_fcampo >= v_ant THEN

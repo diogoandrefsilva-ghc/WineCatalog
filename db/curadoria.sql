@@ -224,6 +224,11 @@ BEGIN
       -- Um nome de campo é uma chave de jsonb, não texto livre: sem isto,
       -- um engano na app enchia a ficha de lixo que ninguém sabia apagar.
       CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$';
+      -- "DOURO"/"Península de Setúbal" não entram nem pela mão do admin —
+      -- ver `winecatalog.normalizar_regiao`.
+      IF k = 'regiao' AND jsonb_typeof(v) = 'string' THEN
+        v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
+      END IF;
       -- Nada muda -> nada se escreve. Evita carimbar `catalogo-admin` (e a
       -- força 4) em cima de campos que o admin só olhou e não tocou:
       -- guardar o formulário inteiro não pode valer o mesmo que corrigir.
@@ -368,6 +373,11 @@ BEGIN
   IF p_campos IS NOT NULL AND jsonb_typeof(p_campos) = 'object' THEN
     FOR k, v IN SELECT key, value FROM jsonb_each(p_campos) LOOP
       CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$';
+      -- "DOURO"/"Península de Setúbal" não nascem assim nem num vinho novo
+      -- — ver `winecatalog.normalizar_regiao`.
+      IF k = 'regiao' AND jsonb_typeof(v) = 'string' THEN
+        v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
+      END IF;
       CONTINUE WHEN winecatalog.vazio(v);
       v_f := winecatalog.forca('catalogo-admin', k);
       v_ficha   := v_ficha   || jsonb_build_object(k, v);
