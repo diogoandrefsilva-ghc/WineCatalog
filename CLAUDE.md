@@ -160,6 +160,27 @@ Tinto. As faixas de preço vivem na `winecatalog.faixa_preco`, e não
 também no `app.js`, pela razão do costume: duas listas destas divergem no
 dia em que alguém mexe numa só.
 
+**As castas — e só elas — têm um visto de "todas em simultâneo"**
+(`p_castas_todas`). Escolher Touriga Nacional e Syrah tem duas leituras
+legítimas: qualquer uma (o costume) ou os lotes que levam as duas. Um
+vinho tem UM tipo e UMA região, e "tinto E branco" não existe — daí o
+visto não aparecer nos outros grupos. Em modo "todas", a contagem de cada
+casta deixa de ignorar o grupo inteiro e passa a ignorar só a PRÓPRIA
+opção (conta com as outras castas escolhidas por cima): de outro modo o
+cartão dizia "Syrah 28" com a lista a mostrar três vinhos. A escolhida
+continua visível — é o que permite desmarcá-la — e uma que dê zero
+desaparece, que é a resposta certa para um caminho sem saída.
+
+**Os cartões de filtro são uma GRELHA de duas colunas, não um
+`flex-wrap`.** Com três por linha, "Península de Setúbal" e "Cabernet
+Sauvignon" chegavam ao ecrã cortadas a meio, e um filtro que não se lê não
+se escolhe. O `flex:1 1 108px` de antes trazia outro defeito: numa linha
+ímpar o `flex-grow` esticava o cartão sozinho de ponta a ponta. Numa
+grelha, o que sobra fica na primeira coluna e alinha com o de cima. E as
+colunas são `minmax(0,1fr)` com `min-width:0` no cartão — o mínimo de um
+item de grelha é `auto`, e sem isto o `text-overflow:ellipsis` nunca
+dispara: é a coluna que cresce.
+
 É o primeiro ecrã que alguma vez mostrou uma linha do catálogo.
 
 **"+ Vinho novo"**, só para o admin (ver "Vinho novo" abaixo), é a outra
@@ -450,6 +471,13 @@ vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
   RLS + login. **Não é bug nem risco — não a "corrijas" nem a escondas.**
 - **Alterar o schema:** edita primeiro `db/*.sql` e só depois corre no SQL
   Editor do Supabase — nunca ao contrário.
+- **A caixa de procura do Catálogo tem uma regra de especificidade a
+  proteger.** O `.wc-card input[type=text]` genérico (0-2-1) ganha ao
+  `.cf-procura input` (0-1-1) e repõe-lhe o `padding`, com a lupa a
+  atropelar o texto — já chegou ao ecrã assim. A regra é
+  `.wc-card .cf-procura input[type=text]`, igualmente específica e a vir
+  depois. Não é `!important`: qualquer coisa dentro de um `.wc-card` que
+  precise de padding próprio cai na mesma pedra.
 - **Escapar HTML:** `esc()` para conteúdo, `escJs()` para o que vai dentro
   de `onclick="…('…')"` — há vinhos com plica no nome ("Clefs D'or").
 - **`STABLE` numa função que escreve não é `STABLE`** — nem sequer num

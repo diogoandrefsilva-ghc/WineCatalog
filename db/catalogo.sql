@@ -954,10 +954,18 @@ $$;
 -- só conta o que já está filtrado por ele mesmo mostra sempre o total
 -- escolhido, e não serve para nada.
 --
--- A assinatura mudou (quatro parâmetros novos), por isso a antiga tem de
--- sair — senão ficavam as duas e o PostgREST escolhia a que lhe desse
--- jeito.
+-- As CASTAS, e só elas, aceitam as duas leituras: escolher Touriga
+-- Nacional e Syrah pode ser "qualquer uma das duas" (`p_castas_todas`
+-- false, o costume) ou "os lotes que levam as duas" (true). Um vinho tem
+-- UM tipo e UMA região — ali a pergunta não se põe, e é por isso que o
+-- visto no ecrã só aparece nas castas.
+--
+-- A assinatura mudou (quatro parâmetros novos, e depois o quinto), por
+-- isso as antigas têm de sair — senão ficavam todas e o PostgREST
+-- escolhia a que lhe desse jeito.
 DROP FUNCTION IF EXISTS winecatalog.listar(text, integer, integer);
+DROP FUNCTION IF EXISTS winecatalog.listar(text, integer, integer,
+                                           text[], text[], text[], text[]);
 
 CREATE OR REPLACE FUNCTION winecatalog.listar(
   p_procura text    DEFAULT NULL,
@@ -966,7 +974,8 @@ CREATE OR REPLACE FUNCTION winecatalog.listar(
   p_tipos   text[]  DEFAULT NULL,
   p_regioes text[]  DEFAULT NULL,
   p_castas  text[]  DEFAULT NULL,
-  p_precos  text[]  DEFAULT NULL   -- ids das faixas: '<15','15-30','30-60','60+'
+  p_precos  text[]  DEFAULT NULL,  -- ids das faixas: '<15','15-30','30-60','60+'
+  p_castas_todas boolean DEFAULT false
 ) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
@@ -976,6 +985,7 @@ DECLARE
   v_toks text[]  := CASE WHEN v_q = '' THEN ARRAY[]::text[] ELSE winecatalog.tokens(v_q) END;
   v_lim  integer := LEAST(GREATEST(COALESCE(p_limite, 50), 1), 200);
   v_off  integer := GREATEST(COALESCE(p_saltar, 0), 0);
+  v_e    boolean := COALESCE(p_castas_todas, false);
   v_res  jsonb;
 BEGIN
   IF NOT winecatalog.pode_ler() THEN
@@ -998,7 +1008,12 @@ BEGIN
   -- não tem esse problema: é sempre uma `vinhos`, leve o resto da CTE o
   -- que levar.
   WITH achados AS (
-    SELECT v.id, v.visto_em, v.ficha, v AS linha
+    -- As castas normalizadas uma vez só (`[]` quando a ficha não tem lista
+    -- nenhuma): a seguir são precisas três vezes — no filtro, na contagem
+    -- e na contagem cruzada do modo "todas".
+    SELECT v.id, v.visto_em, v.ficha, v AS linha,
+           CASE WHEN jsonb_typeof(v.ficha -> 'castas') = 'array'
+                THEN v.ficha -> 'castas' ELSE '[]'::jsonb END AS cas
       FROM winecatalog.vinhos v
      WHERE
        -- Uma linha já fundida noutra não entra na lista: deixou de
@@ -1031,11 +1046,11 @@ BEGIN
         OR (a.ficha ->> 'tipo') = ANY(p_tipos))                                   AS ok_tipo,
       (p_regioes IS NULL OR cardinality(p_regioes) = 0
         OR COALESCE(a.ficha ->> 'regiao', a.ficha ->> 'pais') = ANY(p_regioes))   AS ok_regiao,
+      -- `?|` = tem alguma; `?&` = tem todas. Em jsonb os dois operadores
+      -- olham para os ELEMENTOS de um array de texto, que é exatamente o
+      -- que a `ficha -> 'castas'` é.
       (p_castas IS NULL OR cardinality(p_castas) = 0
-        OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
-                     CASE WHEN jsonb_typeof(a.ficha -> 'castas') = 'array'
-                          THEN a.ficha -> 'castas' ELSE '[]'::jsonb END) c
-                    WHERE c = ANY(p_castas)))                                     AS ok_casta,
+        OR (CASE WHEN v_e THEN a.cas ?& p_castas ELSE a.cas ?| p_castas END))     AS ok_casta,
       (p_precos IS NULL OR cardinality(p_precos) = 0
         OR winecatalog.faixa_preco(winecatalog.preco_num(a.ficha)) = ANY(p_precos)) AS ok_preco
       FROM achados a
@@ -1064,10 +1079,24 @@ BEGIN
   f_casta AS (
     SELECT c AS v, count(*) AS n
       FROM marcados m,
-           LATERAL jsonb_array_elements_text(
-             CASE WHEN jsonb_typeof(m.ficha -> 'castas') = 'array'
-                  THEN m.ficha -> 'castas' ELSE '[]'::jsonb END) c
+           LATERAL jsonb_array_elements_text(m.cas) c
      WHERE m.ok_tipo AND m.ok_regiao AND m.ok_preco
+       -- Em "qualquer uma" a regra do costume basta: o grupo não se conta
+       -- a si próprio, e por isso "Syrah 28" continua lá depois de se
+       -- escolher Touriga Nacional.
+       --
+       -- Em "todas em simultâneo" ignorar o grupo inteiro dava um número
+       -- que não é o de lado nenhum: "Syrah 28" com a lista a mostrar
+       -- três vinhos. Aqui a mesma ideia aplica-se à OPÇÃO e não ao
+       -- grupo — conta-se com as OUTRAS castas escolhidas por cima, mas
+       -- nunca com a própria. Uma que já esteja escolhida mostra o total
+       -- do cruzamento (e continua visível, que é o que permite
+       -- desmarcá-la); uma que não esteja mostra em quantos se ficaria se
+       -- fosse acrescentada — e desaparece quando esse número é zero,
+       -- que é a resposta certa para um caminho sem saída.
+       AND (NOT v_e OR p_castas IS NULL OR cardinality(p_castas) = 0
+            OR m.cas ?& (SELECT COALESCE(array_agg(s), ARRAY[]::text[])
+                           FROM unnest(p_castas) s WHERE s <> c))
      GROUP BY 1
   ),
   f_preco AS (
@@ -1899,7 +1928,7 @@ GRANT EXECUTE ON FUNCTION winecatalog.procurar_lote(jsonb, integer)             
 -- `authenticated` tem de poder chamá-las, e é DENTRO de cada uma que se
 -- confirma quem é (`pode_ler()` para ler, `sou_admin()` para decidir).
 -- O `anon` nunca: não há modo convidado.
-REVOKE ALL ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[])
+REVOKE ALL ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[], boolean)
   FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.ver(bigint)                      FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.candidatos(integer)              FROM PUBLIC, anon;
@@ -1912,7 +1941,7 @@ REVOKE ALL ON FUNCTION winecatalog.marcar_distintos(bigint, bigint) FROM PUBLIC,
 REVOKE ALL ON FUNCTION winecatalog.desmarcar_distintos(text, text)  FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.definir_admin(text)              FROM PUBLIC, anon;
 
-GRANT EXECUTE ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[])
+GRANT EXECUTE ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[], boolean)
   TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.ver(bigint)                      TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.candidatos(integer)              TO authenticated;

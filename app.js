@@ -490,9 +490,15 @@ let _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
 let _wcFacetas=null;
 let _wcPainel=true;
 let _wcModo='lista';
+/* Só as castas têm duas leituras possíveis: escolher Touriga Nacional e
+   Syrah pode querer dizer "qualquer um dos dois" (o costume, e o que
+   estava) ou "os lotes que levam as duas". Um vinho tem UM tipo e UMA
+   região — ali a pergunta não se põe, e por isso o visto não aparece. */
+let _wcCastasTodas=false;
 try{
   _wcPainel=localStorage.getItem('wc_painel')!=='0';
   _wcModo=localStorage.getItem('wc_modo')==='grelha'?'grelha':'lista';
+  _wcCastasTodas=localStorage.getItem('wc_castas_todas')==='1';
 }catch(e){}
 
 function wcNFiltros(){
@@ -501,7 +507,12 @@ function wcNFiltros(){
 }
 function wcFiltrosAtivos(){
   const faixa=id=>(WC_FAIXAS.find(f=>f[0]===id)||[id,id])[1];
-  const l=[].concat(_wcFiltros.tipos,_wcFiltros.regioes,_wcFiltros.castas,
+  /* Com o painel fechado esta barra é a única coisa que diz o que está
+     ligado — e "Touriga Nacional · Syrah" mente sobre metade dos
+     resultados quando o visto está em "todas em simultâneo". */
+  const cas=(_wcCastasTodas&&_wcFiltros.castas.length>1)
+    ? [_wcFiltros.castas.join(' + ')] : _wcFiltros.castas;
+  const l=[].concat(_wcFiltros.tipos,_wcFiltros.regioes,cas,
                     _wcFiltros.precos.map(faixa));
   if(_wcProcura)l.unshift('“'+_wcProcura+'”');
   return l;
@@ -557,8 +568,18 @@ function wcPintarGrupos(){
     _wcFiltros[g].forEach(v=>{if(!ops.some(o=>o.v===v))ops.push({v,n:0});});
     if(g==='precos')ops.sort((a,b)=>WC_FAIXAS.findIndex(x=>x[0]===a.v)-WC_FAIXAS.findIndex(x=>x[0]===b.v));
     if(!ops.length)return '';
+    const visto=g!=='castas'?`<div class="cf-tit">${esc(titulo)}</div>`:
+      `<div class="cf-tit-l">
+         <div class="cf-tit">${esc(titulo)}</div>
+         <button class="cf-modo${_wcCastasTodas?' on':''}" onclick="wcCastasModo()"
+                 title="${_wcCastasTodas
+                   ?'A mostrar só os vinhos que levam TODAS as castas escolhidas'
+                   :'A mostrar os vinhos que levam QUALQUER UMA das castas escolhidas'}">
+           <i class="cf-visto">✓</i> todas em simultâneo
+         </button>
+       </div>`;
     return `<div class="cf-grupo">
-      <div class="cf-tit">${esc(titulo)}</div>
+      ${visto}
       <div class="cf-ops">${ops.map(o=>{
         const on=_wcFiltros[g].includes(o.v);
         const lbl=g==='precos'?(WC_FAIXAS.find(x=>x[0]===o.v)||[o.v,o.v])[1]:o.v;
@@ -579,9 +600,23 @@ function wcFiltroToggle(g,v){
   wcPintarGrupos();
   wcCarregarCatalogo(true);
 }
+/* Trocar de regra sem castas escolhidas não muda lista nenhuma, mas o
+   estado grava-se à mesma: quem liga o visto antes de escolher espera
+   que ele lá esteja quando escolher. */
+function wcCastasModo(){
+  _wcCastasTodas=!_wcCastasTodas;
+  try{localStorage.setItem('wc_castas_todas',_wcCastasTodas?'1':'0');}catch(e){}
+  wcPintarGrupos();
+  if(_wcFiltros.castas.length>1)wcCarregarCatalogo(true);
+}
 function wcLimparFiltros(){
   _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
   _wcProcura='';
+  /* "Limpar filtros" tem de devolver o ecrã ao estado de partida: um visto
+     que sobrevivesse à limpeza era uma regra escondida a filtrar por baixo
+     na próxima escolha. */
+  _wcCastasTodas=false;
+  try{localStorage.setItem('wc_castas_todas','0');}catch(e){}
   const c=document.getElementById('cat-procura');
   if(c)c.value='';
   wcPintarGrupos();
@@ -632,7 +667,8 @@ async function wcCarregarCatalogo(reset){
     const d=await catRpc('listar',{
       p_procura:_wcProcura||null,p_limite:50,p_saltar:_wcSaltar,
       p_tipos:wcArg('tipos'),p_regioes:wcArg('regioes'),
-      p_castas:wcArg('castas'),p_precos:wcArg('precos')
+      p_castas:wcArg('castas'),p_castas_todas:_wcCastasTodas,
+      p_precos:wcArg('precos')
     });
     const linhas=(d&&d.linhas)||[];
     _wcTotal=Number((d&&d.total)||0);
