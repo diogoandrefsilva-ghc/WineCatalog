@@ -150,6 +150,16 @@ mesma `winecatalog.tokens` da chave, e é isso que faz "qta do crasto"
 encontrar "Quinta do Crasto"). Cada vinho abre numa ficha que mostra,
 **campo a campo, de onde veio** (origem, força, data) e as fontes.
 
+**Os filtros (tipo, região, castas, faixa de preço) são do SQL, nunca do
+browser** — a lista é paginada (50 de cada vez), e filtrar do lado de cá
+filtrava só a página que por acaso já tinha vindo: "3 tintos do Douro"
+quando havia trinta. As CONTAGENS de cada opção (`facetas`) voltam no
+MESMO pedido da lista, contadas com os outros grupos aplicados mas não o
+próprio — é o que faz "Branco 7" continuar visível depois de se escolher
+Tinto. As faixas de preço vivem na `winecatalog.faixa_preco`, e não
+também no `app.js`, pela razão do costume: duas listas destas divergem no
+dia em que alguém mexe numa só.
+
 É o primeiro ecrã que alguma vez mostrou uma linha do catálogo.
 
 **"+ Vinho novo"**, só para o admin (ver "Vinho novo" abaixo), é a outra
@@ -447,6 +457,14 @@ vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
   `winecatalog.listar` usa uma CTE por causa disto.
 - **`RETURNS TABLE` com nomes iguais aos das colunas** dá ambiguidade em
   plpgsql — daí tudo aqui devolver `jsonb`.
+- **Uma linha de vinho que atravesse CTEs viaja numa COLUNA de tipo
+  `winecatalog.vinhos`, nunca como `v.*`.** O `resumo_linha` recebe uma
+  `vinhos`; no dia em que uma CTE pelo meio acrescentar uma coluna sua
+  (os `ok_*` dos filtros da `listar`, por exemplo), o `p.*` dessa CTE
+  passa a ser um `record` com colunas a mais e o Postgres recusa-o com
+  **«cannot cast type record to vinhos»** — e só o diz quando a função
+  CORRE, com o ecrã do Catálogo inteiro a morrer por causa disso. Já
+  aconteceu, no dia em que a `listar` ganhou os filtros.
 - Edições **cirúrgicas** (diffs pequenos).
 
 ## As lições das outras apps atravessam para cá

@@ -71,6 +71,11 @@ O que se espera:
   `listar`, `ver`, `candidatos`, `listar_distintos`, `resumo`,
   `consumo_resumo`, `fundir`, `separar`, `marcar_distintos`,
   `desmarcar_distintos`, `definir_admin`, `sou_admin`, `pode_ler`.
+- **`false` nos dois** em `preco_num` e `faixa_preco` — são as duas do
+  filtro de preço da lista, e quem as chama é a `listar`, por dentro. As
+  faixas (`<15`/`15-30`/`30-60`/`60+`) vivem ali e não no browser: são o
+  que a `listar` conta E o que ela filtra, e duas listas destas divergem
+  no dia em que alguém mexe numa só.
 - **`true` nos dois** em `tokens`, `chave`, `chave_base`, `base_nome`,
   `chave_nome`, `achar`, `forca`, `volatil`, `num`. **Não é esquecimento**:
   são puras sobre os argumentos, a única que lê a tabela (`achar`) corre
