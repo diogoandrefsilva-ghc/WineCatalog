@@ -866,6 +866,33 @@ $$;
 -- juntos no FIM deste ficheiro, e confirmam-se com a consulta que está lá.
 -- =====================================================================
 
+-- ---------------------------------------------------------------------
+-- O preço como número, ou NULL. A ficha é jsonb e um dia tem lá "34,90"
+-- escrito à mão: um cast directo rebentava a lista inteira por causa de
+-- uma linha.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.preco_num(f jsonb)
+  RETURNS numeric LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT CASE WHEN jsonb_typeof(f -> 'preco_medio') = 'number'
+              THEN (f ->> 'preco_medio')::numeric END;
+$$;
+
+-- As faixas de preço vivem AQUI e não no browser: são o que a `listar`
+-- conta e o que ela filtra, e duas listas destas divergem no dia em que
+-- alguém mexe numa só.
+CREATE OR REPLACE FUNCTION winecatalog.faixa_preco(p numeric)
+  RETURNS text LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT CASE
+           WHEN p IS NULL THEN NULL
+           WHEN p <  15 THEN '<15'
+           WHEN p <  30 THEN '15-30'
+           WHEN p <  60 THEN '30-60'
+           ELSE '60+'
+         END;
+$$;
+
 -- Uma linha do catálogo como a UI a quer numa LISTA: sem a ficha inteira
 -- (são ~19 campos por linha e a lista tem centenas), mas com o que
 -- responde à pergunta "vale a pena abrir esta?".
@@ -884,6 +911,12 @@ AS $$
     'castas',   r.ficha -> 'castas',
     'nota',     r.ficha -> 'vivino_nota',
     'preco',    r.ficha -> 'preco_medio',
+    -- A fotografia do vinho (a do RÓTULO, que é do vinho — nunca a
+    -- `imagem_path` tirada em casa, que apanha a prateleira à volta e é
+    -- de quem a tem). A lista desenha a garrafa quando isto vem vazio,
+    -- por isso é seguro estar em falta — o que não pode é obrigar o ecrã
+    -- a abrir a ficha inteira só para saber se existe.
+    'imagem',   r.ficha ->> 'imagem_url',
     'campos',   (SELECT count(*) FROM jsonb_object_keys(r.ficha)),
     -- A força MÁXIMA que esta linha tem em cima: é o que distingue um
     -- vinho que alguém pesquisou a sério de um que foi escrito à pressa
@@ -897,9 +930,9 @@ AS $$
   );
 $$;
 
--- A LISTA, com procura. `p_procura` vazio devolve tudo (por ordem da
--- última vez que serviu uma pergunta — que é a ordem por que alguém quer
--- ver isto, não a alfabética).
+-- A LISTA, com procura e FILTROS. `p_procura` vazio e sem filtro nenhum
+-- devolve tudo (por ordem da última vez que serviu uma pergunta — que é a
+-- ordem por que alguém quer ver isto, não a alfabética).
 --
 -- A procura bate em quatro sítios porque é por esses quatro que se procura
 -- um vinho: o nome, o produtor, a região e a casta. Os dois primeiros
@@ -907,10 +940,31 @@ $$;
 -- crasto" encontrar a linha escrita "Quinta do Crasto" e "crasto"
 -- encontrar as duas — a mesma normalização que o catálogo já usa para
 -- decidir o que é o mesmo vinho, sem uma segunda ideia sobre acentos.
+--
+-- Os quatro filtros (tipo, região, castas, faixa de preço) são do SQL e
+-- não do browser porque a lista é PAGINADA (50 de cada vez): filtrar do
+-- lado do cliente filtrava só a página que por acaso já tinha vindo —
+-- "3 tintos do Douro" quando havia trinta.
+--
+-- E as CONTAGENS por opção (`facetas`) voltam no mesmo pedido, contadas
+-- com os OUTROS grupos aplicados mas não o próprio: é o que faz
+-- "Branco 7" continuar visível depois de se escolher Tinto. Um grupo que
+-- só conta o que já está filtrado por ele mesmo mostra sempre o total
+-- escolhido, e não serve para nada.
+--
+-- A assinatura mudou (quatro parâmetros novos), por isso a antiga tem de
+-- sair — senão ficavam as duas e o PostgREST escolhia a que lhe desse
+-- jeito.
+DROP FUNCTION IF EXISTS winecatalog.listar(text, integer, integer);
+
 CREATE OR REPLACE FUNCTION winecatalog.listar(
-  p_procura text DEFAULT NULL,
+  p_procura text    DEFAULT NULL,
   p_limite  integer DEFAULT 50,
-  p_saltar  integer DEFAULT 0
+  p_saltar  integer DEFAULT 0,
+  p_tipos   text[]  DEFAULT NULL,
+  p_regioes text[]  DEFAULT NULL,
+  p_castas  text[]  DEFAULT NULL,
+  p_precos  text[]  DEFAULT NULL   -- ids das faixas: '<15','15-30','30-60','60+'
 ) RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
@@ -931,8 +985,18 @@ BEGIN
   -- quando a função CORRE. É a mesma pedra em que já se tropeçou do outro
   -- lado (um `UPDATE` do `visto_em` dentro de algo marcado STABLE) e que
   -- está escrita no CLAUDE.md — aqui não se repete.
+  --
+  -- E a linha inteira viaja numa COLUNA (`linha winecatalog.vinhos`), não
+  -- como `v.*` espalhado pelas CTEs. A razão é o `resumo_linha`, que
+  -- recebe uma `winecatalog.vinhos`: assim que uma CTE acrescenta uma
+  -- coluna sua (aqui os quatro `ok_*`), o `p.*` dessa CTE passa a ser um
+  -- `record` com colunas a mais e o Postgres recusa-o com
+  -- «cannot cast type record to vinhos» — em tempo de EXECUÇÃO, com a
+  -- lista inteira a morrer por causa disso. Uma coluna de tipo composto
+  -- não tem esse problema: é sempre uma `vinhos`, leve o resto da CTE o
+  -- que levar.
   WITH achados AS (
-    SELECT v.*
+    SELECT v.id, v.visto_em, v.ficha, v AS linha
       FROM winecatalog.vinhos v
      WHERE
        -- Uma linha já fundida noutra não entra na lista: deixou de
@@ -955,16 +1019,84 @@ BEGIN
          OR (cardinality(v_toks) > 0
              AND string_to_array(v.chave_base, '-') @> v_toks)
        )
-  ), pagina AS (
-    SELECT a.* FROM achados a
-     ORDER BY a.visto_em DESC, a.id DESC
+  ),
+  -- Cada linha sabe quais dos quatro filtros passa. É isto que permite
+  -- contar um grupo "como se ele não estivesse escolhido" sem repetir a
+  -- procura quatro vezes.
+  marcados AS (
+    SELECT a.*,
+      (p_tipos IS NULL OR cardinality(p_tipos) = 0
+        OR (a.ficha ->> 'tipo') = ANY(p_tipos))                                   AS ok_tipo,
+      (p_regioes IS NULL OR cardinality(p_regioes) = 0
+        OR COALESCE(a.ficha ->> 'regiao', a.ficha ->> 'pais') = ANY(p_regioes))   AS ok_regiao,
+      (p_castas IS NULL OR cardinality(p_castas) = 0
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                     CASE WHEN jsonb_typeof(a.ficha -> 'castas') = 'array'
+                          THEN a.ficha -> 'castas' ELSE '[]'::jsonb END) c
+                    WHERE c = ANY(p_castas)))                                     AS ok_casta,
+      (p_precos IS NULL OR cardinality(p_precos) = 0
+        OR winecatalog.faixa_preco(winecatalog.preco_num(a.ficha)) = ANY(p_precos)) AS ok_preco
+      FROM achados a
+  ),
+  filtrados AS (
+    SELECT * FROM marcados WHERE ok_tipo AND ok_regiao AND ok_casta AND ok_preco
+  ),
+  pagina AS (
+    SELECT f.linha, f.visto_em, f.id FROM filtrados f
+     ORDER BY f.visto_em DESC, f.id DESC
      OFFSET v_off LIMIT v_lim
+  ),
+  f_tipo AS (
+    SELECT m.ficha ->> 'tipo' AS v, count(*) AS n
+      FROM marcados m
+     WHERE m.ok_regiao AND m.ok_casta AND m.ok_preco AND m.ficha ->> 'tipo' IS NOT NULL
+     GROUP BY 1
+  ),
+  f_regiao AS (
+    SELECT COALESCE(m.ficha ->> 'regiao', m.ficha ->> 'pais') AS v, count(*) AS n
+      FROM marcados m
+     WHERE m.ok_tipo AND m.ok_casta AND m.ok_preco
+       AND COALESCE(m.ficha ->> 'regiao', m.ficha ->> 'pais') IS NOT NULL
+     GROUP BY 1
+  ),
+  f_casta AS (
+    SELECT c AS v, count(*) AS n
+      FROM marcados m,
+           LATERAL jsonb_array_elements_text(
+             CASE WHEN jsonb_typeof(m.ficha -> 'castas') = 'array'
+                  THEN m.ficha -> 'castas' ELSE '[]'::jsonb END) c
+     WHERE m.ok_tipo AND m.ok_regiao AND m.ok_preco
+     GROUP BY 1
+  ),
+  f_preco AS (
+    SELECT winecatalog.faixa_preco(winecatalog.preco_num(m.ficha)) AS v, count(*) AS n
+      FROM marcados m
+     WHERE m.ok_tipo AND m.ok_regiao AND m.ok_casta
+       AND winecatalog.faixa_preco(winecatalog.preco_num(m.ficha)) IS NOT NULL
+     GROUP BY 1
   )
   SELECT jsonb_build_object(
-           'total',  (SELECT count(*) FROM achados),
-           'linhas', COALESCE((SELECT jsonb_agg(winecatalog.resumo_linha(p.*)
+           'total',  (SELECT count(*) FROM filtrados),
+           'linhas', COALESCE((SELECT jsonb_agg(winecatalog.resumo_linha(p.linha)
                                         ORDER BY p.visto_em DESC, p.id DESC)
-                                 FROM pagina p), '[]'::jsonb)
+                                 FROM pagina p), '[]'::jsonb),
+           'facetas', jsonb_build_object(
+             -- Região e castas são listas abertas: mostram-se as mais
+             -- cheias, e o ecrã acrescenta as que já estão escolhidas
+             -- (senão não havia como as desmarcar).
+             'tipos',   COALESCE((SELECT jsonb_agg(x) FROM (
+                          SELECT jsonb_build_object('v', v, 'n', n) AS x
+                            FROM f_tipo ORDER BY n DESC, v) s), '[]'::jsonb),
+             'regioes', COALESCE((SELECT jsonb_agg(x) FROM (
+                          SELECT jsonb_build_object('v', v, 'n', n) AS x
+                            FROM f_regiao ORDER BY n DESC, v LIMIT 12) s), '[]'::jsonb),
+             'castas',  COALESCE((SELECT jsonb_agg(x) FROM (
+                          SELECT jsonb_build_object('v', v, 'n', n) AS x
+                            FROM f_casta ORDER BY n DESC, v LIMIT 12) s), '[]'::jsonb),
+             'precos',  COALESCE((SELECT jsonb_agg(x) FROM (
+                          SELECT jsonb_build_object('v', v, 'n', n) AS x
+                            FROM f_preco ORDER BY v) s), '[]'::jsonb)
+           )
          )
     INTO v_res;
 
@@ -1765,7 +1897,8 @@ GRANT EXECUTE ON FUNCTION winecatalog.procurar_lote(jsonb, integer)             
 -- `authenticated` tem de poder chamá-las, e é DENTRO de cada uma que se
 -- confirma quem é (`pode_ler()` para ler, `sou_admin()` para decidir).
 -- O `anon` nunca: não há modo convidado.
-REVOKE ALL ON FUNCTION winecatalog.listar(text, integer, integer)   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[])
+  FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.ver(bigint)                      FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.candidatos(integer)              FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.listar_distintos()               FROM PUBLIC, anon;
@@ -1777,7 +1910,8 @@ REVOKE ALL ON FUNCTION winecatalog.marcar_distintos(bigint, bigint) FROM PUBLIC,
 REVOKE ALL ON FUNCTION winecatalog.desmarcar_distintos(text, text)  FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.definir_admin(text)              FROM PUBLIC, anon;
 
-GRANT EXECUTE ON FUNCTION winecatalog.listar(text, integer, integer)   TO authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.listar(text, integer, integer, text[], text[], text[], text[])
+  TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.ver(bigint)                      TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.candidatos(integer)              TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.listar_distintos()               TO authenticated;
@@ -1795,6 +1929,8 @@ GRANT EXECUTE ON FUNCTION winecatalog.definir_admin(text)              TO authen
 REVOKE ALL ON FUNCTION winecatalog.admin_email()                      FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.generico(text)                     FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.resumo_linha(winecatalog.vinhos)   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.preco_num(jsonb)                   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.faixa_preco(numeric)               FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.sou_admin()                        FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pode_ler()                         FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION winecatalog.sou_admin()   TO authenticated;
