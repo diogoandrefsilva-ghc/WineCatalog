@@ -312,6 +312,32 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
   </div>
 </div>
 
+<!-- Atualizar informação em vários vinhos de uma vez (admin): até 10
+     vinhos, até 5 campos, UM prompt para colar num assistente de IA — a
+     resposta entra vinho a vinho pelo MESMO caminho da pesquisa manual de
+     um vinho só (ver `wcLoteEnviar` em app.js). -->
+<div class="modal" id="modal-lote" onclick="fecharFundo(event,'modal-lote')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <div><div class="fi-nome">Atualizar informação</div>
+           <div class="fi-sub">Vários vinhos, um prompt</div></div>
+      <button class="modal-x" onclick="fecharModal('modal-lote')" aria-label="Fechar">✕</button>
+    </div>
+    <div class="modal-body" id="lote-corpo"></div>
+  </div>
+</div>
+
+<!-- FAB do Catálogo (admin) — só aparece nesse separador (ver `itab` em
+     app.js). Toque no "+": duas ações, "Vinho novo" (já existia) e
+     "Atualizar informação" (nova, em lote). -->
+<div class="wc-fab-wrap" id="wc-fab-wrap" style="display:none">
+  <div class="wc-fab-menu" id="wc-fab-menu">
+    <button class="wc-fab-op" onclick="wcFabAcao('lote')">🔎 Atualizar informação</button>
+    <button class="wc-fab-op" onclick="wcFabAcao('novo')">🍷 Vinho novo</button>
+  </div>
+  <button class="wc-fab" onclick="wcFabToggle()" aria-label="Novo ou atualizar">+</button>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="app.js"></script>

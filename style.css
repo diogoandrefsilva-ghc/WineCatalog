@@ -247,7 +247,6 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .cf-fim-b{display:flex;align-items:center;gap:10px}
 .cf-limpar{background:none;border:none;font-size:12px;font-weight:600;color:var(--wine);
   text-decoration:underline;cursor:pointer;padding:4px}
-.cf-novo{white-space:nowrap}
 
 .cf-min{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
   background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:10px 12px;
@@ -553,3 +552,30 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   .fi-k{flex:none;padding-top:0}
   .mhero{margin:-20px -18px 4px}
 }
+
+/* ── FAB do Catálogo (admin) — "+ Vinho novo" e "Atualizar informação"
+   atrás de um só botão flutuante, em vez de um perdido no fundo do painel
+   de filtros. Mesmo desenho da Garrafeira: toque no "+", duas ações. ── */
+.wc-fab-wrap{position:fixed;right:16px;bottom:26px;z-index:700;
+  display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.wc-fab{width:56px;height:56px;border-radius:50%;border:none;background:var(--wine);
+  color:#fff;font-size:26px;line-height:1;cursor:pointer;
+  box-shadow:0 8px 20px -6px rgba(0,0,0,.5);transition:transform .15s}
+.wc-fab-wrap.open .wc-fab{transform:rotate(45deg)}
+.wc-fab-menu{display:flex;flex-direction:column;align-items:flex-end;gap:8px;
+  opacity:0;pointer-events:none;transform:translateY(6px);transition:opacity .15s,transform .15s}
+.wc-fab-wrap.open .wc-fab-menu{opacity:1;pointer-events:auto;transform:none}
+.wc-fab-op{background:var(--card);color:var(--tx);border:1px solid var(--bo);border-radius:99px;
+  padding:10px 16px;font-size:13.5px;font-weight:700;white-space:nowrap;cursor:pointer;
+  box-shadow:0 6px 16px -4px rgba(0,0,0,.3)}
+
+/* ── Atualizar informação em lote ── */
+.lote-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.lote-chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg);
+  border:1px solid var(--bo);border-radius:99px;padding:5px 6px 5px 10px;font-size:12.5px}
+.lote-chip button{background:none;border:none;color:var(--mu);cursor:pointer;font-size:13px;padding:0 2px}
+.lote-resultados{max-height:220px;overflow-y:auto;border:1px solid var(--bo);border-radius:10px;
+  padding:0 10px;margin-top:8px}
+.lote-prog-l{display:flex;justify-content:space-between;gap:10px;padding:6px 0;
+  border-bottom:1px solid var(--bo);font-size:13px}
+.lote-prog-l:last-child{border-bottom:none}

@@ -171,6 +171,12 @@ function itab(tab){
   const el=document.getElementById('t-'+tab);
   if(el)el.classList.add('on');
   try{localStorage.setItem('wc_tab',tab);}catch(e){}
+  /* O FAB só faz sentido no Catálogo (é lá que se cria/atualiza um vinho)
+     e só para o admin — a `isAdmin()` já sabe a resposta certa mesmo
+     antes de `sbAposLogin` acabar (fica `false` até lá, e este `itab` é
+     chamado outra vez depois, em `restaurarTab`). */
+  const fab=document.getElementById('wc-fab-wrap');
+  if(fab){fab.style.display=(tab==='catalogo'&&isAdmin())?'flex':'none';fab.classList.remove('open');}
   if(tab==='resumo')wcCarregarResumo();
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
@@ -526,7 +532,9 @@ function wcShellFiltros(){
   const el=document.getElementById('cat-filtros');
   if(!el)return;
   const n=wcNFiltros();
-  const novo=isAdmin()?'<button class="btn-n cf-novo" onclick="wcAbrirNovo()">+ Vinho novo</button>':'';
+  /* "+ Vinho novo" mudou-se daqui para o FAB (ver `wcFabAcao`) — ganhou
+     companhia ("Atualizar informação") e não fazia sentido um botão de
+     texto ao lado de um "+" flutuante a fazer a mesma coisa. */
   if(!_wcPainel){
     el.innerHTML=`<button class="cf-min" onclick="wcAlternarPainel()">
       <span class="cf-min-tx">🔍 ${n?esc(wcFiltrosAtivos().join(' · ')):'Procurar e filtrar'}</span>
@@ -550,7 +558,6 @@ function wcShellFiltros(){
       <span class="wc-note" id="cat-conta" style="margin:0"></span>
       <span class="cf-fim-b">
         <button class="cf-limpar" onclick="wcLimparFiltros()">Limpar filtros</button>
-        ${novo}
       </span>
     </div>
   </div>`;
@@ -1794,6 +1801,407 @@ async function wcProcurarManualEnviar(){
   }
 }
 
+/* ══════════════════════════════════════════════
+   FAB DO CATÁLOGO — "Vinho novo" e "Atualizar informação"
+
+   Mesmo desenho da Garrafeira: um "+" flutuante que abre duas ações, em
+   vez de um botão de texto perdido no fundo do painel de filtros. "Vinho
+   novo" é o que já existia (`wcAbrirNovo`); "Atualizar informação" é a
+   pesquisa manual de cima (`wcProcurarManual`), só que para VÁRIOS vinhos
+   de uma vez — ver a secção seguinte.
+   ══════════════════════════════════════════════ */
+function wcFabToggle(){
+  const w=document.getElementById('wc-fab-wrap');
+  if(w)w.classList.toggle('open');
+}
+function wcFabFechar(){
+  const w=document.getElementById('wc-fab-wrap');
+  if(w)w.classList.remove('open');
+}
+function wcFabAcao(tipo){
+  wcFabFechar();
+  if(tipo==='novo')wcAbrirNovo();
+  if(tipo==='lote')wcAbrirLote();
+}
+
+/* ══════════════════════════════════════════════
+   ATUALIZAR INFORMAÇÃO EM LOTE — o mesmo prompt manual, para vários vinhos
+
+   A pesquisa manual (acima) já resolvia "copiar um prompt, colar a
+   resposta" para UM vinho. Isto é a mesma ideia para até
+   `WC_LOTE_MAX_VINHOS` vinhos e até `WC_LOTE_MAX_CAMPOS` campos de cada
+   vez — nasceu de rever à mão, num assistente de IA à parte, se o link do
+   Vivino/a nota/o preço de vários vinhos ainda batem certo, sem ter de
+   abrir um a um.
+
+   NÃO é um caminho de escrita novo: cada vinho da resposta colada entra
+   pela EXACTA MESMA porta da pesquisa manual de cima — `pesquisa_criar` +
+   `catalogo-info.ts` com `resposta` no corpo — só que chamada uma vez por
+   vinho, em vez de uma vez só. Isso quer dizer força 3, `juntar` campo a
+   campo, e o Produtor de fora (é identidade, não ficha — por isso não
+   está nas opções de campo aqui, só o que já está em `WC_CAMPOS`). Um
+   atalho que escrevesse direto na `ficha` a partir do JSON colado, sem
+   passar por ali, era a porta dos fundos que a app inteira evita.
+
+   O "id" de cada vinho viaja no prompt e tem de voltar na resposta — é
+   como se sabe a que vinho corresponde cada objeto sem depender da ordem
+   (um modelo que reordene, ou que só responda a alguns, não desalinha os
+   restantes). */
+const WC_LOTE_MAX_VINHOS=10, WC_LOTE_MAX_CAMPOS=5;
+let _wcLoteVinhos=new Map();   // id -> {id,nome,produtor,ano}
+let _wcLoteCampos=[];          // até WC_LOTE_MAX_CAMPOS chaves de WC_CAMPOS
+let _wcLoteBuscaSeq=0;
+
+function wcAbrirLote(){
+  if(!isAdmin())return;
+  _wcLoteVinhos=new Map();
+  _wcLoteCampos=[];
+  wcLotePassoVinhos();
+  abrirModal('modal-lote');
+}
+
+/* ── Passo 1: escolher os vinhos ── */
+function wcLotePassoVinhos(){
+  const box=document.getElementById('lote-corpo');
+  if(!box)return;
+  box.innerHTML=`
+    <p class="wc-note">Escolhe até <strong>${WC_LOTE_MAX_VINHOS} vinhos</strong> — o passo a
+      seguir escolhe até ${WC_LOTE_MAX_CAMPOS} campos. Sai um prompt só, para colares num
+      assistente de IA à tua escolha; a resposta aplica-se aqui, vinho a vinho.</p>
+    <div class="ed-campo">
+      <label>Procurar vinhos</label>
+      <input type="text" id="lote-procura" placeholder="nome, produtor ou região…"
+             oninput="wcLoteBuscar()" autocomplete="off">
+    </div>
+    <div id="lote-selecionados"></div>
+    <div id="lote-resultados" class="lote-resultados">
+      <p class="wc-note" style="padding:10px 0">Escreve para procurar.</p>
+    </div>
+    <div class="macoes fim">
+      <button class="btn-n" onclick="fecharModal('modal-lote')">Cancelar</button>
+      <button class="btn-prim auto" id="lote-seguinte" onclick="wcLotePassoCampos()" disabled>Seguinte ›</button>
+    </div>`;
+  wcLotePintarSelecionados();
+}
+function wcLotePintarSelecionados(){
+  const el=document.getElementById('lote-selecionados');
+  const btn=document.getElementById('lote-seguinte');
+  if(btn)btn.disabled=!_wcLoteVinhos.size;
+  if(!el)return;
+  if(!_wcLoteVinhos.size){el.innerHTML='';return;}
+  el.innerHTML=`<div class="lote-chips">${[..._wcLoteVinhos.values()].map(v=>
+    `<span class="lote-chip">${esc(v.nome||'(sem nome)')}${v.ano?' '+esc(String(v.ano)):''}
+      <button onclick="wcLoteRemover(${v.id})" aria-label="Remover">✕</button></span>`).join('')}
+    </div>
+    <p class="wc-note">${_wcLoteVinhos.size}/${WC_LOTE_MAX_VINHOS} escolhidos</p>`;
+}
+function wcLoteRemover(id){
+  _wcLoteVinhos.delete(id);
+  wcLotePintarSelecionados();
+  wcLoteRepintarResultados();
+}
+let _wcLoteUltimaLista=[];
+/* Repintar por cima da ÚLTIMA lista já pedida — marcar/desmarcar uma
+   checkbox não é motivo para voltar a perguntar ao servidor a mesma
+   procura que já tínhamos. */
+function wcLoteRepintarResultados(){
+  const el=document.getElementById('lote-resultados');
+  if(!el||!_wcLoteUltimaLista.length)return;
+  el.innerHTML=_wcLoteUltimaLista.map(v=>{
+    const on=_wcLoteVinhos.has(v.id);
+    const cheio=!on&&_wcLoteVinhos.size>=WC_LOTE_MAX_VINHOS;
+    const sub=[v.produtor,v.ano?String(v.ano):''].filter(Boolean).join(' · ');
+    return `<label class="pr-campo">
+      <input type="checkbox" ${on?'checked':''} ${cheio?'disabled':''}
+        onchange="wcLoteToggleVinho(${v.id},'${escJs(v.nome||'')}','${escJs(v.produtor||'')}',${v.ano||'null'})">
+      <span class="pr-nome">${esc(v.nome||'(sem nome)')}</span>
+      <span class="pr-falta">${esc(sub||'—')}</span>
+    </label>`;
+  }).join('');
+}
+async function wcLoteBuscar(){
+  const q=(document.getElementById('lote-procura')||{}).value||'';
+  const el=document.getElementById('lote-resultados');
+  if(!el)return;
+  if(!q.trim()){
+    _wcLoteUltimaLista=[];
+    el.innerHTML='<p class="wc-note" style="padding:10px 0">Escreve para procurar.</p>';
+    return;
+  }
+  const seq=++_wcLoteBuscaSeq;
+  el.innerHTML='<p class="wc-note" style="padding:10px 0">A procurar…</p>';
+  try{
+    const d=await catRpc('listar',{p_procura:q,p_limite:15,p_saltar:0});
+    if(seq!==_wcLoteBuscaSeq)return;   // uma procura mais recente já respondeu primeiro
+    _wcLoteUltimaLista=(d&&d.linhas)||[];
+    if(!_wcLoteUltimaLista.length){el.innerHTML='<p class="wc-note" style="padding:10px 0">Nenhum vinho encontrado.</p>';return;}
+    wcLoteRepintarResultados();
+  }catch(e){
+    if(seq!==_wcLoteBuscaSeq)return;
+    el.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
+  }
+}
+function wcLoteToggleVinho(id,nome,produtor,ano){
+  if(_wcLoteVinhos.has(id)){
+    _wcLoteVinhos.delete(id);
+  }else{
+    if(_wcLoteVinhos.size>=WC_LOTE_MAX_VINHOS){
+      toast('Já tens '+WC_LOTE_MAX_VINHOS+' vinhos — tira um para escolheres outro',1);
+      wcLoteRepintarResultados();
+      return;
+    }
+    _wcLoteVinhos.set(id,{id,nome,produtor,ano});
+  }
+  wcLotePintarSelecionados();
+  wcLoteRepintarResultados();
+}
+
+/* ── Passo 2: escolher os campos — qualquer um de WC_CAMPOS, até
+   WC_LOTE_MAX_CAMPOS. O Produtor fica de fora de propósito: é IDENTIDADE
+   (ver `WC_CAMPOS_JSON`), não ficha, e nunca devia entrar por aqui. ── */
+function wcLotePassoCampos(){
+  if(!_wcLoteVinhos.size)return;
+  const box=document.getElementById('lote-corpo');
+  if(!box)return;
+  box.innerHTML=`
+    <p class="wc-note">${_wcLoteVinhos.size} vinho${_wcLoteVinhos.size>1?'s':''} escolhido${_wcLoteVinhos.size>1?'s':''}.
+      Agora até <strong>${WC_LOTE_MAX_CAMPOS} campos</strong> — poucos, e o prompt sai mais
+      preciso.</p>
+    <div class="pr-campos" id="lote-campos">${WC_CAMPOS.map(([k,lbl])=>`
+      <label class="pr-campo">
+        <input type="checkbox" value="${esc(k)}"${_wcLoteCampos.includes(k)?' checked':''}
+          onchange="wcLoteToggleCampo('${escJs(k)}')">
+        <span class="pr-nome">${esc(lbl)}</span>
+      </label>`).join('')}</div>
+    <p class="wc-note" id="lote-conta-campos"></p>
+    <div class="macoes fim">
+      <button class="btn-n" onclick="wcLotePassoVinhos()">‹ Voltar</button>
+      <button class="btn-prim auto" id="lote-gerar" onclick="wcLoteGerarPrompt()">Gerar prompt ›</button>
+    </div>`;
+  wcLotePintarContaCampos();
+}
+function wcLoteToggleCampo(k){
+  const i=_wcLoteCampos.indexOf(k);
+  if(i>=0){
+    _wcLoteCampos.splice(i,1);
+  }else{
+    if(_wcLoteCampos.length>=WC_LOTE_MAX_CAMPOS){
+      toast('Já tens '+WC_LOTE_MAX_CAMPOS+' campos — tira um para escolheres outro',1);
+      const cx=document.querySelector('#lote-campos input[value="'+CSS.escape(k)+'"]');
+      if(cx)cx.checked=false;
+      return;
+    }
+    _wcLoteCampos.push(k);
+  }
+  wcLotePintarContaCampos();
+}
+function wcLotePintarContaCampos(){
+  const el=document.getElementById('lote-conta-campos');
+  const btn=document.getElementById('lote-gerar');
+  const n=_wcLoteCampos.length;
+  if(el)el.textContent=n?`${n}/${WC_LOTE_MAX_CAMPOS} campos`:'nenhum campo escolhido';
+  if(btn)btn.disabled=!n;
+}
+
+/* ── Passo 3: gerar o prompt, copiar, colar a resposta ──
+   As regras reaproveitam AS MESMAS da pesquisa manual de um vinho só —
+   `WC_MANUAL_REGRA_CUVEE` e `wcManualRegraVivino` — só acrescentadas
+   quando fazem sentido para os campos escolhidos. Duas cópias da regra do
+   Vivino a divergirem era exactamente o erro que este ficheiro avisa para
+   não repetir. */
+function wcLoteCampoExemplo(k){
+  const EX={
+    tipo:`"um de: ${WC_TIPOS.filter(Boolean).join(' | ')}"`,
+    estilo:`"vazio, ou um de: ${WC_ESTILOS.filter(Boolean).join(' | ')}"`,
+    mencao:`"vazio, ou um de: ${WC_MENCOES.filter(Boolean).join(' | ')}"`,
+    classificacao:`"vazio, ou um de: ${WC_CLASSIF.filter(Boolean).join(' | ')}"`,
+    regiao:'"região vitivinícola"', sub_regiao:'""', pais:'"Portugal"',
+    castas:'["Touriga Nacional", "Touriga Franca"]',
+    teor:'14.5', estagio_meses:'18',
+    estagio_texto:'"18 meses em barrica de carvalho francês"',
+    vivino_nota:'4.1', vivino_avaliacoes:'1234', vivino_url:'""', imagem_url:'""',
+    preco_medio:'18.5', beber_de:'2026', beber_ate:'2034',
+    notas_prova:'"duas ou três frases sobre aroma, boca e final"',
+    harmonizacao:'"com que pratos"',
+    ai_resumo:'"duas ou três frases sobre o vinho e o produtor"',
+  };
+  return k in EX?EX[k]:'null';
+}
+function wcLoteRegras(campos){
+  const r=[
+    'NÃO INVENTES. Um campo que não confirmes por pesquisa fica FORA do objeto desse vinho '+
+      '(ou null) — este catálogo é lido por outras aplicações, e um palpite aqui propaga-se '+
+      'para as duas.',
+    WC_MANUAL_REGRA_CUVEE,
+  ];
+  if(campos.some(k=>k.startsWith('vivino_')))r.push(wcManualRegraVivino(false));
+  if(campos.includes('castas'))
+    r.push('Castas separadas por nome (nunca "blend"/"lote"/"várias castas").');
+  if(campos.includes('imagem_url'))
+    r.push('"imagemUrl" é o link DIRETO de uma fotografia (acaba em .jpg/.jpeg/.png/.webp/.avif), nunca o link da página.');
+  if(campos.includes('preco_medio'))
+    r.push('"precoMedio" é o preço de retalho em euros, garrafa de 0,75L.');
+  if(campos.includes('beber_de')||campos.includes('beber_ate'))
+    r.push('"beberDe"/"beberAte" são anos.');
+  r.push('O "id" de cada resultado tem de ser EXATAMENTE o "id" da lista de entrada — é assim '+
+    'que sei a que vinho corresponde cada objeto, nunca pela posição na lista.');
+  r.push('Se não conseguires identificar um vinho de todo, o objeto dele fica só '+
+    '{"id": <id>, "encontrado": false, "aviso": "porquê"} — sem inventar os outros campos.');
+  return r;
+}
+function wcLotePrompt(vinhos,campos){
+  const hoje=new Date().toISOString().slice(0,10);
+  const nomesCampos=campos.map(k=>WC_CAMPOS_JSON[k]||k);
+  const linhas=vinhos.map(v=>
+    `- id: ${v.id} | nome: ${v.nome||'(sem nome)'} | produtor: ${v.produtor||'(desconhecido)'}`+
+    (v.ano?` | ano: ${v.ano}`:'')).join('\n');
+  const camposObj=campos.map(k=>`      "${WC_CAMPOS_JSON[k]||k}": ${wcLoteCampoExemplo(k)}`).join(',\n');
+  const regras=wcLoteRegras(campos).map((r,i)=>`${i+1}. ${r}`).join('\n');
+  return `Usa a tua pesquisa na internet para preencheres, PARA CADA VINHO da lista abaixo, só os campos pedidos — como faria um enólogo a atualizar um catálogo de referência.
+
+Hoje é ${hoje}.
+CAMPOS A PEDIR (só estes, para todos os vinhos): ${nomesCampos.join(', ')}.
+
+VINHOS A IDENTIFICAR:
+${linhas}
+
+REGRAS, e são a sério:
+${regras}
+
+Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`, com exatamente ${vinhos.length} objeto${vinhos.length>1?'s':''} em "resultados" (um por vinho, pela mesma ordem):
+{
+  "resultados": [
+    {
+      "id": ${vinhos[0].id},
+      "encontrado": true,
+${camposObj},
+      "aviso": "vazio, ou o que ficou por confirmar"
+    }
+  ]
+}`;
+}
+function wcLoteGerarPrompt(){
+  if(!_wcLoteVinhos.size||!_wcLoteCampos.length)return;
+  const box=document.getElementById('lote-corpo');
+  if(!box)return;
+  const vinhos=[..._wcLoteVinhos.values()];
+  const txt=wcLotePrompt(vinhos,_wcLoteCampos);
+  box.innerHTML=`
+    <div class="pr-manual">
+      <p class="wc-note">1. Copia o prompt. 2. Cola-o num assistente de IA com pesquisa na
+        internet ligada (quanto mais capaz, melhor costuma ser o resultado). 3. Copia a
+        resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda — cada vinho entra pelo MESMO
+        caminho de uma pesquisa manual (força 3), um a um.</p>
+      <label>Prompt a copiar</label>
+      <textarea id="lote-prompt" rows="8" readonly onclick="this.select()">${esc(txt)}</textarea>
+      <button class="btn-n larg" onclick="wcLoteCopiar()">📋 Copiar prompt</button>
+      <label>Resposta (cola aqui)</label>
+      <textarea id="lote-resposta" rows="12" placeholder="Cola aqui o JSON que o modelo devolveu…"></textarea>
+      <p class="wc-note erro" id="lote-erro"></p>
+    </div>
+    <div id="lote-progresso"></div>
+    <div class="macoes fim">
+      <button class="btn-n" onclick="wcLotePassoCampos()">‹ Voltar</button>
+      <button class="btn-prim auto" id="lote-enviar" onclick="wcLoteEnviar()">Guardar no catálogo</button>
+    </div>`;
+}
+async function wcLoteCopiar(){
+  const ta=document.getElementById('lote-prompt');
+  if(!ta)return;
+  try{
+    await navigator.clipboard.writeText(ta.value);
+    toast('Prompt copiado ✓');
+  }catch(e){
+    ta.focus();ta.select();
+    toast('Não deu para copiar sozinho — o texto já está selecionado, usa Ctrl/Cmd+C',1);
+  }
+}
+
+/* ── Aplicar a resposta, vinho a vinho ── */
+function wcLoteExtrairJson(txt){
+  if(!txt)return null;
+  const s=String(txt).trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim();
+  const ini=s.indexOf('{'), fim=s.lastIndexOf('}');
+  if(ini<0||fim<ini)return null;
+  try{return JSON.parse(s.slice(ini,fim+1));}catch(e){return null;}
+}
+/* A resposta colada nunca chama o Gemini, mas passa sempre pelo mesmo
+   `EdgeRuntime.waitUntil` do lado do servidor (ver `catalogo-info.ts`) —
+   o 202 é imediato, o resultado não. 30s chega de sobra para um JSON só de
+   ler e validar. */
+async function wcLotePesquisaVer(id){
+  const ate=Date.now()+30000;
+  while(Date.now()<ate){
+    const p=await catRpc('pesquisa_ver',{p_id:id});
+    if(p&&p.estado&&p.estado!=='pendente')return p;
+    await new Promise(res=>setTimeout(res,1200));
+  }
+  throw new Error('demorou demasiado a responder');
+}
+async function wcLoteEnviar(){
+  if(!_wcLoteVinhos.size||!_wcLoteCampos.length)return;
+  const erroEl=document.getElementById('lote-erro');
+  const texto=(document.getElementById('lote-resposta')||{}).value||'';
+  const dados=wcLoteExtrairJson(texto);
+  const lista=dados&&Array.isArray(dados.resultados)?dados.resultados:null;
+  if(!lista){
+    if(erroEl)erroEl.textContent='Não consegui ler a resposta colada como JSON — confirma que '+
+      'colaste o texto todo, incluindo as chavetas { } e "resultados".';
+    return;
+  }
+  if(erroEl)erroEl.textContent='';
+  const btn=document.getElementById('lote-enviar');
+  if(btn){btn.disabled=true;btn.textContent='A guardar…';}
+  const progEl=document.getElementById('lote-progresso');
+  const porId=new Map(lista.map(r=>[Number(r&&r.id),r]));
+  const linhas=[..._wcLoteVinhos.values()].map(v=>({v,msg:'na fila'}));
+  const pinta=()=>{
+    if(!progEl)return;
+    progEl.innerHTML=`<div class="pr-manual"><label>Progresso</label>${linhas.map(l=>
+      `<div class="lote-prog-l"><span>${esc(l.v.nome||'(sem nome)')}</span>`+
+      `<span class="wc-note">${esc(l.msg||'')}</span></div>`).join('')}</div>`;
+  };
+  pinta();
+  for(const l of linhas){
+    const r=porId.get(l.v.id);
+    if(!r){l.msg='não veio na resposta colada';pinta();continue;}
+    if(r.encontrado===false){l.msg='não encontrado: '+(r.aviso||'sem razão indicada');pinta();continue;}
+    l.msg='a guardar…';pinta();
+    try{
+      const respostaObj={encontrado:true};
+      for(const k of _wcLoteCampos){
+        const jk=WC_CAMPOS_JSON[k]||k;
+        if(r[jk]!==undefined)respostaObj[jk]=r[jk];
+      }
+      const p=await catRpc('pesquisa_criar',{p_vinho_id:l.v.id});
+      if(!p.jaAndava){
+        const resp=await fetch(FN_CATALOGO_INFO,{
+          method:'POST',
+          headers:{'Content-Type':'application/json',apikey:SB_KEY,
+                   Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
+          body:JSON.stringify({pesquisaId:p.id,campos:_wcLoteCampos,resposta:JSON.stringify(respostaObj)})
+        });
+        if(!resp.ok&&resp.status!==202){
+          let msg='';try{msg=(await resp.json()).error||'';}catch(_){}
+          throw new Error(msg||('a função respondeu '+resp.status));
+        }
+      }
+      const res=await wcLotePesquisaVer(p.id);
+      if(res.estado==='erro'){
+        l.msg=res.erro||'erro desconhecido';
+      }else{
+        const props=(res.resultado&&res.resultado.propostas)||[];
+        const entraram=props.filter(x=>x.entrou).length;
+        l.msg=entraram?`${entraram} campo${entraram>1?'s':''} ${entraram>1?'entraram':'entrou'}`:'nada de novo entrou';
+      }
+    }catch(e){
+      l.msg=e.message;
+    }
+    pinta();
+  }
+  if(btn){btn.disabled=false;btn.textContent='Guardar no catálogo';}
+  wcCarregarCatalogo(true);
+}
 
 /* ══════════════════════════════════════════════
    DUPLICADOS — a fusão manual

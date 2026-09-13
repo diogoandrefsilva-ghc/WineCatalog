@@ -14,16 +14,19 @@ tudo o que aqui está foi pago com um erro.
 ## Estrutura
 - `index.html` — só markup: os cinco separadores (o quinto, Alertas, só
   aparece ao admin) + os três ecrãs de autenticação (`page-login`,
-  `page-nova-pass`, `page-sem-acesso`) + o splash + os cinco modais: a
-  ficha, **Editar**, **Vinho novo**, **Procurar informação** e Alertas
-  vivem em `t-alertas`.
+  `page-nova-pass`, `page-sem-acesso`) + o splash + os seis modais: a
+  ficha, **Editar**, **Vinho novo**, **Procurar informação**,
+  **Atualizar informação** (em lote) e Alertas vivem em `t-alertas` + o
+  FAB do Catálogo (o "+", só admin, abre "Vinho novo" e "Atualizar
+  informação").
 - `app.js` — toda a lógica. Secções (`grep` pelo título): Sessão Supabase
   (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao catálogo** (`catRpc`)
   · Escapes · Modais (`abrirModal`/`fecharModal`) · Tabs · **De onde veio
   cada campo** · **Resumo** · **Catálogo** · **A ficha de um vinho**
   (a capa + **Editar** + **Vinho novo** + **Procurar informação**, ver
-  abaixo) · **Alertas** · **Duplicados** · Utilizadores (admin) ·
-  **Auth (Supabase)** · Init.
+  abaixo) · **FAB do Catálogo** · **Atualizar informação em lote**
+  (`wcLotePrompt`/`wcLoteEnviar`) · **Alertas** · **Duplicados** ·
+  Utilizadores (admin) · **Auth (Supabase)** · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
 - `catalogo-info.ts` — Edge Function (Deno). Pesquisa Google a sério para
@@ -183,9 +186,14 @@ dispara: é a coluna que cresce.
 
 É o primeiro ecrã que alguma vez mostrou uma linha do catálogo.
 
-**"+ Vinho novo"**, só para o admin (ver "Vinho novo" abaixo), é a outra
-metade do §4.4 do documento de arranque: até aqui só se podia enriquecer
-um vinho que **já existia** — nascer um do zero não tinha ecrã nenhum.
+**O FAB** (o "+" flutuante, só admin) abre duas ações — "Vinho novo" e
+"Atualizar informação" — em vez de um botão de texto perdido no fundo do
+painel de filtros. É o mesmo desenho da Garrafeira, de propósito: quem
+anda nas duas apps não aprende dois sítios diferentes para a mesma coisa.
+"Vinho novo" é a outra metade do §4.4 do documento de arranque: até aqui
+só se podia enriquecer um vinho que **já existia** — nascer um do zero
+não tinha ecrã nenhum. "Atualizar informação" é o lote — ver a secção
+própria a seguir a "Vinho novo".
 
 ### Vinho novo — *um vinho que ninguém tem, do zero*
 O botão **"+ Vinho novo"** no Catálogo (só admin) cria uma linha vazia
@@ -233,6 +241,39 @@ primeiro chama `winecatalog.criar` (com o que já estiver no formulário —
 um rótulo lido a seguir a completar, por exemplo) e só depois abre a
 ficha nova já com o ecrã de pesquisa por cima. Zero código de pesquisa
 novo — o botão só decide QUANDO criar a linha, nunca COMO se pesquisa.
+
+### Atualizar informação em lote — a pesquisa manual, para vários vinhos
+A pesquisa manual da ficha de um vinho (abaixo, "✍️ Pesquisa manual —
+grátis, colar a resposta de um assistente de IA") já resolvia "copiar um
+prompt, colar a resposta" para UM vinho. Isto nasceu de uma pergunta
+simples: e para rever o link do Vivino (ou a nota, ou o preço médio) de
+vários vinhos de uma vez, sem abrir cada ficha à vez? O botão
+**"🔎 Atualizar informação"** do FAB abre exatamente isso — até **10
+vinhos** e até **5 campos**, um prompt só.
+
+**Não é um caminho de escrita novo.** Cada vinho da resposta colada entra
+pela EXATA MESMA porta da pesquisa manual de um vinho só —
+`winecatalog.pesquisa_criar` + `catalogo-info.ts` com `resposta` no
+corpo — só que chamada uma vez por vinho em vez de uma vez só
+(`wcLoteEnviar`, sequencial, um pedido de cada vez). Isso quer dizer força
+3, a MESMA `juntar` campo a campo, e o mesmo relatório de "o que entrou e
+porquê" — nada disto contorna o que já existe. Um atalho que escrevesse
+direto na `ficha` a partir do JSON colado, sem passar pela `juntar`, era a
+porta dos fundos que o resto da app evita a direito.
+
+**Os campos são qualquer um de `WC_CAMPOS`, nunca o Produtor.** O
+Produtor é IDENTIDADE (faz parte da `chave`), não ficha — a mesma razão
+por que não entra sozinho pela pesquisa de um vinho só (ver "A ficha de um
+vinho", abaixo). Não está nas opções aqui de propósito.
+
+**O "id" de cada vinho viaja no prompt e tem de voltar na resposta.** É
+assim que se sabe a que vinho corresponde cada objeto sem depender da
+ordem — um modelo que reordene, ou que só responda a alguns, não desalinha
+os que faltam. As regras do prompt (a do Vivino ser por VINHO e não por
+colheita, a de não inventar castas, etc.) são as MESMAS constantes da
+pesquisa manual (`WC_MANUAL_REGRA_CUVEE`, `wcManualRegraVivino`),
+acrescentadas só quando os campos escolhidos as tornam relevantes — duas
+cópias da mesma regra a divergirem era o erro de sempre.
 
 ### A ficha de um vinho — *igual à da Garrafeira, com Editar e Procurar*
 O ecrã de detalhe passou a ser **o mesmo desenho da Garrafeira** — a capa
