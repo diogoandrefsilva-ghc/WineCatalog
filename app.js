@@ -158,8 +158,8 @@ function toast(msg,erro){
    são quatro e há dois empilhados (a ficha por baixo, o editar por cima),
    por isso vale um par de funções — mesmos nomes da Garrafeira, que é onde
    este desenho já existe. */
-function abrirModal(id){const m=document.getElementById(id);if(m)m.classList.add('on');}
-function fecharModal(id){const m=document.getElementById(id);if(m)m.classList.remove('on');}
+function abrirModal(id){const m=document.getElementById(id);if(m)m.classList.add('on');wcFabSincronizar();}
+function fecharModal(id){const m=document.getElementById(id);if(m)m.classList.remove('on');wcFabSincronizar();}
 /* Fechar pelo fundo escuro só quando se carrega MESMO no fundo — não num
    filho que por acaso deixou passar o clique. */
 function fecharFundo(ev,id){if(ev&&ev.target&&ev.target.id===id)fecharModal(id);}
@@ -171,12 +171,7 @@ function itab(tab){
   const el=document.getElementById('t-'+tab);
   if(el)el.classList.add('on');
   try{localStorage.setItem('wc_tab',tab);}catch(e){}
-  /* O FAB só faz sentido no Catálogo (é lá que se cria/atualiza um vinho)
-     e só para o admin — a `isAdmin()` já sabe a resposta certa mesmo
-     antes de `sbAposLogin` acabar (fica `false` até lá, e este `itab` é
-     chamado outra vez depois, em `restaurarTab`). */
-  const fab=document.getElementById('wc-fab-wrap');
-  if(fab){fab.style.display=(tab==='catalogo'&&isAdmin())?'flex':'none';fab.classList.remove('open');}
+  wcFabSincronizar();
   if(tab==='resumo')wcCarregarResumo();
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
@@ -822,6 +817,7 @@ async function wcVerFicha(id){
   if(!m)return;
   corpo.innerHTML='<div class="fi-espera"><p class="wc-note">A carregar…</p></div>';
   m.classList.add('on');
+  wcFabSincronizar();   // a ficha não passa pelo `abrirModal`, mas tapa o FAB na mesma
   try{
     const v=await catRpc('ver',{p_id:id});
     if(!v){_wcFicha=null;corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
@@ -841,6 +837,7 @@ function wcFecharFicha(ev){
   if(ev&&ev.target&&ev.target.id!=='modal-ficha')return;
   const m=document.getElementById('modal-ficha');
   if(m)m.classList.remove('on');
+  wcFabSincronizar();
   wcProcPararPolling();
 }
 
@@ -1810,6 +1807,18 @@ async function wcProcurarManualEnviar(){
    pesquisa manual de cima (`wcProcurarManual`), só que para VÁRIOS vinhos
    de uma vez — ver a secção seguinte.
    ══════════════════════════════════════════════ */
+/* Quem decide se o "+" se vê: o Catálogo à frente, o admin, e NENHUM modal
+   aberto. A última condição é a que faltava — o FAB é `position:fixed` e
+   fica no mesmo canto onde todos os modais têm o botão de confirmar, por
+   isso enquanto houver um aberto o "+" apanhava-lhe os toques. */
+function wcFabSincronizar(){
+  const w=document.getElementById('wc-fab-wrap');
+  if(!w)return;
+  const cat=document.getElementById('t-catalogo');
+  const mostra=!!cat&&cat.classList.contains('on')&&isAdmin()&&!document.querySelector('.modal.on');
+  w.style.display=mostra?'flex':'none';
+  if(!mostra)w.classList.remove('open');
+}
 function wcFabToggle(){
   const w=document.getElementById('wc-fab-wrap');
   if(w)w.classList.toggle('open');
@@ -1860,14 +1869,29 @@ function wcAbrirLote(){
   abrirModal('modal-lote');
 }
 
+/* O modal rola por dentro; sem isto, mudar de passo deixava o ecrã na
+   mesma altura — e como o passo 2 é comprido, o passo 3 aparecia já
+   passado o prompt, com ar de "não aconteceu nada". */
+function wcLoteTopo(){
+  const m=document.getElementById('modal-lote');
+  if(m)m.scrollTop=0;
+}
+function wcLotePassos(n){
+  return `<div class="lote-passos">${['Vinhos','Campos','Prompt'].map((p,i)=>{
+    const cls=i+1===n?' on':(i+1<n?' feito':'');
+    return `<span class="lote-passo${cls}"><i>${i+1<n?'✓':i+1}</i>${esc(p)}</span>`;
+  }).join('')}</div>`;
+}
+
 /* ── Passo 1: escolher os vinhos ── */
 function wcLotePassoVinhos(){
   const box=document.getElementById('lote-corpo');
   if(!box)return;
   box.innerHTML=`
-    <p class="wc-note">Escolhe até <strong>${WC_LOTE_MAX_VINHOS} vinhos</strong> — o passo a
-      seguir escolhe até ${WC_LOTE_MAX_CAMPOS} campos. Sai um prompt só, para colares num
-      assistente de IA à tua escolha; a resposta aplica-se aqui, vinho a vinho.</p>
+    ${wcLotePassos(1)}
+    <p class="wc-note">Até <strong>${WC_LOTE_MAX_VINHOS} vinhos</strong> e, no passo a seguir,
+      até ${WC_LOTE_MAX_CAMPOS} campos. Sai um prompt só, para colares num assistente de IA à
+      tua escolha; a resposta aplica-se aqui, vinho a vinho.</p>
     <div class="ed-campo">
       <label>Procurar vinhos</label>
       <input type="text" id="lote-procura" placeholder="nome, produtor ou região…"
@@ -1875,13 +1899,14 @@ function wcLotePassoVinhos(){
     </div>
     <div id="lote-selecionados"></div>
     <div id="lote-resultados" class="lote-resultados">
-      <p class="wc-note" style="padding:10px 0">Escreve para procurar.</p>
+      <p class="lote-vazio">Escreve para procurar.</p>
     </div>
     <div class="macoes fim">
       <button class="btn-n" onclick="fecharModal('modal-lote')">Cancelar</button>
       <button class="btn-prim auto" id="lote-seguinte" onclick="wcLotePassoCampos()" disabled>Seguinte ›</button>
     </div>`;
   wcLotePintarSelecionados();
+  wcLoteTopo();
 }
 function wcLotePintarSelecionados(){
   const el=document.getElementById('lote-selecionados');
@@ -1889,11 +1914,16 @@ function wcLotePintarSelecionados(){
   if(btn)btn.disabled=!_wcLoteVinhos.size;
   if(!el)return;
   if(!_wcLoteVinhos.size){el.innerHTML='';return;}
-  el.innerHTML=`<div class="lote-chips">${[..._wcLoteVinhos.values()].map(v=>
-    `<span class="lote-chip">${esc(v.nome||'(sem nome)')}${v.ano?' '+esc(String(v.ano)):''}
-      <button onclick="wcLoteRemover(${v.id})" aria-label="Remover">✕</button></span>`).join('')}
+  el.innerHTML=`
+    <div class="lote-sel-cab">
+      <span>Escolhidos</span>
+      <span class="lote-cont">${_wcLoteVinhos.size}/${WC_LOTE_MAX_VINHOS}</span>
     </div>
-    <p class="wc-note">${_wcLoteVinhos.size}/${WC_LOTE_MAX_VINHOS} escolhidos</p>`;
+    <div class="lote-chips">${[..._wcLoteVinhos.values()].map(v=>
+      `<span class="lote-chip"><span>${esc(v.nome||'(sem nome)')}</span>${
+        v.ano?`<em>${esc(String(v.ano))}</em>`:''}
+        <button onclick="wcLoteRemover(${v.id})" aria-label="Remover">✕</button></span>`).join('')}
+    </div>`;
 }
 function wcLoteRemover(id){
   _wcLoteVinhos.delete(id);
@@ -1910,12 +1940,15 @@ function wcLoteRepintarResultados(){
   el.innerHTML=_wcLoteUltimaLista.map(v=>{
     const on=_wcLoteVinhos.has(v.id);
     const cheio=!on&&_wcLoteVinhos.size>=WC_LOTE_MAX_VINHOS;
-    const sub=[v.produtor,v.ano?String(v.ano):''].filter(Boolean).join(' · ');
-    return `<label class="pr-campo">
+    /* Sem produtor (acontece), a região diz mais do que um travessão. */
+    const sub=[v.produtor||v.regiao,v.ano?String(v.ano):''].filter(Boolean).join(' · ');
+    return `<label class="lote-v${on?' on':''}${cheio?' cheio':''}">
       <input type="checkbox" ${on?'checked':''} ${cheio?'disabled':''}
         onchange="wcLoteToggleVinho(${v.id},'${escJs(v.nome||'')}','${escJs(v.produtor||'')}',${v.ano||'null'})">
-      <span class="pr-nome">${esc(v.nome||'(sem nome)')}</span>
-      <span class="pr-falta">${esc(sub||'—')}</span>
+      <span class="lote-v-tx">
+        <span class="lote-v-nome">${esc(v.nome||'(sem nome)')}</span>
+        <span class="lote-v-sub">${esc(sub||'sem produtor')}</span>
+      </span>
     </label>`;
   }).join('');
 }
@@ -1925,20 +1958,20 @@ async function wcLoteBuscar(){
   if(!el)return;
   if(!q.trim()){
     _wcLoteUltimaLista=[];
-    el.innerHTML='<p class="wc-note" style="padding:10px 0">Escreve para procurar.</p>';
+    el.innerHTML='<p class="lote-vazio">Escreve para procurar.</p>';
     return;
   }
   const seq=++_wcLoteBuscaSeq;
-  el.innerHTML='<p class="wc-note" style="padding:10px 0">A procurar…</p>';
+  el.innerHTML='<p class="lote-vazio">A procurar…</p>';
   try{
     const d=await catRpc('listar',{p_procura:q,p_limite:15,p_saltar:0});
     if(seq!==_wcLoteBuscaSeq)return;   // uma procura mais recente já respondeu primeiro
     _wcLoteUltimaLista=(d&&d.linhas)||[];
-    if(!_wcLoteUltimaLista.length){el.innerHTML='<p class="wc-note" style="padding:10px 0">Nenhum vinho encontrado.</p>';return;}
+    if(!_wcLoteUltimaLista.length){el.innerHTML='<p class="lote-vazio">Nenhum vinho encontrado.</p>';return;}
     wcLoteRepintarResultados();
   }catch(e){
     if(seq!==_wcLoteBuscaSeq)return;
-    el.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
+    el.innerHTML=`<p class="lote-vazio erro">${esc(e.message)}</p>`;
   }
 }
 function wcLoteToggleVinho(id,nome,produtor,ano){
@@ -1963,43 +1996,60 @@ function wcLotePassoCampos(){
   if(!_wcLoteVinhos.size)return;
   const box=document.getElementById('lote-corpo');
   if(!box)return;
+  const n=_wcLoteVinhos.size;
   box.innerHTML=`
-    <p class="wc-note">${_wcLoteVinhos.size} vinho${_wcLoteVinhos.size>1?'s':''} escolhido${_wcLoteVinhos.size>1?'s':''}.
-      Agora até <strong>${WC_LOTE_MAX_CAMPOS} campos</strong> — poucos, e o prompt sai mais
-      preciso.</p>
-    <div class="pr-campos" id="lote-campos">${WC_CAMPOS.map(([k,lbl])=>`
-      <label class="pr-campo">
-        <input type="checkbox" value="${esc(k)}"${_wcLoteCampos.includes(k)?' checked':''}
+    ${wcLotePassos(2)}
+    <p class="wc-note">${n} vinho${n>1?'s':''} escolhido${n>1?'s':''}. Agora até
+      <strong>${WC_LOTE_MAX_CAMPOS} campos</strong> — poucos, e o prompt sai mais preciso.
+      O ponto dourado marca os que <strong>envelhecem</strong> (nota, preço, links): os
+      outros raramente precisam de uma segunda volta.</p>
+    <div class="lote-sel-cab">
+      <span>Campos</span>
+      <span class="lote-cont" id="lote-conta-campos"></span>
+    </div>
+    <div class="lote-campos" id="lote-campos">${WC_CAMPOS.map(([k,lbl])=>{
+      const on=_wcLoteCampos.includes(k);
+      /* "Vivino" e "Imagem" chegam de `WC_CAMPOS` com o nome que fazem na
+         ficha, onde o valor ao lado diz que são links. Numa lista de
+         escolha, "Vivino" ao lado de "Nota Vivino" não se percebe — daí o
+         sufixo, por regra e não por uma segunda lista de nomes a divergir
+         da primeira. */
+      const nome=/_url$/.test(k)?lbl+' (link)':lbl;
+      return `<label class="lote-c${on?' on':''}">
+        <input type="checkbox" value="${esc(k)}"${on?' checked':''}
           onchange="wcLoteToggleCampo('${escJs(k)}')">
-        <span class="pr-nome">${esc(lbl)}</span>
-      </label>`).join('')}</div>
-    <p class="wc-note" id="lote-conta-campos"></p>
+        <span>${esc(nome)}</span>
+        ${WC_VOLATEIS.includes(k)?'<i title="envelhece"></i>':''}
+      </label>`;
+    }).join('')}</div>
     <div class="macoes fim">
       <button class="btn-n" onclick="wcLotePassoVinhos()">‹ Voltar</button>
       <button class="btn-prim auto" id="lote-gerar" onclick="wcLoteGerarPrompt()">Gerar prompt ›</button>
     </div>`;
   wcLotePintarContaCampos();
+  wcLoteTopo();
 }
 function wcLoteToggleCampo(k){
+  const cx=document.querySelector('#lote-campos input[value="'+CSS.escape(k)+'"]');
   const i=_wcLoteCampos.indexOf(k);
   if(i>=0){
     _wcLoteCampos.splice(i,1);
   }else{
     if(_wcLoteCampos.length>=WC_LOTE_MAX_CAMPOS){
       toast('Já tens '+WC_LOTE_MAX_CAMPOS+' campos — tira um para escolheres outro',1);
-      const cx=document.querySelector('#lote-campos input[value="'+CSS.escape(k)+'"]');
       if(cx)cx.checked=false;
       return;
     }
     _wcLoteCampos.push(k);
   }
+  if(cx&&cx.parentElement)cx.parentElement.classList.toggle('on',_wcLoteCampos.includes(k));
   wcLotePintarContaCampos();
 }
 function wcLotePintarContaCampos(){
   const el=document.getElementById('lote-conta-campos');
   const btn=document.getElementById('lote-gerar');
   const n=_wcLoteCampos.length;
-  if(el)el.textContent=n?`${n}/${WC_LOTE_MAX_CAMPOS} campos`:'nenhum campo escolhido';
+  if(el)el.textContent=`${n}/${WC_LOTE_MAX_CAMPOS}`;
   if(btn)btn.disabled=!n;
 }
 
@@ -2087,13 +2137,18 @@ function wcLoteGerarPrompt(){
   const vinhos=[..._wcLoteVinhos.values()];
   const txt=wcLotePrompt(vinhos,_wcLoteCampos);
   box.innerHTML=`
+    ${wcLotePassos(3)}
     <div class="pr-manual">
-      <p class="wc-note">1. Copia o prompt. 2. Cola-o num assistente de IA com pesquisa na
-        internet ligada (quanto mais capaz, melhor costuma ser o resultado). 3. Copia a
-        resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda — cada vinho entra pelo MESMO
-        caminho de uma pesquisa manual (força 3), um a um.</p>
+      <ol class="lote-ol">
+        <li>Copia o prompt.</li>
+        <li>Cola-o num assistente de IA <strong>com pesquisa na internet ligada</strong> —
+          quanto mais capaz o modelo, melhor costuma ser o resultado.</li>
+        <li>Copia a resposta toda (o JSON) e cola-a aqui em baixo.</li>
+        <li>Guarda: cada vinho entra pelo mesmo caminho de uma pesquisa manual
+          (<strong>força 3</strong>), um a um.</li>
+      </ol>
       <label>Prompt a copiar</label>
-      <textarea id="lote-prompt" rows="8" readonly onclick="this.select()">${esc(txt)}</textarea>
+      <textarea id="lote-prompt" rows="6" readonly onclick="this.select()">${esc(txt)}</textarea>
       <button class="btn-n larg" onclick="wcLoteCopiar()">📋 Copiar prompt</button>
       <label>Resposta (cola aqui)</label>
       <textarea id="lote-resposta" rows="12" placeholder="Cola aqui o JSON que o modelo devolveu…"></textarea>
@@ -2104,6 +2159,7 @@ function wcLoteGerarPrompt(){
       <button class="btn-n" onclick="wcLotePassoCampos()">‹ Voltar</button>
       <button class="btn-prim auto" id="lote-enviar" onclick="wcLoteEnviar()">Guardar no catálogo</button>
     </div>`;
+  wcLoteTopo();
 }
 async function wcLoteCopiar(){
   const ta=document.getElementById('lote-prompt');

@@ -566,6 +566,21 @@ de cada app antes de assumir que a que está calada está bem.**
 - **A ordem de expandir abreviaturas.** Primeiro mapeia-se ("qta."→"quinta"),
   depois filtram-se as palavras vazias. Ao contrário, a mesma garrafa ficava
   com duas chaves.
+- **O FAB a roubar o toque ao modal.** O "+" nasceu com `z-index:700`
+  contra os `600` do `.modal`, e é `position:fixed` no canto inferior
+  direito — exatamente onde todos os modais desta app põem o botão de
+  confirmar. Resultado: no telefone, "carrego em Gerar prompt e não
+  acontece nada". Sem erro na consola, sem nada: o toque acertava no FAB,
+  que estava por cima. Só a ponta esquerda do botão respondia. São duas
+  travas agora: o `z-index` desceu para 450 e o `wcFabSincronizar()`
+  esconde-o enquanto houver um `.modal.on` — e por isso o `abrirModal`/
+  `fecharModal` chamam-no, **e a ficha também**, que abre e fecha com
+  `classList` à mão sem passar por eles.
+- **Um crachá é para uma palavra.** A primeira lista de vinhos do lote
+  reaproveitou a `.pr-campo` da pesquisa e pôs o produtor no lugar onde
+  ela desenha o "VAZIO" — maiúsculas douradas, sem `min-width:0`. "Carlos
+  Alonso Douro Wine Company, Lda. · 2022" atropelava o nome do vinho em
+  cima. Nome numa linha, produtor · ano noutra, ellipsis nos dois.
 
 ## O que falta, e porque não está feito
 

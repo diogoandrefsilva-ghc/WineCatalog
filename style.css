@@ -556,7 +556,12 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 /* ── FAB do Catálogo (admin) — "+ Vinho novo" e "Atualizar informação"
    atrás de um só botão flutuante, em vez de um perdido no fundo do painel
    de filtros. Mesmo desenho da Garrafeira: toque no "+", duas ações. ── */
-.wc-fab-wrap{position:fixed;right:16px;bottom:26px;z-index:700;
+/* z-index ABAIXO do `.modal` (600), e mais: o `wcFabSincronizar` esconde-o
+   de todo enquanto houver um modal aberto. Com os 700 que isto teve
+   primeiro, o "+" ficava POR CIMA do modal e roubava o toque ao botão do
+   canto inferior direito — "carrego em Gerar prompt e não acontece nada",
+   sem erro nenhum na consola. */
+.wc-fab-wrap{position:fixed;right:16px;bottom:26px;z-index:450;
   display:flex;flex-direction:column;align-items:flex-end;gap:10px}
 .wc-fab{width:56px;height:56px;border-radius:50%;border:none;background:var(--wine);
   color:#fff;font-size:26px;line-height:1;cursor:pointer;
@@ -570,12 +575,68 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   box-shadow:0 6px 16px -4px rgba(0,0,0,.3)}
 
 /* ── Atualizar informação em lote ── */
-.lote-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
-.lote-chip{display:inline-flex;align-items:center;gap:6px;background:var(--bg);
-  border:1px solid var(--bo);border-radius:99px;padding:5px 6px 5px 10px;font-size:12.5px}
-.lote-chip button{background:none;border:none;color:var(--mu);cursor:pointer;font-size:13px;padding:0 2px}
-.lote-resultados{max-height:220px;overflow-y:auto;border:1px solid var(--bo);border-radius:10px;
-  padding:0 10px;margin-top:8px}
-.lote-prog-l{display:flex;justify-content:space-between;gap:10px;padding:6px 0;
+.lote-passos{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+.lote-passo{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+  color:var(--mu);text-transform:uppercase;letter-spacing:.4px}
+.lote-passo+.lote-passo::before{content:'';width:16px;height:1px;background:var(--bo)}
+.lote-passo i{width:19px;height:19px;border-radius:50%;background:var(--bg);border:1px solid var(--bo);
+  display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:10px}
+.lote-passo.on{color:var(--wine)}
+.lote-passo.on i{background:var(--wine);border-color:var(--wine);color:#fff}
+.lote-passo.feito{color:var(--gold)}
+.lote-passo.feito i{background:var(--gold);border-color:var(--gold);color:#fff}
+
+.lote-sel-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  margin:16px 0 6px;font-size:11px;font-weight:600;color:var(--mu);
+  text-transform:uppercase;letter-spacing:.4px}
+.lote-cont{color:var(--wine);font-weight:700;letter-spacing:0}
+.lote-chips{display:flex;flex-wrap:wrap;gap:6px}
+.lote-chip{display:inline-flex;align-items:center;gap:7px;max-width:100%;background:#fdfbfa;
+  border:1px solid var(--bo);border-radius:99px;padding:5px 5px 5px 11px;font-size:12.5px;font-weight:600}
+.lote-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lote-chip em{font-style:normal;color:var(--mu);font-weight:600;flex-shrink:0}
+.lote-chip button{width:19px;height:19px;flex-shrink:0;padding:0;border-radius:50%;
+  background:var(--bg);border:1px solid var(--bo);color:var(--mu);font-size:10px;line-height:1;cursor:pointer}
+
+/* Uma linha de vinho tem NOME por cima e produtor · ano por baixo, cada um
+   com o seu ellipsis. A primeira versão reaproveitou a `.pr-campo` da
+   pesquisa, com o produtor no lugar do crachá "vazio" — e "Carlos Alonso
+   Douro Wine Company, Lda. · 2022" atropelava o nome em maiúsculas
+   douradas. Um crachá é para uma palavra; isto é uma frase. */
+.lote-resultados{max-height:250px;overflow-y:auto;border:1px solid var(--bo);border-radius:12px;
+  padding:2px 12px;background:#fdfbfa}
+.lote-vazio{margin:0;padding:14px 0;font-size:12.5px;color:var(--mu);text-align:center}
+.lote-v{display:flex;align-items:center;gap:11px;padding:10px 0;
+  border-bottom:1px solid var(--bo);cursor:pointer}
+.lote-v:last-child{border-bottom:none}
+.lote-v input{width:18px;height:18px;flex-shrink:0;accent-color:var(--wine)}
+.lote-v-tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.lote-v-nome,.lote-v-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lote-v-nome{font-size:13.5px;font-weight:600}
+.lote-v-sub{font-size:11.5px;color:var(--mu)}
+.lote-v.on .lote-v-nome{color:var(--wine)}
+.lote-v.cheio{opacity:.4;cursor:default}
+
+/* Duas colunas pela mesma razão dos cartões de filtro: vinte e um campos
+   numa coluna só davam um modal a rolar sem fim. `minmax(0,1fr)` +
+   `min-width:0` ou o ellipsis nunca dispara. */
+.lote-campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 12px;margin-top:4px}
+.lote-c{display:flex;align-items:center;gap:7px;min-width:0;padding:9px 0;
+  border-bottom:1px solid var(--bo);font-size:12.5px;cursor:pointer}
+.lote-c input{width:17px;height:17px;flex-shrink:0;accent-color:var(--wine)}
+.lote-c span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.lote-c.on span{color:var(--wine);font-weight:700}
+/* O ponto dourado marca os campos que ENVELHECEM (`winecatalog.volatil`) —
+   são esses que valem uma revisão em lote; os outros não mudam. */
+.lote-c i{width:6px;height:6px;border-radius:50%;background:var(--gold);flex-shrink:0}
+
+.lote-ol{margin:0;padding-left:20px;font-size:12.5px;line-height:1.55;color:var(--mu)}
+.lote-ol li{margin-bottom:3px}
+.lote-ol li::marker{color:var(--gold);font-weight:700}
+.lote-ol strong{color:var(--tx)}
+
+.lote-prog-l{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:7px 0;
   border-bottom:1px solid var(--bo);font-size:13px}
 .lote-prog-l:last-child{border-bottom:none}
+.lote-prog-l span:first-child{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lote-prog-l .wc-note{margin:0;flex-shrink:0;text-align:right}
