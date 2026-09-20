@@ -585,19 +585,53 @@ async function processarPesquisa(
       if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
       console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
       let g: Response | null = null;
+      /* O motivo do último 200 VAZIO (ver o comentário a seguir ao ciclo).
+         Guarda-se para a mensagem de erro: "MAX_TOKENS" e "SAFETY" são
+         avarias muito diferentes e quem lê tem de as poder distinguir. */
+      let vazioMotivo = "";
 
+      /* O CORPO LÊ-SE DENTRO DO CICLO, e é essa a correção. Antes o ciclo
+         fazia `break` no 200 e só depois é que alguém lia a resposta — por
+         isso um 200 COM ZERO TOKENS DE SAÍDA (o modelo gasta o orçamento
+         todo a pensar e não escreve nada) nunca chegava a tentar o modelo
+         seguinte, e ainda por cima acabava a ser contado como sucesso:
+         texto vazio -> `extrairJson` null -> `normalizar` {} -> "0 campos"
+         -> a pesquisa FECHAVA COMO CONCLUÍDA. No ecrã lia-se "não encontrei
+         nada" quando o que houve foi não ter havido resposta nenhuma.
+         Apanhado a 20/09/2026 com o `gemini-flash-latest`: 200, 5989 tokens
+         de entrada, 0 de saída, ~4977 gastos a pensar. */
       for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
         model = candidatos[ci];
         g = await chamarGemini(model);
         console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
-        if (g.ok) break;
+        if (g.ok) {
+          const gd = await g.json();
+          const cand = gd?.candidates?.[0];
+          const motivo = String(cand?.finishReason ?? "");
+          const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+          const uso = usageMetadata(gd);
+          console.log("CATALOGO-INFO resposta:", model, "finishReason:", motivo || "(nenhum)",
+                      "texto:", bruto.length, "tokens saída:", uso?.candidatesTokenCount ?? 0);
+          if (bruto) {
+            usage = uso;
+            parsed = extrairJson(bruto);
+            fontes = fontesGrounding(gd);
+            break;
+          }
+          // 200 sem uma letra escrita: não é "não encontrei", é não ter
+          // havido resposta. Segue para o modelo seguinte da lista.
+          vazioMotivo = motivo || "resposta vazia";
+          usage = uso ?? usage;
+          g = null;
+          continue;
+        }
         if (g.status === 404) { _models = null; continue; }
         if (!transitorio(g.status)) break;
       }
 
-      if (!g || !g.ok) {
-        const status = g?.status ?? 502;
-        const detail = g ? await g.text() : "";
+      if (g && !g.ok) {
+        const status = g.status;
+        const detail = await g.text();
         let msg = "";
         try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
         await registar("erro", { passo: "gemini", status, modelo: model, vinho_id: vinhoId, erro: (msg || detail).slice(0, 800) }, quem);
@@ -610,11 +644,23 @@ async function processarPesquisa(
         return;
       }
 
-      const gd = await g.json();
-      usage = usageMetadata(gd);
-      const bruto = (gd?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
-      parsed = extrairJson(bruto);
-      fontes = fontesGrounding(gd);
+      // Nenhum dos modelos escreveu nada. Isto é um ERRO e diz-se que é —
+      // fechar como "concluído, 0 campos" era mentir a quem está à espera.
+      if (!g) {
+        await registar("erro", {
+          passo: vazioMotivo ? "gemini_vazio" : "gemini_sem_resposta",
+          modelo: model, vinho_id: vinhoId, finishReason: vazioMotivo || null,
+          erro: vazioMotivo ? `resposta vazia (${vazioMotivo})` : "sem resposta do Gemini",
+          ...(usage ? { usageMetadata: usage } : {}),
+        }, quem);
+        await fechar(pesquisaId, {
+          estado: "erro",
+          erro: vazioMotivo
+            ? `o modelo respondeu sem escrever nada (${vazioMotivo}) — gastou o orçamento a pensar. Tenta outra vez, ou usa a pesquisa manual.`
+            : "não consegui falar com o Gemini — tenta outra vez",
+        });
+        return;
+      }
     }
 
     const ficha = normalizar(parsed, campos);
