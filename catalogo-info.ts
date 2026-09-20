@@ -91,7 +91,14 @@ async function descobrirFlash(signal: AbortSignal): Promise<string[]> {
    de emergência à Garrafeira e semanas de avaria calada à WineSelection —
    um nome fixo aqui é uma bomba-relógio que só rebenta no dia em que o
    ponteiro der 429. */
-const ESTAVEIS = ["gemini-flash-latest", "gemini-flash-lite-latest"];
+/* O LITE VEM PRIMEIRO, e não é para poupar: é porque o outro NÃO RESPONDE.
+   Nas quatro pesquisas que este catálogo fez, o `gemini-flash-latest` devolveu
+   200 com o corpo vazio em TODAS — gastou o orçamento a pensar (~5000 tokens
+   de pensamento por tentativa) e não escreveu uma letra. O lite, a seguir,
+   respondeu sempre à primeira. Enquanto for assim, pô-lo à frente é deitar
+   fora uma ida ao Gemini e ~4s em cada pesquisa. Se um dia o flash voltar a
+   escrever, isto volta atrás — e o `finishReason` no log é o que o dirá. */
+const ESTAVEIS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
 async function candidatosModelo(signal: AbortSignal): Promise<string[]> {
   const pinned = Deno.env.get("GEMINI_MODEL");
   const descobertos = await descobrirFlash(signal);
@@ -254,7 +261,7 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
   return out;
 }
 
-type UsageMetadata = { promptTokenCount: number; candidatesTokenCount: number; totalTokenCount: number };
+type UsageMetadata = { promptTokenCount: number; candidatesTokenCount: number; thoughtsTokenCount: number; totalTokenCount: number };
 function usageMetadata(raw: any): UsageMetadata | null {
   const toInt = (v: unknown) => {
     const n = typeof v === "number" ? v : Number(v);
@@ -265,6 +272,7 @@ function usageMetadata(raw: any): UsageMetadata | null {
   const out = {
     promptTokenCount: toInt(src.promptTokenCount),
     candidatesTokenCount: toInt(src.candidatesTokenCount),
+    thoughtsTokenCount: toInt(src.thoughtsTokenCount),
     totalTokenCount: toInt(src.totalTokenCount),
   };
   return (out.promptTokenCount || out.candidatesTokenCount || out.totalTokenCount) ? out : null;
@@ -739,10 +747,22 @@ async function processarPesquisa(
     }
     const entraram = propostas.filter((p) => (p as any).entrou).length;
 
-    console.log("CATALOGO-INFO ok:", entraram, "de", propostas.length, "modelo:", model);
+    /* `fontes` são os `groundingChunks` que a pesquisa Google devolveu. Vão
+       para o log por uma razão que não é curiosidade: a ZERO, a resposta não
+       foi pesquisada — foi escrita de memória, e uma ficha de memória a
+       entrar no catálogo com a força de uma pesquisa é exatamente o que a
+       invariante 9 proíbe ("uma nota pesquisada e um palpite não podem
+       parecer a mesma coisa"). Regista-se primeiro porque não há histórico
+       nenhum para comparar: a primeira pesquisa automática a correr até ao
+       fim foi a do Meandro, e veio com zero. Se isto se mantiver a zero, o
+       passo seguinte é recusar a escrita sem grounding — não é uma decisão
+       a tomar com uma amostra de um. */
+    console.log("CATALOGO-INFO ok:", entraram, "de", propostas.length,
+                "modelo:", model, "fontes:", fontes.length);
     await registar("ok", {
       modelo: model, vinho_id: vinhoId,
       campos: entraram, propostos: propostas.length,
+      fontes: fontes.length,
       ...(usage ? { usageMetadata: usage } : {}),
       chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
       manual: respostaManual !== null,

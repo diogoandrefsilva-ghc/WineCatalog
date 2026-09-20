@@ -43,7 +43,7 @@ tudo o que aqui está foi pago com um erro.
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
   **`db/ia_uso.sql` é à parte de todos estes**: não é desta app nem do
-  catálogo — é o schema `ia_uso`, o registo do que as CINCO apps gastam no
+  catálogo — é o schema `ia_uso`, o registo do que as SEIS apps gastam no
   Gemini (ver a secção própria, mais abaixo). Corre sozinho, em qualquer
   altura.
 - `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
@@ -508,10 +508,10 @@ vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
 **Esta é a secção canónica.** As outras quatro apps têm uma versão curta a
 apontar para aqui.
 
-Cinco apps deste projeto chamam o Gemini, por oito Edge Functions, e cada
+Seis apps deste projeto chamam o Gemini, por nove Edge Functions, e cada
 uma tinha o seu `sync_log` — o que quer dizer que a pergunta *"quanto é que
-isto me está a custar ao todo?"* não tinha onde ser respondida. Somar cinco
-tabelas à mão, em cinco schemas, com colunas diferentes, não é resposta.
+isto me está a custar ao todo?"* não tinha onde ser respondida. Somar seis
+tabelas à mão, em seis schemas, com colunas diferentes, não é resposta.
 O schema **`ia_uso`** é uma linha por chamada: app, função, modelo, tokens
 (entrada/saída/pensamento), custo estimado, duração, quem chamou e o erro.
 Fonte de verdade: **`db/ia_uso.sql`, neste repo.**
@@ -523,9 +523,16 @@ Fonte de verdade: **`db/ia_uso.sql`, neste repo.**
 | **WineSelection** | `sugerir-vinho`, `verificar-vinhos` | `wineselection` |
 | **SplitBill** | `fatura-restaurante` | `splitbill` |
 | **FestasBV** | `fatura-ocr` | `festasbv` |
+| **Goals** | `calendario-sporting` | `goals` **ou** `splitbill` |
+
+A última é a única que serve DUAS apps: o SplitBill lê o mesmo calendário
+(ver o `CLAUDE.md` do Goals). Por isso a `app` que ela grava é a de QUEM
+CHAMOU (o `qualApp` do corpo do pedido), não um "goals" fixo — a pergunta a
+que o `ia_uso` existe para responder é quanto custa cada APP, não quanto
+custa cada ficheiro.
 
 - **Porque é um schema à parte, e não uma tabela daqui.** Pelo mesmo motivo
-  que o catálogo saiu da Garrafeira: isto não é de nenhuma das cinco apps.
+  que o catálogo saiu da Garrafeira: isto não é de nenhuma das seis apps.
   Pendurá-lo numa delas era dar a quem a herdasse o poder sobre uma tabela
   que regista o gasto de todas. Tem dono próprio
   (`ia_uso.config.admin_email`), que não tem de ser o admin de nenhuma.
@@ -554,9 +561,16 @@ Fonte de verdade: **`db/ia_uso.sql`, neste repo.**
   continuar escrita onde estes números aparecerem.
 - **`detalhe` guarda o payload inteiro do `sync_log` da app de origem.** É
   o que permite investigar um caso sem acrescentar uma coluna por cada
-  coisa nova que uma das cinco apps queira registar. As duas funções que
+  coisa nova que uma das seis apps queira registar. As duas funções que
   nunca tiveram `sync_log` próprio (`fatura-restaurante`, `fatura-ocr`)
   passaram a ter aqui o seu único rasto.
+- **`tokens_pensamento` esteve a NULL em cinco das nove**, e é a coluna que
+  explicava a avaria de cima. O `registarIaUso` de cada função sempre leu
+  `usage?.thoughtsTokenCount` — quem o deitava fora era o `usageMetadata()`
+  local, que só copiava entrada/saída/total. As que passam o
+  `gd.usageMetadata` em cru (`fatura-restaurante`, `fatura-ocr`) nunca
+  tiveram o problema. A `catalogo-foto` era o caso extremo: não registava
+  token nenhum.
 - **Ainda não há ecrã.** A API está pronta e à espera: `resumo(p_dias)` dá
   os totais por app, por modelo, na janela e acumulado; `listar(p_limite,
   p_app, p_desde)` dá os registos em bruto. A app que os mostra é o passo
@@ -669,6 +683,43 @@ de cada app antes de assumir que a que está calada está bem.**
   orçamento: `maxOutputTokens` explícito, ou um `thinkingConfig` com um
   tecto POSITIVO — nunca `thinkingBudget: 0`, que com `google_search`
   ligado dá 400 (ver a secção da Edge Function).
+
+  **E o mesmo ponto cego estava em mais três das nove.** Varreram-se todas,
+  e o que separa as boas das más não é o erro HTTP — é o que cada uma faz
+  com um 200 sem texto:
+  · **sucesso calado** (o defeito a sério) — a `catalogo-foto` dava-o como
+    "não consegui ler um rótulo nesta foto" e registava **`ok`**; a
+    `importar-vinhos` devolvia uma lista de ZERO vinhos como leitura bem
+    feita; a `verificar-vinhos` fechava a análise em **`concluido`** com a
+    verificação vazia — precisamente a função cuja razão de existir é não
+    fingir que verificou. As três passaram a ler o corpo DENTRO do ciclo,
+    a tentar o modelo seguinte, e a fechar em **erro** se nenhum escrever.
+  · **já davam erro** — `vinho-info` (e ainda escala para o modelo maior),
+    `sugerir-vinho`, `fatura-restaurante`, `fatura-ocr` e
+    `calendario-sporting`. O que lhes faltava era dizer PORQUÊ: todas
+    chamavam a isto "resposta ilegível", que é outra coisa (ali houve texto
+    e não se entendeu). Passaram a distinguir os dois casos e a levar o
+    `finishReason` para o log.
+  **Uma função nova que leia o Gemini responde a esta pergunta antes de ir
+  para produção**: um 200 sem texto fecha em erro, ou passa por sucesso?
+
+  **E o `gemini-flash-latest` passou para SEGUNDO na lista** (`ESTAVEIS`, na
+  `catalogo-info`). Nas quatro pesquisas que este catálogo fez, ele devolveu
+  o 200 vazio em TODAS, e o `gemini-flash-lite-latest` respondeu a seguir
+  sempre à primeira — enquanto for assim, tê-lo à frente é deitar fora uma
+  ida ao Gemini e ~4s em cada pesquisa. **Não é uma regra sobre qual é o
+  melhor modelo**, é uma constatação sobre qual responde; se o flash voltar
+  a escrever, isto volta atrás, e o `finishReason` no log é o que o dirá.
+
+- **A primeira pesquisa a correr até ao fim veio com ZERO fontes.** Depois
+  da correção acima, a pesquisa do Meandro deu um campo (o `vivino_url`) —
+  e `groundingChunks` vazio. Se o modelo respondeu de memória, aquilo entrou
+  no catálogo com a força de uma pesquisa, que é exatamente o que a
+  invariante 9 proíbe. **Ainda não se mudou a política**, e de propósito:
+  não há amostra nenhuma para comparar (esta foi a primeira). O que se fez
+  foi pôr o `fontes: N` no log de cada pesquisa. **Se isto se mantiver a
+  zero, o passo seguinte é recusar a escrita sem grounding** — como a
+  `verificar-vinhos` já faz ao não ter fallback "sem pesquisa".
 
 ## O que falta, e porque não está feito
 

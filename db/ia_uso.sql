@@ -29,12 +29,18 @@
 --
 -- É IDEMPOTENTE: corre as vezes que forem precisas.
 --
--- As 5 apps / 8 functions que escrevem aqui:
+-- As 6 apps / 9 functions que escrevem aqui:
 --   winecatalog    catalogo-info, catalogo-foto
 --   garrafeira     vinho-info, importar-vinhos
 --   wineselection  sugerir-vinho, verificar-vinhos
 --   splitbill      fatura-restaurante
 --   festasbv       fatura-ocr
+--   goals          calendario-sporting
+--
+-- A `calendario-sporting` é a única que serve DUAS apps — o SplitBill lê o
+-- mesmo calendário — e por isso grava `app` = quem chamou (`goals` ou
+-- `splitbill`), não um "goals" fixo. A pergunta a que esta tabela existe
+-- para responder é quanto custa cada APP, não quanto custa cada ficheiro.
 --
 -- PASSO MANUAL NO PAINEL: `ia_uso` tem de estar em Project Settings → API
 -- → Data API → Exposed schemas. Sem isso o PostgREST responde PGRST106 e

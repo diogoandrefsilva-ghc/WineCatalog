@@ -219,6 +219,7 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get("Authorization") ?? "";
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const inicio = Date.now();
   let quem: string | null = null;
 
   try {
@@ -242,6 +243,9 @@ Deno.serve(async (req) => {
     let g: Response | null = null;
     let model = listaModelos[0];
 
+    let gd: any = null;
+    let bruto = "";
+    let vazioMotivo = "";
     for (let i = 0; i < listaModelos.length && !ctrl.signal.aborted; i++) {
       model = listaModelos[i];
       g = await fetch(`${GAPI}/models/${model}:generateContent?key=${GEMINI_KEY}`, {
@@ -253,17 +257,31 @@ Deno.serve(async (req) => {
           generationConfig: { temperature: 0, responseMimeType: "application/json" },
         }),
       });
-      if (g.ok) break;
+      /* Um 200 com o corpo VAZIO não é resposta — é o modelo a gastar o
+         orçamento a pensar e a não escrever nada. Lê-se o corpo AQUI para
+         se poder passar ao modelo seguinte; ler só depois do ciclo fazia
+         desta avaria o fim da linha. Ver CLAUDE.md, "O 200 vazio". */
+      if (g.ok) {
+        gd = await g.json();
+        const cand = gd?.candidates?.[0];
+        vazioMotivo = String(cand?.finishReason ?? "") || "resposta vazia";
+        bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+        console.log("CATALOGO-FOTO resposta:", model, "finishReason:", vazioMotivo,
+                    "texto:", bruto.length, "tokens saída:", gd?.usageMetadata?.candidatesTokenCount ?? 0);
+        if (bruto) break;
+        g = null;
+        continue;
+      }
       if (g.status === 404) { _modelos = null; continue; }
       if (!transitorio(g.status)) break;
     }
 
-    if (!g || !g.ok) {
+    if (g && !g.ok) {
       const status = g?.status ?? 502;
       const detail = g ? await g.text() : "";
       let msg = "";
       try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
-      await registar("erro", { status, modelo: model, erro: (msg || detail).slice(0, 400) }, quem);
+      await registar("erro", { status, modelo: model, erro: (msg || detail).slice(0, 400), ms: Date.now() - inicio }, quem);
       return json({
         error: transitorio(status)
           ? "o serviço está com muita procura agora — tenta outra vez"
@@ -271,13 +289,27 @@ Deno.serve(async (req) => {
       }, 502);
     }
 
-    const gd = await g.json();
-    const bruto = (gd?.candidates?.[0]?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+    /* Nenhum modelo escreveu uma letra. NÃO é "não consegui ler o rótulo" —
+       é não ter havido resposta, e dizer a primeira escondia a avaria. */
+    if (!bruto) {
+      await registar("erro", {
+        passo: "gemini_vazio", modelo: model, finishReason: vazioMotivo || null,
+        ms: Date.now() - inicio,
+        ...(gd?.usageMetadata ? { usageMetadata: gd.usageMetadata } : {}),
+      }, quem);
+      return json({
+        error: `o modelo não devolveu resposta (${vazioMotivo || "vazia"}) — tenta outra vez`,
+      }, 502);
+    }
+
     const parsed = extrairJson(bruto);
 
     if (!parsed || parsed.encontrado === false) {
       const aviso = texto(parsed?.aviso, 300) || "não consegui ler um rótulo de vinho nesta foto";
-      await registar("ok", { modelo: model, encontrado: false }, quem);
+      await registar("ok", {
+        modelo: model, encontrado: false, ms: Date.now() - inicio,
+        ...(gd?.usageMetadata ? { usageMetadata: gd.usageMetadata } : {}),
+      }, quem);
       return json({ encontrado: false, aviso });
     }
 
@@ -299,7 +331,10 @@ Deno.serve(async (req) => {
       if (v === null || v === "" || (Array.isArray(v) && !v.length)) delete campos[k];
     });
 
-    await registar("ok", { modelo: model, campos: Object.keys(campos).length }, quem);
+    await registar("ok", {
+      modelo: model, campos: Object.keys(campos).length, ms: Date.now() - inicio,
+      ...(gd?.usageMetadata ? { usageMetadata: gd.usageMetadata } : {}),
+    }, quem);
     return json({
       encontrado: true,
       nome: texto(parsed.nome, 160),
@@ -311,7 +346,7 @@ Deno.serve(async (req) => {
   } catch (e) {
     const err = e as Error;
     const timeout = err.name === "AbortError";
-    await registar("erro", { passo: timeout ? "timeout" : "excecao", erro: String(err.message).slice(0, 400) }, quem);
+    await registar("erro", { passo: timeout ? "timeout" : "excecao", erro: String(err.message).slice(0, 400), ms: Date.now() - inicio }, quem);
     return json({ error: timeout ? "demorou demasiado a ler a imagem — tenta outra vez" : err.message }, 500);
   } finally {
     clearTimeout(timer);
