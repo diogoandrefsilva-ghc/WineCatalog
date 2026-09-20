@@ -36,6 +36,48 @@ para o catálogo).
 
 Todos são idempotentes.
 
+## `ia_uso.sql` — fora desta ordem, de propósito
+
+```
+db/ia_uso.sql               (o registo do que as 5 apps gastam no Gemini)
+```
+
+**Não depende de nada nem nada depende dele**, por isso corre-se quando se
+quiser. É um schema À PARTE (`ia_uso`) e **não é desta app**: é a memória
+comum do que as cinco apps que chamam o Gemini gastam — WineCatalog,
+Garrafeira, WineSelection, SplitBill e FestasBV, por oito Edge Functions.
+Está aqui pela mesma razão por que o catálogo está: não é de nenhuma delas,
+e este é o repo onde as coisas de todos vivem. Tem dono próprio
+(`ia_uso.config.admin_email`), que não tem de ser o admin desta app.
+
+Uma linha por chamada: app, função, modelo, tokens, custo estimado,
+duração, quem e o erro. Escreve a `service_role`, de dentro de cada Edge
+Function; lê-se por `ia_uso.listar()`/`ia_uso.resumo()`, com o portão
+`ia_uso.sou_admin()` lá dentro. Ver "O registo central de acessos ao
+Gemini" no `CLAUDE.md`.
+
+**Dois passos manuais, e falham os dois em silêncio:**
+
+1. **Expor `ia_uso`** em Settings › API › Data API › *Exposed schemas* (o
+   mesmo passo do `winecatalog`, lá em baixo). Sem isto o PostgREST
+   responde `PGRST106`.
+2. **Correr o ficheiro INTEIRO** — o bloco de GRANTs no fim inclusive. Sem
+   ele não há um único GRANT no schema, nem sequer `USAGE` para a
+   `service_role`, e os INSERTs levam 403 (`42501`).
+
+Em qualquer dos dois casos o erro é engolido pelo `try/catch` da
+`registarIaUso()` de cada função — que é o que a impede de deitar abaixo a
+chamada que estava a ser feita — e o que se vê é a tabela a zero linhas,
+sem um erro em lado nenhum. **Já aconteceu.** Se `ia_uso.registos` estiver
+vazia, confere estes dois ANTES de desconfiar do código:
+
+```sql
+SELECT has_schema_privilege('service_role', 'ia_uso', 'USAGE')            AS srv_usage,
+       has_table_privilege('service_role', 'ia_uso.registos', 'INSERT')   AS srv_insert,
+       has_table_privilege('authenticated', 'ia_uso.registos', 'SELECT')  AS auth_select;
+SELECT count(*) FROM pg_policies WHERE schemaname = 'ia_uso';  -- 2
+```
+
 ## Passos manuais no painel Supabase
 
 1. **Expor o schema na API** — Settings › API › Data API › *Exposed

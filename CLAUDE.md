@@ -42,6 +42,10 @@ tudo o que aqui está foi pago com um erro.
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
+  **`db/ia_uso.sql` é à parte de todos estes**: não é desta app nem do
+  catálogo — é o schema `ia_uso`, o registo do que as CINCO apps gastam no
+  Gemini (ver a secção própria, mais abaixo). Corre sozinho, em qualquer
+  altura.
 - `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
   descartável (encoder PNG à mão, sem dependências); não há fonte vetorial
   guardada no repo. Para os refazer, escreve outro script assim.
@@ -499,6 +503,64 @@ A vista `winecatalog.consumo` (que une as duas `sync_log`) não se dá a
 ninguém: uma vista não é `security_invoker`, corre como o dono, e por isso
 vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
 `consumo_resumo()`, que agrega e nunca devolve o `quem`.
+
+## O registo central de acessos ao Gemini (schema `ia_uso`)
+**Esta é a secção canónica.** As outras quatro apps têm uma versão curta a
+apontar para aqui.
+
+Cinco apps deste projeto chamam o Gemini, por oito Edge Functions, e cada
+uma tinha o seu `sync_log` — o que quer dizer que a pergunta *"quanto é que
+isto me está a custar ao todo?"* não tinha onde ser respondida. Somar cinco
+tabelas à mão, em cinco schemas, com colunas diferentes, não é resposta.
+O schema **`ia_uso`** é uma linha por chamada: app, função, modelo, tokens
+(entrada/saída/pensamento), custo estimado, duração, quem chamou e o erro.
+Fonte de verdade: **`db/ia_uso.sql`, neste repo.**
+
+| app | Edge Functions | `app` gravado |
+|---|---|---|
+| **WineCatalog** | `catalogo-info`, `catalogo-foto` | `winecatalog` |
+| **Garrafeira** | `vinho-info`, `importar-vinhos` | `garrafeira` |
+| **WineSelection** | `sugerir-vinho`, `verificar-vinhos` | `wineselection` |
+| **SplitBill** | `fatura-restaurante` | `splitbill` |
+| **FestasBV** | `fatura-ocr` | `festasbv` |
+
+- **Porque é um schema à parte, e não uma tabela daqui.** Pelo mesmo motivo
+  que o catálogo saiu da Garrafeira: isto não é de nenhuma das cinco apps.
+  Pendurá-lo numa delas era dar a quem a herdasse o poder sobre uma tabela
+  que regista o gasto de todas. Tem dono próprio
+  (`ia_uso.config.admin_email`), que não tem de ser o admin de nenhuma.
+- **A escrita é uma `registarIaUso()` por Edge Function**, duplicada de
+  propósito — cada uma é auto-contida, como tudo neste projeto (ver a
+  confissão em "A ficha de um vinho"). Faz `POST /rest/v1/registos` com
+  `Content-Profile: ia_uso` e a `SERVICE_ROLE_KEY`, e vive **dentro de um
+  `try/catch` que engole tudo**: isto é registo, não é o trabalho. Nunca
+  pode deitar abaixo a chamada que estava a ser feita.
+- **Efeito colateral dessa mesma regra: mal configurado, falha em
+  SILÊNCIO.** Foi exatamente o que aconteceu — sem os GRANTs, os oito
+  INSERTs levavam 403 e eram engolidos, e a tabela ficava a zero linhas sem
+  um erro em lado nenhum. Se um dia isto estiver vazio, a ordem para
+  conferir é: **(1)** `ia_uso` está nos *Exposed schemas* do painel?
+  **(2)** o bloco de GRANTs do `db/ia_uso.sql` correu? **(3)** só depois
+  desconfiar do código.
+- **A leitura é por RPC** (`ia_uso.listar()`, `ia_uso.resumo()`), com o
+  portão `ia_uso.sou_admin()` **dentro** de cada função. As policies de
+  SELECT são só o segundo cinto para quem chegue às tabelas por REST — o
+  mesmo desenho do catálogo, e pela mesma razão (ver "O caminho de leitura,
+  e porque não são policies").
+- **Os TOKENS são facto, o EURO é uma estimativa grosseira.** Os tokens vêm
+  do `usageMetadata` da API; o euro sai de constantes escritas à mão em
+  cada Edge Function e a pesquisa Google é faturada à parte, por pedido. É
+  a mesma ressalva que o Resumo desta app já faz (`.aviso-euro`) — e tem de
+  continuar escrita onde estes números aparecerem.
+- **`detalhe` guarda o payload inteiro do `sync_log` da app de origem.** É
+  o que permite investigar um caso sem acrescentar uma coluna por cada
+  coisa nova que uma das cinco apps queira registar. As duas funções que
+  nunca tiveram `sync_log` próprio (`fatura-restaurante`, `fatura-ocr`)
+  passaram a ter aqui o seu único rasto.
+- **Ainda não há ecrã.** A API está pronta e à espera: `resumo(p_dias)` dá
+  os totais por app, por modelo, na janela e acumulado; `listar(p_limite,
+  p_app, p_desde)` dá os registos em bruto. A app que os mostra é o passo
+  seguinte.
 
 ## Regras técnicas (não partir a app)
 - `app.js` carrega como `<script src>` **normal, NÃO module** — há

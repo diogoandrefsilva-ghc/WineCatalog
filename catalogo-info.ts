@@ -429,6 +429,50 @@ async function registar(estado: string, detalhe: Record<string, unknown>, quem: 
   } catch (e) {
     console.log("CATALOGO-INFO sync_log erro:", String((e as Error).message).slice(0, 200));
   }
+  await registarIaUso("catalogo-info", estado, detalhe, quem);
+}
+
+/* Espelho em `ia_uso.registos` — schema à parte, no MESMO projeto Supabase,
+   partilhado pelas cinco apps (ver CLAUDE.md "O registo central de acessos
+   ao Gemini"). É o MESMO `detalhe` de cima, só com tokens/modelo/custo
+   promovidos a colunas, para uma tabela que soma o gasto do Gemini ao todo
+   em vez de app a app. Nunca deita a chamada principal abaixo por isto
+   falhar — a mesma regra do `registar()` local, aqui à parte porque este
+   POST vai para outro schema (`Content-Profile: ia_uso`, não `winecatalog`). */
+async function registarIaUso(funcao: string, estado: string, detalhe: Record<string, unknown>, quem: string | null): Promise<void> {
+  try {
+    const usage = (detalhe.usageMetadata ?? null) as
+      | { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; totalTokenCount?: number }
+      | null;
+    const pesquisa = detalhe.pesquisa as unknown;
+    await fetch(`${SB_URL}/rest/v1/registos`, {
+      method: "POST",
+      headers: {
+        apikey: SB_SRV, Authorization: "Bearer " + SB_SRV,
+        "Content-Type": "application/json", "Content-Profile": "ia_uso",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        app: "winecatalog", funcao,
+        estado: estado === "pedido" || estado === "erro" ? estado : "ok",
+        modelo: (detalhe.modelo as string | undefined) ?? null,
+        pesquisa_web: typeof pesquisa === "boolean" ? pesquisa : (typeof pesquisa === "string" ? pesquisa.length > 0 : null),
+        tokens_entrada: usage?.promptTokenCount ?? null,
+        tokens_saida: usage?.candidatesTokenCount ?? null,
+        tokens_pensamento: usage?.thoughtsTokenCount ?? null,
+        tokens_total: usage?.totalTokenCount ?? null,
+        custo_estimado_eur: (detalhe.custo_estimado_eur as number | undefined) ?? null,
+        duracao_ms: (detalhe.ms as number | undefined) ?? null,
+        quem,
+        erro: estado === "erro"
+          ? (String((detalhe.erro as string | undefined) ?? (detalhe.passo as string | undefined) ?? "").slice(0, 500) || null)
+          : null,
+        detalhe,
+      }),
+    });
+  } catch (_e) {
+    // nunca deita a chamada principal abaixo
+  }
 }
 
 /* Fecha SEMPRE a linha de trabalho. Uma pesquisa presa em 'pendente' deixa
