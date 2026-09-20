@@ -644,6 +644,32 @@ de cada app antes de assumir que a que está calada está bem.**
   Alonso Douro Wine Company, Lda. · 2022" atropelava o nome do vinho em
   cima. Nome numa linha, produtor · ano noutra, ellipsis nos dois.
 
+- **O 200 vazio que se lia como "não encontrei nada".** A pesquisa
+  automática da ficha deixou de dar resultado e não havia erro em lado
+  nenhum: a linha de `pesquisas` fechava como `concluido`, com `campos: 0`.
+  O `sync_log` é que contava a história — HTTP **200**, uma tentativa só, e
+  `candidatesTokenCount: **0**` com o total muito acima da entrada (5989
+  de entrada, 0 de saída, 10966 no total: os ~4977 do meio foram gastos a
+  **pensar**). O modelo gastou o orçamento todo a pensar e não escreveu uma
+  letra.
+  Dois defeitos a somar, e o segundo é o que fazia isto ser invisível:
+  **(1)** o ciclo dos candidatos fazia `break` no 200 e só depois é que
+  alguém lia o corpo — logo um 200 vazio nunca tentava o modelo seguinte;
+  **(2)** texto vazio → `extrairJson` null → `normalizar` `{}` → "0 campos"
+  → **fechava como sucesso**. Não ter havido resposta e não haver nada a
+  dizer sobre o vinho são coisas diferentes, e a app dizia a segunda quando
+  o que se passava era a primeira.
+  Agora o corpo lê-se DENTRO do ciclo, um 200 vazio passa ao modelo
+  seguinte, e se nenhum escrever nada a pesquisa fecha em **erro** com o
+  `finishReason` à frente (`MAX_TOKENS` e `SAFETY` são avarias muito
+  diferentes). O `finishReason` passou também a ir para o log — era o que
+  faltava para se saber porquê, em vez de se andar a adivinhar pela
+  aritmética dos tokens.
+  **Se voltar a acontecer em todos os modelos**, o passo seguinte é o
+  orçamento: `maxOutputTokens` explícito, ou um `thinkingConfig` com um
+  tecto POSITIVO — nunca `thinkingBudget: 0`, que com `google_search`
+  ligado dá 400 (ver a secção da Edge Function).
+
 ## O que falta, e porque não está feito
 
 ### A mudança da cor na chave (decidida, não feita)
