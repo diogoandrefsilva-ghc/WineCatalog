@@ -12,8 +12,8 @@ Este ficheiro nasceu do documento de arranque (setembro de 2026). Quase
 tudo o que aqui está foi pago com um erro.
 
 ## Estrutura
-- `index.html` — só markup: os cinco separadores (o quinto, Alertas, só
-  aparece ao admin) + os três ecrãs de autenticação (`page-login`,
+- `index.html` — só markup: os quatro separadores (Catálogo, o inicial ·
+  Duplicados · Alertas, só ao admin · Definições) + os três ecrãs de autenticação (`page-login`,
   `page-nova-pass`, `page-sem-acesso`) + o splash + os seis modais: a
   ficha, **Editar**, **Vinho novo**, **Procurar informação**,
   **Atualizar informação** (em lote) e Alertas vivem em `t-alertas` + o
@@ -22,7 +22,7 @@ tudo o que aqui está foi pago com um erro.
 - `app.js` — toda a lógica. Secções (`grep` pelo título): Sessão Supabase
   (`sbHeaders`/`sbFetch`/`sbReq`) · **RPC ao catálogo** (`catRpc`)
   · Escapes · Modais (`abrirModal`/`fecharModal`) · Tabs · **De onde veio
-  cada campo** · **Resumo** · **Catálogo** · **A ficha de um vinho**
+  cada campo** · **O catálogo em números** · **Catálogo** · **A ficha de um vinho**
   (a capa + **Editar** + **Vinho novo** + **Procurar informação**, ver
   abaixo) · **FAB do Catálogo** · **Atualizar informação em lote**
   (`wcLotePrompt`/`wcLoteEnviar`) · **Alertas** · **Duplicados** ·
@@ -125,32 +125,33 @@ Cada uma custou um erro.
 10. **Um log limpo numa app que não corre não é saúde, é desuso.** A
     WineSelection ficou semanas com duas avarias que a Garrafeira já tinha
     corrigido, e ninguém deu por nada porque ela não corria. **Esta app vai
-    correr ainda menos vezes** — daí o cartão "Sinal de vida" no Resumo, que
-    mostra a última chamada de cada app e a pinta a vermelho passados 30
-    dias. É a única coisa que esta app faz "sozinha", e é de propósito.
+    correr ainda menos vezes** — e por isso o sinal de vida (a última
+    chamada de cada app, marcada "calada" passados 30 dias) NÃO vive aqui:
+    esteve no Resumo desta app até 23/09/2026 e mudou-se para o Resumo da
+    **AI-API-Control** ("Por app"), que é a app que se abre para ver custos.
 
 ## O que a app faz — os ecrãs
 Nenhum deles é "a lista toda do catálogo" como ecrã inicial.
 
-### Resumo (inicial) — *quanto é que isto está a poupar*
-Lê `winecatalog.consumo_resumo()` e `winecatalog.resumo()`.
-- pedidos servidos pelo catálogo vs. total, por app e no total;
-- gasto estimado, poupança estimada, tokens;
-- tamanho do catálogo e **quantos campos vieram de cada origem** (é onde se
-  vê se as pesquisas a sério já estão a entrar);
-- "Sinal de vida" (ver invariante 10).
+### O Resumo saiu daqui (23/09/2026) — *quanto é que isto está a poupar*
+Era o separador inicial: gasto, tokens, pedidos servidos pelo catálogo,
+poupança estimada e o sinal de vida. Com a **AI-API-Control** a existir,
+eram duas apps a responder a "quanto gastei?" com números diferentes — o
+erro de sempre. Tudo o que era CUSTO foi para lá:
+- gasto, tokens, erros e sinal de vida já lá estavam, e **melhor** (euro
+  medido pelo saldo real, não só a constante escrita à mão);
+- a única análise que lá não existia — **pedidos servidos pelo catálogo e
+  a poupança** — passou para o cartão "Catálogo de vinhos" do Resumo de
+  lá, pela `ia_uso.poupanca_catalogo()` (`AI-API-Control/db/poupanca.sql`).
+  Não sai da `ia_uso.registos` e não pode: um pedido servido pelo catálogo
+  não chamou o Gemini, não deixou linha lá. Por isso ela lê a vista
+  **`winecatalog.consumo`, que continua a ser DESTE repo** — mexer-lhe
+  (nomes, colunas) parte aquele cartão, noutra app.
 
-**As unidades não se somam.** A `vinho-info` conta CAMPOS, a
-`sugerir-vinho` conta NOTAS, a `verificar-vinhos` conta VINHOS — cada linha
-diz em que unidade está. O que atravessa as três e se pode somar é o
-PEDIDO. Somá-las seria inventar um número.
-
-**Os tokens são facto; o euro é uma estimativa grosseira.** Sai de
-constantes escritas à mão nas Edge Functions, não é um preço publicado, e a
-pesquisa Google é faturada à parte por pedido. A poupança é uma estimativa
-em cima dessa (os pedidos servidos pelo catálogo × o custo médio de um que
-foi mesmo à IA). **Isto tem de continuar escrito no ecrã** (`.aviso-euro`)
-— é a diferença entre um número em que se pode confiar e um inventado.
+O que era do CATÁLOGO ficou: tamanho e **quantos campos vieram de cada
+origem** (é onde se vê se as pesquisas a sério já estão a entrar) — o
+cartão "O catálogo" em **Definições** (`wcCarregarNumeros`, lê
+`winecatalog.resumo()`). O ecrã inicial passou a ser o Catálogo.
 
 ### Catálogo — *ver e procurar o que já se sabe*
 Lista com procura por nome/produtor/região/casta (a procura passa pela
@@ -589,8 +590,8 @@ custa cada ficheiro.
 - **Os TOKENS são facto, o EURO é uma estimativa grosseira.** Os tokens vêm
   do `usageMetadata` da API; o euro sai de constantes escritas à mão em
   cada Edge Function e a pesquisa Google é faturada à parte, por pedido. É
-  a mesma ressalva que o Resumo desta app já faz (`.aviso-euro`) — e tem de
-  continuar escrita onde estes números aparecerem.
+  a mesma ressalva que o Resumo da AI-API-Control faz — e tem de continuar
+  escrita onde estes números aparecerem.
 - **`detalhe` guarda o payload inteiro do `sync_log` da app de origem.** É
   o que permite investigar um caso sem acrescentar uma coluna por cada
   coisa nova que uma das seis apps queira registar. As duas funções que
@@ -652,8 +653,8 @@ as duas avarias intactas durante semanas.
 
 Esta app agora TAMBÉM chama o Gemini (`catalogo-info.ts` e
 `catalogo-foto.ts`) — ver a confissão em "A ficha de um vinho" sobre a
-descoberta de modelo duplicada de propósito cinco vezes no projeto. Mas o
-Resumo continua a ser onde a calada se apanha: **compara a última chamada
+descoberta de modelo duplicada de propósito cinco vezes no projeto. O
+sítio onde a calada se apanha é o Resumo da AI-API-Control ("Por app"): **compara a última chamada
 de cada app antes de assumir que a que está calada está bem.**
 
 ## Coisas que já aconteceram e que é bom conhecer

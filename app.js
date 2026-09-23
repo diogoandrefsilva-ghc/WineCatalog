@@ -172,7 +172,7 @@ function itab(tab){
   if(el)el.classList.add('on');
   try{localStorage.setItem('wc_tab',tab);}catch(e){}
   wcFabSincronizar();
-  if(tab==='resumo')wcCarregarResumo();
+  if(tab==='cfg')wcCarregarNumeros();
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
   if(tab==='alertas')wcCarregarReportes('aberto');
@@ -180,11 +180,11 @@ function itab(tab){
 function restaurarTab(){
   let tab=null;
   try{tab=localStorage.getItem('wc_tab');}catch(e){}
-  if(!tab||!document.getElementById('t-'+tab))tab='resumo';
+  if(!tab||!document.getElementById('t-'+tab))tab='catalogo';
   /* O painel dos alertas existe no HTML para toda a gente (é o botão que
      está escondido), por isso quem deixou de ser admin voltava a cair nele
      e apanhava um "só o admin vê os alertas" à entrada. */
-  if(tab==='alertas'&&!isAdmin())tab='resumo';
+  if(tab==='alertas'&&!isAdmin())tab='catalogo';
   itab(tab);
 }
 
@@ -316,113 +316,28 @@ function wcValorHTML(k,v){
 }
 
 /* ══════════════════════════════════════════════
-   RESUMO — quanto é que isto está a poupar
+   O CATÁLOGO EM NÚMEROS — tamanho e de onde veio cada campo
 
-   É a pergunta que deu origem ao catálogo e que não se via em lado
-   nenhum. Duas metades: o que as outras duas apps gastaram (a vista
-   `winecatalog.consumo`) e o que o catálogo tem lá dentro
-   (`winecatalog.resumo`).
+   Até 23/09/2026 isto era a metade de baixo de um separador "Resumo" cuja
+   metade de cima respondia a "quanto é que o catálogo está a poupar?".
+   Essa é uma pergunta de CUSTO e passou para a app AI-API-Control
+   (`ia_uso.poupanca_catalogo`, que lê a mesma `winecatalog.consumo`) —
+   duas apps a dizer quanto se gastou, com números diferentes, era o erro
+   de sempre. Ficou aqui o que é do CATÁLOGO, em Definições.
    ══════════════════════════════════════════════ */
-let _wcDias=null;   // null = desde sempre
-
-async function wcCarregarResumo(){
-  const box=document.getElementById('resumo-box');
+async function wcCarregarNumeros(){
+  const box=document.getElementById('numeros-box');
   if(!box)return;
   box.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';
   try{
-    const [consumo,cat]=await Promise.all([
-      catRpc('consumo_resumo',{p_dias:_wcDias}),
-      catRpc('resumo',{})
-    ]);
-    box.innerHTML=wcResumoHTML(consumo,cat);
+    box.innerHTML=wcNumerosHTML(await catRpc('resumo',{}));
   }catch(e){
     box.innerHTML=`<div class="wc-card"><p class="wc-note erro">${esc(e.message)}</p></div>`;
   }
 }
-function wcPeriodo(d){_wcDias=d;wcCarregarResumo();}
 
-function wcResumoHTML(c,cat){
-  const t=(c&&c.total)||{};
-  const pedidos=Number(t.pedidos||0);
-  const doCat=Number(t.pedidosCatalogo||0);
-  const pct=pedidos?Math.round(doCat*100/pedidos):0;
-  const periodos=[[null,'Sempre'],[30,'30 dias'],[90,'90 dias']];
-
-  let h=`<div class="wc-card">
-    <div class="per-row">
-      ${periodos.map(([d,l])=>
-        `<button class="per ${_wcDias===d?'on':''}" onclick="wcPeriodo(${d===null?'null':d})">${l}</button>`).join('')}
-    </div>
-
-    <div class="kpi-grid">
-      <div class="kpi">
-        <div class="kpi-n">${nFmt(doCat)}</div>
-        <div class="kpi-l">pedidos servidos pelo catálogo</div>
-        <div class="kpi-s">${pct}% de ${nFmt(pedidos)} — sem uma ida à IA</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-n">${esc(eurFmt(t.custo))}</div>
-        <div class="kpi-l">gasto estimado</div>
-        <div class="kpi-s">${nFmt(t.tokens)} tokens</div>
-      </div>
-    </div>
-
-    <div class="poupanca">
-      <span class="poup-n">≈ ${esc(eurFmt(t.poupado))}</span> poupados
-      <span class="poup-s">— os ${nFmt(doCat)} pedidos acima, ao custo médio de um que foi mesmo à IA</span>
-    </div>
-
-    <!-- Esta nota não é um detalhe legal: é a diferença entre um número em
-         que se pode confiar e um que se está a inventar. -->
-    <p class="wc-note aviso-euro">
-      <strong>Os tokens são facto</strong> — vêm da API do Gemini.
-      <strong>O euro é uma estimativa grosseira</strong>, não um preço publicado:
-      sai de constantes escritas à mão nas Edge Functions, e a pesquisa Google é
-      faturada <em>à parte, por pedido</em>. A poupança é uma estimativa em cima
-      dessa — o número que é facto, e o que interessa ver a crescer, é a contagem
-      de pedidos servidos sem IA nenhuma.
-    </p>
-  </div>`;
-
-  /* Por ação, e com a UNIDADE à frente: campos, notas e vinhos não são a
-     mesma coisa e somá-los era inventar um número. */
-  const pa=(c&&c.porAcao)||[];
-  h+=`<div class="wc-card">
-    <h3>Por app</h3>
-    <p class="wc-note">Cada linha conta na sua unidade — campos, notas e vinhos não se somam uns aos outros.</p>
-    ${pa.length?`<div class="tbl">
-      <div class="tbl-h"><span>Ação</span><span>Pedidos</span><span>Do catálogo</span><span>Da IA</span><span>Custo</span></div>
-      ${pa.map(a=>`<div class="tbl-r">
-        <span class="tb-acao"><strong>${esc(a.acao)}</strong><em>${esc(a.app)}</em></span>
-        <span>${nFmt(a.pedidos)}${Number(a.erros)?` <span class="erro-n" title="pedidos com erro">(${nFmt(a.erros)} erro)</span>`:''}</span>
-        <span class="tb-cat">${nFmt(a.itensCatalogo)} <em>${esc(a.unidade)}</em></span>
-        <span>${nFmt(a.itensIA)} <em>${esc(a.unidade)}</em></span>
-        <span>${esc(eurFmt(a.custo))}</span>
-      </div>`).join('')}
-    </div>`:'<p class="wc-note">Ainda não há registos.</p>'}
-  </div>`;
-
-  /* A última chamada de cada app. Um log limpo numa app que NÃO CORRE não
-     é saúde, é desuso — foi assim que a WineSelection ficou semanas com
-     duas avarias que a Garrafeira já tinha corrigido, e ninguém deu por
-     nada. Esta linha existe para isso se ver. */
-  const u=(c&&c.ultima)||[];
-  if(u.length){
-    h+=`<div class="wc-card">
-      <h3>Sinal de vida</h3>
-      <p class="wc-note">A última vez que cada app chamou a IA. Uma app calada há muito tempo não está bem — está parada, e uma avaria dela não aparece em log nenhum.</p>
-      ${u.map(x=>{
-        const d=new Date(x.quando);
-        const dias=isNaN(d)?999:Math.floor((Date.now()-d.getTime())/86400000);
-        return `<div class="vida ${dias>30?'fria':''}">
-          <span>${esc(x.app)} <em>${esc(x.acao)}</em></span>
-          <span>${esc(haQuanto(x.quando))} <em>${esc(dataFmt(x.quando))}</em></span>
-        </div>`;
-      }).join('')}
-    </div>`;
-  }
-
-  /* O tamanho do catálogo, e de onde veio cada campo. */
+function wcNumerosHTML(cat){
+  let h='';
   if(cat){
     const og=(cat.origens||[]).slice().sort((a,b)=>(b.forca-a.forca)||(b.campos-a.campos));
     const totalC=Number(cat.campos||0);

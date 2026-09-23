@@ -112,7 +112,7 @@ O que se espera:
   aparecer a `true`, falta um `REVOKE`.
 - **`true` para `authenticated`, `false` para `anon`** nas que a app chama:
   `listar`, `ver`, `candidatos`, `listar_distintos`, `resumo`,
-  `consumo_resumo`, `fundir`, `separar`, `marcar_distintos`,
+  `fundir`, `separar`, `marcar_distintos`,
   `desmarcar_distintos`, `definir_admin`, `sou_admin`, `pode_ler`.
 - **`false` nos dois** em `preco_num` e `faixa_preco` — são as duas do
   filtro de preço da lista, e quem as chama é a `listar`, por dentro. As
