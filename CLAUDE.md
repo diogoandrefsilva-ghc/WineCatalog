@@ -518,7 +518,7 @@ não descer.
 ## O caminho de leitura, e porque não são policies
 `winecatalog.vinhos` continua com RLS e **zero policies**. Quem lê são funções
 `SECURITY DEFINER` novas (`listar`/`ver`/`candidatos`/`resumo`/
-`consumo_resumo`/`listar_distintos`) com `REVOKE` de `PUBLIC`/`anon` e
+`listar_distintos`) com `REVOKE` de `PUBLIC`/`anon` e
 `GRANT` só a `authenticated` — e é **dentro** de cada uma que se confirma
 quem é (`pode_ler()` para ler, `sou_admin()` para decidir).
 
@@ -541,7 +541,8 @@ a consulta que está no fim do `db/catalogo.sql` e no `db/README.md`.
 A vista `winecatalog.consumo` (que une as duas `sync_log`) não se dá a
 ninguém: uma vista não é `security_invoker`, corre como o dono, e por isso
 vê as duas tabelas inteiras, `quem` incluído. Quem lhe chega é só a
-`consumo_resumo()`, que agrega e nunca devolve o `quem`.
+`ia_uso.poupanca_catalogo()` da AI-API-Control, que agrega e nunca devolve
+o `quem` (a `consumo_resumo()` daqui foi apagada a 23/09/2026).
 
 ## O registo central de acessos ao Gemini (schema `ia_uso`)
 **Esta é a secção canónica.** As outras quatro apps têm uma versão curta a
