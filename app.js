@@ -970,8 +970,9 @@ function wcFichaHTML(v){
   let h=`<div class="mhero">
     <button class="mx" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
     <div class="mhero-in">
-      <div class="mhero-g">
+      <div class="mhero-g${isAdmin()?' mhero-edit':''}"${isAdmin()?` onclick="wcAbrirEditar()" title="Mudar a imagem"`:''}>
         ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onerror="this.remove()">`:''}
+        ${isAdmin()?'<i class="mhero-lapis">✏️</i>':''}
       </div>
       <div class="mhero-tx">
         <div class="mhero-k">${esc([tipo,ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
@@ -1088,6 +1089,10 @@ const WC_CLASSIF=['','DOC','Vinho Regional','Vinho'];
 /* [chave, rótulo, tipo de campo, opções]. A ORDEM é a de `WC_CAMPOS` (a
    ordem por que faz sentido ler um vinho) e não a do alfabeto. */
 const WC_EDIT=[
+  /* A imagem vem PRIMEIRO e fora da ordem de `WC_CAMPOS`: é a única que se
+     VÊ, e perdida a meio da lista como mais uma caixa de texto ninguém dava
+     por ela ("não consigo mexer na imagem?"). Ver `wcImgCampoHTML`. */
+  ['imagem_url','Imagem','img'],
   ['tipo','Tipo','sel',WC_TIPOS],
   ['estilo','Estilo','sel',WC_ESTILOS],
   ['mencao','Menção','sel',WC_MENCOES],
@@ -1103,7 +1108,6 @@ const WC_EDIT=[
   ['vivino_avaliacoes','Avaliações Vivino','int'],
   ['vivino_url','URL do Vivino','txt'],
   ['preco_medio','Preço de mercado (€)','num'],
-  ['imagem_url','Imagem (URL direto)','txt'],
   ['beber_de','Beber de (ano)','int'],
   ['beber_ate','Beber até (ano)','int'],
   ['notas_prova','Notas de prova','area'],
@@ -1121,6 +1125,7 @@ function wcValorEdit(k,v){
    partir do que já lá está. O `prefixo` dos ids é o que separa os dois
    modais no DOM (`ed-`/`nv-`) sem duplicar este bloco. */
 function wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca){
+  if(tp==='img')return wcImgCampoHTML(prefixo,k,lbl,val,marca);
   let h=`<div class="ed-campo">
     <label for="${prefixo}${esc(k)}">${esc(lbl)}${marca||''}</label>`;
   if(tp==='sel'){
@@ -1138,6 +1143,7 @@ function wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca){
 }
 function wcCamposEditHTML(prefixo,ficha,origens){
   ficha=ficha||{};origens=origens||{};
+  wcImgEsquecer(prefixo);
   return WC_EDIT.map(([k,lbl,tp,ops])=>{
     const o=origens[k]||{}, f=Number(o.f||0);
     const val=wcValorEdit(k,ficha[k]);
@@ -1147,6 +1153,123 @@ function wcCamposEditHTML(prefixo,ficha,origens){
     return wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca);
   }).join('');
 }
+/* ── A IMAGEM ──
+   Duas maneiras de a mudar, no mesmo sítio: colar um LINK (o que sempre
+   houve) ou tirar/carregar uma FOTOGRAFIA do rótulo. A fotografia não sobe
+   logo: fica PENDENTE (`_wcImgPend`, por formulário) com uma
+   pré-visualização local, e só vai para o bucket quando se carrega em
+   Guardar/Criar (`wcSubirImagemPendente`). Subir ao escolher deixava lixo
+   pago no bucket a cada "Cancelar".
+   O bucket é PÚBLICO (`db/imagens.sql` diz porquê): as outras duas apps
+   mostram o `imagem_url` num <img> simples e não têm login aqui. */
+const WC_BUCKET='winecatalog-rotulos';
+const WC_BUCKET_PUB=SB_URL+'/storage/v1/object/public/'+WC_BUCKET+'/';
+let _wcImgPend={};
+
+function wcImgCampoHTML(prefixo,k,lbl,val,marca){
+  const id=prefixo+k;
+  return `<div class="ed-campo ed-img">
+    <label for="${id}">${esc(lbl)}${marca||''}</label>
+    <div class="ed-img-l">
+      <div class="ed-img-v" id="${id}-v">${wcImgVistaHTML(val)}</div>
+      <div class="ed-img-b">
+        <label class="btn-n ed-img-foto">📷 Fotografia
+          <input type="file" accept="image/*" style="display:none" onchange="wcImgFoto('${escJs(prefixo)}',this)">
+        </label>
+        <button type="button" class="btn-n" onclick="wcImgLimpar('${escJs(prefixo)}')">Tirar imagem</button>
+      </div>
+    </div>
+    <input type="text" id="${id}" value="${esc(val)}" placeholder="ou cola o link direto de uma imagem (.jpg, .png…)"
+           inputmode="url" oninput="wcImgUrlMudou('${escJs(prefixo)}')">
+    <p class="wc-note ed-img-nota" id="${id}-n">A fotografia fica <strong>pública</strong> — é a que as três apps mostram. Enquadra só o rótulo.</p>
+  </div>`;
+}
+function wcImgVistaHTML(src){
+  src=String(src||'').trim();
+  return src?`<img src="${esc(src)}" alt="" onerror="this.parentNode.innerHTML='<span>link sem imagem</span>'">`
+            :'<span>sem imagem</span>';
+}
+function wcImgPintar(prefixo,src,nota){
+  const v=document.getElementById(prefixo+'imagem_url-v');
+  if(v)v.innerHTML=wcImgVistaHTML(src);
+  const n=document.getElementById(prefixo+'imagem_url-n');
+  if(n&&nota)n.innerHTML=nota;
+}
+function wcImgEsquecer(prefixo){
+  const p=_wcImgPend[prefixo];
+  if(p&&p.url)URL.revokeObjectURL(p.url);
+  delete _wcImgPend[prefixo];
+}
+async function wcImgFoto(prefixo,input,silencioso){
+  const file=input&&input.files?input.files[0]:input;
+  if(!file)return;
+  try{
+    const blob=await wcEncolherBlob(file);
+    wcImgEsquecer(prefixo);
+    const url=URL.createObjectURL(blob);
+    _wcImgPend[prefixo]={blob,url};
+    const el=document.getElementById(prefixo+'imagem_url');
+    if(el)el.value='';
+    wcImgPintar(prefixo,url,'Fotografia nova — <strong>sobe quando guardares</strong>, e fica pública.');
+  }catch(e){
+    if(!silencioso)toast('Erro: '+e.message,1);
+  }finally{
+    if(input&&input.files)input.value='';
+  }
+}
+function wcImgUrlMudou(prefixo){
+  wcImgEsquecer(prefixo);
+  const el=document.getElementById(prefixo+'imagem_url');
+  wcImgPintar(prefixo,el?el.value:'');
+}
+function wcImgLimpar(prefixo){
+  wcImgEsquecer(prefixo);
+  const el=document.getElementById(prefixo+'imagem_url');
+  if(el)el.value='';
+  wcImgPintar(prefixo,'');
+}
+/* Sobe a fotografia pendente (se houver) e mete o endereço público na
+   caixa, que é de onde o `wcLerCampos` o lê a seguir — o resto do caminho
+   de gravação não sabe que houve fotografia nenhuma. O nome é sempre novo:
+   um caminho fixo ficava preso à cache do browser e da CDN. */
+async function wcSubirImagemPendente(prefixo){
+  const p=_wcImgPend[prefixo];
+  if(!p)return null;
+  const nome=`${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}.jpg`;
+  const r=await sbFetch(SB_URL+'/storage/v1/object/'+WC_BUCKET+'/'+nome,{
+    method:'POST',
+    headers:{apikey:SB_KEY,Authorization:'Bearer '+(_sbSession&&_sbSession.access_token),
+             'Content-Type':'image/jpeg','Cache-Control':'31536000'},
+    body:p.blob
+  });
+  if(!r.ok){
+    const d=await r.json().catch(()=>({}));
+    throw new Error('a fotografia não subiu ('+(d.message||d.error||r.status)+')'+
+      (r.status===404||/bucket/i.test(d.message||'')?' — já correste o db/imagens.sql?':''));
+  }
+  const url=WC_BUCKET_PUB+nome;
+  const el=document.getElementById(prefixo+'imagem_url');
+  if(el)el.value=url;
+  wcImgEsquecer(prefixo);
+  return nome;
+}
+/* Tira do bucket uma fotografia que deixou de ser usada — só se for NOSSA
+   (um link de uma loja não se apaga, claro) e sem nunca falhar a gravação
+   que já correu bem por causa disto. */
+async function wcApagarImagemVelha(antes,depois){
+  antes=String(antes||'');
+  if(!antes.startsWith(WC_BUCKET_PUB)||antes===String(depois||''))return;
+  try{
+    await sbFetch(SB_URL+'/storage/v1/object/'+WC_BUCKET+'/'+antes.slice(WC_BUCKET_PUB.length),{
+      method:'DELETE',
+      headers:{apikey:SB_KEY,Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)}
+    });
+  }catch(e){}
+}
+async function wcApagarNome(nome){
+  if(nome)await wcApagarImagemVelha(WC_BUCKET_PUB+nome,'');
+}
+
 /* O que vai para a base a partir de um formulário destes: `null` quando o
    campo ficou vazio (a `editar`/`criar` leem isso como "não escrevas nada"
    ou "apaga", conforme o caso) e o valor com o TIPO certo quando não. Um
@@ -1220,6 +1343,11 @@ async function wcGuardarEdicao(){
   if(!_wcFicha)return;
   const b=document.getElementById('ed-guardar');
   const ident=!!(document.getElementById('ed-ident')||{}).checked;
+  const imgAntes=(_wcFicha.ficha||{}).imagem_url;
+  if(b){b.disabled=true;b.textContent='A guardar…';}
+  let subida=null;
+  try{subida=await wcSubirImagemPendente('ed-');}
+  catch(e){toast('Erro: '+e.message,1);if(b){b.disabled=false;b.textContent='Guardar';}return;}
   const args={p_id:_wcFicha.id,p_campos:wcLerCampos('ed-')};
   if(ident){
     const ano=String((document.getElementById('ed-ano')||{}).value||'').trim();
@@ -1228,9 +1356,9 @@ async function wcGuardarEdicao(){
     args.p_ano=ano===''?null:(parseInt(ano,10)||null);
     args.p_mexer_identidade=true;
   }
-  if(b){b.disabled=true;b.textContent='A guardar…';}
   try{
     const r=await catRpc('editar',args);
+    wcApagarImagemVelha(imgAntes,args.p_campos.imagem_url);
     const n=(r&&r.campos)||0, ap=(r&&r.apagados)||0;
     toast(n+ap?`Guardado ✓ ${n} corrigidos${ap?`, ${ap} apagados`:''}`:'Nada mudou');
     fecharModal('modal-editar');
@@ -1238,6 +1366,7 @@ async function wcGuardarEdicao(){
     wcCarregarCatalogo(true);
   }catch(e){
     toast('Erro: '+e.message,1);
+    wcApagarNome(subida);
     if(b){b.disabled=false;b.textContent='Guardar';}
   }
 }
@@ -1305,6 +1434,15 @@ function wcAbrirNovo(){
    inteiros. `imageOrientation:'from-image'` trata do EXIF, senão uma foto
    tirada na vertical chegava deitada à Edge Function. */
 function wcEncolherImagem(file){
+  return wcEncolherBlob(file).then(blob=>new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>resolve(String(fr.result).split(',')[1]||'');
+    fr.onerror=()=>reject(new Error('não consegui ler a imagem'));
+    fr.readAsDataURL(blob);
+  }));
+}
+// A mesma redução, mas a devolver o JPEG em si — é o que sobe para o bucket.
+function wcEncolherBlob(file){
   return new Promise((resolve,reject)=>{
     const url=URL.createObjectURL(file);
     const acabou=(img)=>{
@@ -1317,10 +1455,7 @@ function wcEncolherImagem(file){
       URL.revokeObjectURL(url);
       c.toBlob(blob=>{
         if(!blob){reject(new Error('não consegui preparar a imagem'));return;}
-        const fr=new FileReader();
-        fr.onload=()=>resolve(String(fr.result).split(',')[1]||'');
-        fr.onerror=()=>reject(new Error('não consegui ler a imagem'));
-        fr.readAsDataURL(blob);
+        resolve(blob);
       },'image/jpeg',0.85);
     };
     if('createImageBitmap' in window){
@@ -1346,6 +1481,11 @@ async function wcNovoFoto(input){
   if(status){status.textContent='A ler o rótulo…';status.classList.remove('erro');}
   try{
     const data=await wcEncolherImagem(file);
+    /* A fotografia do rótulo serve também de IMAGEM do vinho, se ainda não
+       houver outra — fica pendente como qualquer outra, à vista, e tira-se
+       com um toque se apanhou mais do que o rótulo. */
+    const imgEl=document.getElementById('nv-imagem_url');
+    if(!_wcImgPend['nv-']&&imgEl&&!imgEl.value)wcImgFoto('nv-',file,true);
     const r=await fetch(FN_CATALOGO_FOTO,{
       method:'POST',
       headers:{'Content-Type':'application/json',apikey:SB_KEY,
@@ -1363,7 +1503,7 @@ async function wcNovoFoto(input){
     if(d.ano)document.getElementById('nv-ano').value=String(d.ano);
     const campos=d.campos||{};
     for(const [k,,tp] of WC_EDIT){
-      if(!(k in campos))continue;
+      if(!(k in campos)||tp==='img')continue;
       const el=document.getElementById('nv-'+k);
       if(!el)continue;
       el.value=(tp==='lista'&&Array.isArray(campos[k]))?campos[k].join(', '):String(campos[k]);
@@ -1392,7 +1532,9 @@ async function wcCriarVinho(){
   if(!nome){toast('Falta o nome.',1);return;}
   const b=document.getElementById('nv-criar');
   if(b){b.disabled=true;b.textContent='A criar…';}
+  let subida=null;
   try{
+    subida=await wcSubirImagemPendente('nv-');
     const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
     fecharModal('modal-novo');
     toast('Vinho criado ✓');
@@ -1400,6 +1542,7 @@ async function wcCriarVinho(){
     if(r&&r.id)await wcVerFicha(r.id);
   }catch(e){
     toast('Erro: '+e.message,1);
+    wcApagarNome(subida);
     if(b){b.disabled=false;b.textContent='Criar vinho';}
   }
 }
@@ -1417,7 +1560,9 @@ async function wcNovoProcurar(){
   if(!nome){toast('Falta o nome.',1);return;}
   const b=document.getElementById('nv-procurar');
   if(b){b.disabled=true;b.textContent='A criar…';}
+  let subida=null;
   try{
+    subida=await wcSubirImagemPendente('nv-');
     const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
     fecharModal('modal-novo');
     wcCarregarCatalogo(true);
@@ -1427,6 +1572,7 @@ async function wcNovoProcurar(){
     }
   }catch(e){
     toast('Erro: '+e.message,1);
+    wcApagarNome(subida);
     if(b){b.disabled=false;b.textContent='🔎 Procurar informação';}
   }
 }
