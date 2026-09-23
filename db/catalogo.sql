@@ -1758,9 +1758,10 @@ ALTER TABLE winecatalog.sync_log ENABLE ROW LEVEL SECURITY;
 -- SEGURANÇA: uma vista não é `security_invoker`, corre como o DONO, e o
 -- dono aqui passa por cima da RLS das duas `sync_log`. Ou seja: esta vista
 -- vê tudo, INCLUINDO o `quem` de cada pedido. Por isso não se dá SELECT
--- dela a ninguém (ver os REVOKEs no fim) e quem lhe chega é só a função
--- abaixo, que agrega e NUNCA devolve o `quem` — quanto é que o catálogo
--- poupou não precisa de dizer quem é que andou a usar o quê.
+-- dela a ninguém (ver os REVOKEs no fim) e quem lhe chega é só a
+-- `ia_uso.poupanca_catalogo()` da AI-API-Control (ver abaixo), que agrega
+-- e NUNCA devolve o `quem` — quanto é que o catálogo poupou não precisa de
+-- dizer quem é que andou a usar o quê.
 -- =====================================================================
 
 -- Ler um número de um jsonb sem rebentar se lá estiver um texto. Um
@@ -1861,81 +1862,19 @@ CREATE OR REPLACE VIEW winecatalog.consumo AS
    WHERE l.origem = 'function';
 
 
--- O Resumo (§4.1), agregado e sem `quem`.
+-- O Resumo (§4.1) — `winecatalog.consumo_resumo` — JÁ NÃO VIVE AQUI.
 --
--- A POUPANÇA em euros é uma estimativa EM CIMA de uma estimativa e está
--- marcada como tal: um pedido servido pelo catálogo não deixou registo do
--- que TERIA custado, por isso usa-se o custo MÉDIO dos pedidos da mesma
--- ação que foram mesmo à IA. O número que é FACTO — e o que interessa ver
--- a crescer — é a contagem de pedidos servidos sem IA nenhuma.
-CREATE OR REPLACE FUNCTION winecatalog.consumo_resumo(p_dias integer DEFAULT NULL)
-  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
-  SET search_path TO 'winecatalog', 'public'
-AS $$
-DECLARE
-  v_desde timestamptz := CASE WHEN COALESCE(p_dias, 0) > 0
-                              THEN now() - make_interval(days => p_dias) END;
-  v_res jsonb;
-BEGIN
-  IF NOT winecatalog.pode_ler() THEN
-    RAISE EXCEPTION 'Sem acesso ao catálogo.';
-  END IF;
-
-  WITH base AS (
-    SELECT * FROM winecatalog.consumo
-     WHERE estado <> 'pedido'
-       AND (v_desde IS NULL OR criado_em >= v_desde)
-  ), medias AS (
-    SELECT app, acao, AVG(custo_eur) AS custo_medio
-      FROM base WHERE NOT so_catalogo AND custo_eur > 0
-     GROUP BY app, acao
-  ), porAcao AS (
-    SELECT b.app, b.acao, b.unidade,
-           count(*)                                        AS pedidos,
-           count(*) FILTER (WHERE b.so_catalogo)            AS pedidos_catalogo,
-           count(*) FILTER (WHERE b.estado = 'erro')        AS erros,
-           sum(b.itens_catalogo)                            AS itens_catalogo,
-           sum(b.itens_ia)                                  AS itens_ia,
-           sum(b.custo_eur)                                 AS custo,
-           sum(b.tokens)                                    AS tokens,
-           COALESCE(count(*) FILTER (WHERE b.so_catalogo) * max(m.custo_medio), 0) AS poupado
-      FROM base b
-      LEFT JOIN medias m ON m.app = b.app AND m.acao = b.acao
-     GROUP BY b.app, b.acao, b.unidade
-  )
-  SELECT jsonb_build_object(
-    'desde', v_desde,
-    'total', jsonb_build_object(
-      'pedidos',          COALESCE((SELECT sum(pedidos)          FROM porAcao), 0),
-      'pedidosCatalogo',  COALESCE((SELECT sum(pedidos_catalogo) FROM porAcao), 0),
-      'erros',            COALESCE((SELECT sum(erros)            FROM porAcao), 0),
-      'custo',            COALESCE((SELECT round(sum(custo), 4)  FROM porAcao), 0),
-      'poupado',          COALESCE((SELECT round(sum(poupado), 4) FROM porAcao), 0),
-      'tokens',           COALESCE((SELECT sum(tokens)           FROM porAcao), 0)
-    ),
-    'porAcao', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-               'app', app, 'acao', acao, 'unidade', unidade,
-               'pedidos', pedidos, 'pedidosCatalogo', pedidos_catalogo,
-               'erros', erros,
-               'itensCatalogo', itens_catalogo, 'itensIA', itens_ia,
-               'custo', round(custo, 4), 'poupado', round(poupado, 4),
-               'tokens', tokens
-             ) ORDER BY app, acao) FROM porAcao), '[]'::jsonb),
-    'ultima', COALESCE((
-      -- A última chamada de CADA app. É por aqui que se vê se uma delas
-      -- está calada — e um log limpo numa app que não corre não é saúde,
-      -- é desuso: foi assim que a WineSelection ficou semanas com duas
-      -- avarias que a Garrafeira já tinha corrigido.
-      SELECT jsonb_agg(jsonb_build_object('app', app, 'acao', acao,
-                                          'quando', criado_em, 'estado', estado))
-        FROM (SELECT DISTINCT ON (app) app, acao, criado_em, estado
-                FROM winecatalog.consumo ORDER BY app, criado_em DESC) u), '[]'::jsonb)
-  ) INTO v_res;
-
-  RETURN v_res;
-END;
-$$;
+-- "Quanto é que o catálogo está a poupar" é uma pergunta de CUSTO, e desde
+-- 23/09/2026 quem responde a perguntas de custo é a app AI-API-Control:
+-- a `ia_uso.poupanca_catalogo()` (fonte de verdade:
+-- `AI-API-Control/db/poupanca.sql`) agrega ESTA vista. Duas apps a dizer
+-- quanto se gastou, com números diferentes, era o erro de sempre.
+--
+-- A VISTA FICA AQUI, e é por isso que mexer-lhe mexe com outro repo: é a
+-- tradução de cada `sync_log` e é de quem conhece os `sync_log` das apps de
+-- vinhos. Mudar o nome ou tirar uma coluna parte o cartão "Catálogo de
+-- vinhos" no Resumo da AI-API-Control, e só se nota quando ele corre.
+DROP FUNCTION IF EXISTS winecatalog.consumo_resumo(integer);
 
 
 
@@ -2000,7 +1939,6 @@ REVOKE ALL ON FUNCTION winecatalog.ver(bigint)                      FROM PUBLIC,
 REVOKE ALL ON FUNCTION winecatalog.candidatos(integer)              FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.listar_distintos()               FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.resumo()                         FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION winecatalog.consumo_resumo(integer)          FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.fundir(bigint, bigint)           FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.separar(text)                    FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.marcar_distintos(bigint, bigint) FROM PUBLIC, anon;
@@ -2013,7 +1951,6 @@ GRANT EXECUTE ON FUNCTION winecatalog.ver(bigint)                      TO authen
 GRANT EXECUTE ON FUNCTION winecatalog.candidatos(integer)              TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.listar_distintos()               TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.resumo()                         TO authenticated;
-GRANT EXECUTE ON FUNCTION winecatalog.consumo_resumo(integer)          TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.fundir(bigint, bigint)           TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.separar(text)                    TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.marcar_distintos(bigint, bigint) TO authenticated;
