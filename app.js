@@ -486,10 +486,26 @@ let _wcLinhas=[];
    são contadas com os OUTROS grupos aplicados mas não o próprio: é o que
    faz "Branco 7" continuar a aparecer quando já se escolheu Tinto. */
 const WC_FAIXAS=[['<15','menos de 15 €'],['15-30','15 – 30 €'],['30-60','30 – 60 €'],['60+','60 € ou mais']];
-const WC_GRUPOS=[['tipos','Tipo'],['regioes','Região'],['castas','Castas'],['precos','Preço médio']];
+/* Chave, ícone e nome de cada campo da FITA. Os ícones são os mesmos da
+   Garrafeira (`F_CAMPOS`), de propósito: quem anda nas duas apps não
+   aprende duas maneiras de dizer "Região". */
+const WC_GRUPOS=[['tipos','🍷','Tipo'],['regioes','🗺️','Região'],['castas','🍇','Castas'],['precos','💶','Preço médio']];
 let _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
 let _wcFacetas=null;
-let _wcPainel=true;
+/* O PAINEL É PROGRESSIVO, como o da Garrafeira. Era tudo ou nada: aberto,
+   os quatro grupos vinham com todas as opções à mostra — dezenas de
+   regiões e castas — e quem só queria escrever "crasto" tinha meio ecrã de
+   cartões entre a caixa de procura e a resposta. Agora:
+     · a PROCURA LIVRE está sempre à vista, fechado ou aberto;
+     · o botão "Filtros" abre uma FITA com os quatro campos, e só os
+       valores do campo tocado (`_wcCampo`) abrem por baixo.
+   O ESTADO (fita aberta ou não) grava-se — é como a pessoa gosta de
+   trabalhar; o CAMPO aberto não — é onde ela ia a meio de uma pergunta.
+   A chave é nova (`wc_filtros_aberto`) e não a `wc_painel` de antes: essa
+   ficava a '1' por omissão em toda a gente, e herdá-la abria a fita a
+   quem nunca lhe tinha tocado. */
+let _wcPainel=false;
+let _wcCampo=null;
 let _wcModo='lista';
 /* Só as castas têm duas leituras possíveis: escolher Touriga Nacional e
    Syrah pode querer dizer "qualquer um dos dois" (o costume, e o que
@@ -497,82 +513,74 @@ let _wcModo='lista';
    região — ali a pergunta não se põe, e por isso o visto não aparece. */
 let _wcCastasTodas=false;
 try{
-  _wcPainel=localStorage.getItem('wc_painel')!=='0';
+  _wcPainel=localStorage.getItem('wc_filtros_aberto')==='1';
   _wcModo=localStorage.getItem('wc_modo')==='grelha'?'grelha':'lista';
   _wcCastasTodas=localStorage.getItem('wc_castas_todas')==='1';
 }catch(e){}
 
+// Só os valores escolhidos, sem o texto: é o número do botão "Filtros" —
+// o texto já se lê na própria caixa, que nunca se esconde.
 function wcNFiltros(){
   return _wcFiltros.tipos.length+_wcFiltros.regioes.length+
-         _wcFiltros.castas.length+_wcFiltros.precos.length+(_wcProcura?1:0);
+         _wcFiltros.castas.length+_wcFiltros.precos.length;
 }
-function wcFiltrosAtivos(){
-  const faixa=id=>(WC_FAIXAS.find(f=>f[0]===id)||[id,id])[1];
-  /* Com o painel fechado esta barra é a única coisa que diz o que está
-     ligado — e "Touriga Nacional · Syrah" mente sobre metade dos
-     resultados quando o visto está em "todas em simultâneo". */
-  const cas=(_wcCastasTodas&&_wcFiltros.castas.length>1)
-    ? [_wcFiltros.castas.join(' + ')] : _wcFiltros.castas;
-  const l=[].concat(_wcFiltros.tipos,_wcFiltros.regioes,cas,
-                    _wcFiltros.precos.map(faixa));
-  if(_wcProcura)l.unshift('“'+_wcProcura+'”');
-  return l;
+function wcRotulo(g,v){
+  return g==='precos'?(WC_FAIXAS.find(x=>x[0]===v)||[v,v])[1]:v;
 }
 function wcArg(g){return _wcFiltros[g].length?_wcFiltros[g]:null;}
 
-/* O invólucro só se reescreve quando o painel abre ou fecha — a caixa de
-   procura não pode ser reposta a cada tecla, ou perde-se o cursor. O que
-   se repinta a cada pedido são as contagens (`wcPintarGrupos`). */
+/* O invólucro escreve-se UMA vez: a caixa de procura não pode ser reposta
+   a cada tecla nem a cada abrir/fechar, ou perde-se o cursor. O que se
+   repinta são os contentores vazios (`wcPintarGrupos`). */
 function wcShellFiltros(){
   const el=document.getElementById('cat-filtros');
   if(!el)return;
-  const n=wcNFiltros();
   /* "+ Vinho novo" mudou-se daqui para o FAB (ver `wcFabAcao`) — ganhou
      companhia ("Atualizar informação") e não fazia sentido um botão de
      texto ao lado de um "+" flutuante a fazer a mesma coisa. */
-  if(!_wcPainel){
-    el.innerHTML=`<button class="cf-min" onclick="wcAlternarPainel()">
-      <span class="cf-min-tx">🔍 ${n?esc(wcFiltrosAtivos().join(' · ')):'Procurar e filtrar'}</span>
-      <span class="cf-min-lado"><span class="cf-n${n?' on':''}">${n}</span><span class="cf-seta">▼</span></span>
-    </button>`;
-    return;
-  }
-  el.innerHTML=`<div class="wc-card cf">
-    <div class="cf-cab">
-      <div class="wc-card-label" style="margin:0">Filtrar</div>
-      <button class="cf-min-btn" onclick="wcAlternarPainel()">Minimizar ▲</button>
+  el.innerHTML=`<div class="wc-card cf" id="cf">
+    <div class="cf-linha">
+      <div class="cf-procura">
+        <span>🔍</span>
+        <input type="text" id="cat-procura" value="${esc(_wcProcura)}"
+               placeholder="nome, produtor, casta…"
+               oninput="wcProcuraMudou()" autocomplete="off">
+        <button class="cf-x${_wcProcura?' on':''}" id="cat-procura-x" onclick="wcLimparTexto()" title="Limpar">✕</button>
+      </div>
+      <button class="cf-toggle" onclick="wcAlternarPainel()">Filtros <span class="cf-n" id="cf-n"></span> <span class="cf-seta">▾</span></button>
     </div>
-    <div class="cf-procura">
-      <span>🔍</span>
-      <input type="text" id="cat-procura" value="${esc(_wcProcura)}"
-             placeholder="nome, produtor, região ou casta…"
-             oninput="wcProcuraMudou()" autocomplete="off">
-    </div>
-    <div id="cat-grupos"></div>
-    <div class="cf-fim">
-      <span class="wc-note" id="cat-conta" style="margin:0"></span>
-      <span class="cf-fim-b">
-        <button class="cf-limpar" onclick="wcLimparFiltros()">Limpar filtros</button>
-      </span>
-    </div>
+    <div class="cf-campos" id="cat-campos"></div>
+    <div class="cf-dom" id="cat-grupos"></div>
+    <div class="cf-activos" id="cat-activos"></div>
   </div>`;
   wcPintarGrupos();
 }
 
 function wcPintarGrupos(){
-  const el=document.getElementById('cat-grupos');
-  if(!el)return;
-  const f=_wcFacetas||{};
-  el.innerHTML=WC_GRUPOS.map(([g,titulo])=>{
+  const cf=document.getElementById('cf');
+  if(!cf)return;
+  cf.classList.toggle('aberto',_wcPainel);
+
+  /* A FITA. Cada campo leva o número de valores que tem ligados — é o que
+     diz, sem abrir nenhum, onde está o filtro que está a cortar a lista. */
+  document.getElementById('cat-campos').innerHTML=WC_GRUPOS.map(([g,ico,nome])=>{
+    const n=_wcFiltros[g].length;
+    return `<button class="cf-campo${n?' ativo':''}${_wcCampo===g?' aberto':''}"
+      onclick="wcAbrirCampo('${escJs(g)}')">${ico} ${esc(nome)}${n?`<i class="cf-cn">${n}</i>`:''}</button>`;
+  }).join('');
+
+  /* OS VALORES do campo aberto, e só desse. */
+  const dom=document.getElementById('cat-grupos');
+  const g=_wcPainel?_wcCampo:null;
+  if(g){
+    const f=_wcFacetas||{};
     let ops=(f[g]||[]).slice();
     /* Uma opção escolhida nunca desaparece da lista, mesmo que as facetas
        já não a devolvam — senão não havia como a desmarcar. */
     _wcFiltros[g].forEach(v=>{if(!ops.some(o=>o.v===v))ops.push({v,n:0});});
     if(g==='precos')ops.sort((a,b)=>WC_FAIXAS.findIndex(x=>x[0]===a.v)-WC_FAIXAS.findIndex(x=>x[0]===b.v));
-    if(!ops.length)return '';
-    const visto=g!=='castas'?`<div class="cf-tit">${esc(titulo)}</div>`:
+    const visto=g!=='castas'?'':
       `<div class="cf-tit-l">
-         <div class="cf-tit">${esc(titulo)}</div>
          <button class="cf-modo${_wcCastasTodas?' on':''}" onclick="wcCastasModo()"
                  title="${_wcCastasTodas
                    ?'A mostrar só os vinhos que levam TODAS as castas escolhidas'
@@ -580,21 +588,44 @@ function wcPintarGrupos(){
            <i class="cf-visto">✓</i> todas em simultâneo
          </button>
        </div>`;
-    return `<div class="cf-grupo">
-      ${visto}
-      <div class="cf-ops">${ops.map(o=>{
-        const on=_wcFiltros[g].includes(o.v);
-        const lbl=g==='precos'?(WC_FAIXAS.find(x=>x[0]===o.v)||[o.v,o.v])[1]:o.v;
-        const cor=g==='tipos'?(WC_VIDRO[o.v]||'#8a7a7d'):null;
-        return `<button class="cf-op${on?' on':''}" onclick="wcFiltroToggle('${escJs(g)}','${escJs(o.v)}')">
-          <span class="cf-op-tx">${cor?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(lbl)}</span>
-          <span class="cf-conta">${nFmt(o.n)}</span>
-        </button>`;
-      }).join('')}</div>
-    </div>`;
-  }).join('');
+    dom.innerHTML=visto+(ops.length
+      ? `<div class="cf-ops">${ops.map(o=>{
+          const on=_wcFiltros[g].includes(o.v);
+          const cor=g==='tipos'?(WC_VIDRO[o.v]||'#8a7a7d'):null;
+          return `<button class="cf-op${on?' on':''}" onclick="wcFiltroToggle('${escJs(g)}','${escJs(o.v)}')">
+            <span class="cf-op-tx">${cor?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(wcRotulo(g,o.v))}</span>
+            <span class="cf-conta">${nFmt(o.n)}</span>
+          </button>`;
+        }).join('')}</div>`
+      : `<p class="wc-note" style="margin:0">Nada a escolher aqui com os filtros que estão ligados.</p>`);
+  }else dom.innerHTML='';
+
+  /* AS PASTILHAS DIZEM O QUE NÃO SE VÊ: todos os valores ligados menos os
+     do campo aberto, que já se leem nos cartões acesos. O "+" entre duas
+     castas só existe em "todas em simultâneo" — sem ele, "Touriga
+     Nacional · Syrah" mentia sobre metade dos resultados. */
+  const p=[];
+  WC_GRUPOS.forEach(([gg,ico])=>{
+    if(gg===g)return;
+    _wcFiltros[gg].forEach((v,i)=>{
+      if(i&&gg==='castas'&&_wcCastasTodas)p.push('<span class="cf-junta">+</span>');
+      p.push(`<span class="cf-pill">${ico} ${esc(wcRotulo(gg,v))}
+        <button onclick="wcFiltroToggle('${escJs(gg)}','${escJs(v)}')" title="Tirar este filtro">✕</button></span>`);
+    });
+  });
+  if(wcNFiltros()>1)p.push(`<button class="cf-limpar" onclick="wcLimparFiltros()">limpar tudo</button>`);
+  document.getElementById('cat-activos').innerHTML=p.join('');
+
+  const n=wcNFiltros(),nEl=document.getElementById('cf-n');
+  nEl.textContent=n||'';
+  nEl.classList.toggle('on',n>0);
 }
 
+// Tocar no campo que já está aberto fecha-o: a fita volta a ser uma linha só.
+function wcAbrirCampo(g){
+  _wcCampo=(_wcCampo===g)?null:g;
+  wcPintarGrupos();
+}
 function wcFiltroToggle(g,v){
   const l=_wcFiltros[g];
   const i=l.indexOf(v);
@@ -611,24 +642,38 @@ function wcCastasModo(){
   wcPintarGrupos();
   if(_wcFiltros.castas.length>1)wcCarregarCatalogo(true);
 }
+/* Os filtros e o texto limpam-se em sítios diferentes, porque vivem em
+   sítios diferentes: o ✕ da caixa leva o texto, o "limpar tudo" leva os
+   valores escolhidos — e quem acabou de escrever "crasto" não quer perder
+   isso por ter tirado o Douro. */
 function wcLimparFiltros(){
   _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
-  _wcProcura='';
-  /* "Limpar filtros" tem de devolver o ecrã ao estado de partida: um visto
-     que sobrevivesse à limpeza era uma regra escondida a filtrar por baixo
-     na próxima escolha. */
+  /* Um visto que sobrevivesse à limpeza era uma regra escondida a filtrar
+     por baixo na próxima escolha. */
   _wcCastasTodas=false;
   try{localStorage.setItem('wc_castas_todas','0');}catch(e){}
-  const c=document.getElementById('cat-procura');
-  if(c)c.value='';
   wcPintarGrupos();
   wcCarregarCatalogo(true);
 }
+function wcLimparTexto(){
+  const c=document.getElementById('cat-procura');
+  if(c){c.value='';c.focus();}
+  clearTimeout(_wcTimer);
+  wcProcuraX();
+  if(!_wcProcura)return;
+  _wcProcura='';
+  wcCarregarCatalogo(true);
+}
+function wcProcuraX(){
+  const c=document.getElementById('cat-procura');
+  const x=document.getElementById('cat-procura-x');
+  if(x)x.classList.toggle('on',!!(c&&c.value));
+}
 function wcAlternarPainel(){
   _wcPainel=!_wcPainel;
-  try{localStorage.setItem('wc_painel',_wcPainel?'1':'0');}catch(e){}
-  wcShellFiltros();
-  wcPintarBarra();
+  if(!_wcPainel)_wcCampo=null;
+  try{localStorage.setItem('wc_filtros_aberto',_wcPainel?'1':'0');}catch(e){}
+  wcPintarGrupos();
 }
 function wcVerModo(m){
   _wcModo=m;
@@ -648,6 +693,7 @@ function wcPintarBarra(){
 }
 
 function wcProcuraMudou(){
+  wcProcuraX();
   clearTimeout(_wcTimer);
   _wcTimer=setTimeout(()=>{
     const v=(document.getElementById('cat-procura')||{}).value||'';
@@ -679,10 +725,6 @@ async function wcCarregarCatalogo(reset){
     wcPintarGrupos();
     wcPintarBarra();
     wcPintarLista();
-    const conta=document.getElementById('cat-conta');
-    if(conta)conta.textContent=_wcTotal
-      ? `${nFmt(_wcTotal)} ${_wcTotal===1?'vinho':'vinhos'}${_wcProcura?' encontrados':' no catálogo'}`
-      : '';
     const vistos=_wcSaltar+linhas.length;
     if(mais&&vistos<_wcTotal){
       mais.innerHTML=`<button class="btn-n larg" onclick="wcMais()">Mostrar mais (${nFmt(_wcTotal-vistos)})</button>`;

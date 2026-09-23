@@ -178,6 +178,19 @@ cartão dizia "Syrah 28" com a lista a mostrar três vinhos. A escolhida
 continua visível — é o que permite desmarcá-la — e uma que dê zero
 desaparece, que é a resposta certa para um caminho sem saída.
 
+**O painel é PROGRESSIVO — o mesmo desenho da Garrafeira.** Era tudo ou
+nada: aberto, os quatro grupos vinham com todas as opções à mostra, e quem
+só queria escrever "crasto" tinha meio ecrã de regiões e castas entre a
+caixa e a resposta. Agora a **procura livre está sempre à vista** (com ✕
+para a limpar), e o botão **"Filtros"** (com o número de valores ligados)
+abre uma FITA com os quatro campos; só os valores do campo tocado
+(`_wcCampo`) abrem por baixo. As **pastilhas** dizem o que não se vê —
+todos os valores ligados menos os do campo aberto, cada um com o seu ✕.
+O invólucro (`wcShellFiltros`) escreve-se UMA vez — reescrever a caixa
+perdia o cursor —, e é o `wcPintarGrupos` que repinta fita, valores e
+pastilhas. Grava-se se a fita está aberta (`wc_filtros_aberto`), nunca o
+campo aberto.
+
 **Os cartões de filtro são uma GRELHA de duas colunas, não um
 `flex-wrap`.** Com três por linha, "Península de Setúbal" e "Cabernet
 Sauvignon" chegavam ao ecrã cortadas a meio, e um filtro que não se lê não

@@ -137,10 +137,11 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
 
   <!-- ═══ CATÁLOGO ═══ -->
   <div id="t-catalogo" class="tp">
-    <!-- A camada de filtros (cartões por tipo, região, casta e preço, mais a
-         procura livre) é desenhada pelo `wcShellFiltros`: precisa das
-         contagens que vêm no mesmo pedido da lista, e encolhe para uma barra
-         quando se quer o ecrã todo para os vinhos. -->
+    <!-- A camada de filtros é desenhada pelo `wcShellFiltros`, UMA vez: a
+         procura livre sempre à vista e, atrás do botão "Filtros", uma fita
+         com os quatro campos — só os valores do campo tocado abrem por
+         baixo (o mesmo desenho progressivo da Garrafeira). As contagens
+         vêm no mesmo pedido da lista. -->
     <div id="cat-filtros"></div>
     <div id="cat-barra"></div>
     <div id="cat-lista"></div>
