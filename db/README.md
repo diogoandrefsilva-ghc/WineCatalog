@@ -28,6 +28,7 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 3. db/functions.sql         (is_admin / is_allowed)
 4. db/policies.sql          (RLS das tabelas da app)
 5. db/admin_pass_temp.sql   (password temporária)
+6. db/imagens.sql          (bucket público das fotografias do catálogo)
 ```
 
 E, do repo **Garrafeira**, o `db/catalogo-partilhado.sql` — que passou a ser

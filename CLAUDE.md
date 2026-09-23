@@ -38,7 +38,8 @@ tudo o que aqui está foi pago com um erro.
   (ver "Vinho novo" abaixo). Deploy à parte:
   `supabase functions deploy catalogo-foto`.
 - `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
-  `functions.sql` → `policies.sql` → `admin_pass_temp.sql` (+ `README.md`
+  `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
+  (o bucket das fotografias) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -317,6 +318,24 @@ errado, corrige-se. A identidade (nome/produtor/ano) também se pode mexer,
 atrás de um interruptor fechado por omissão: muda a CHAVE, e se a chave
 nova já for de outra linha a função recusa e manda para Duplicados —
 juntar é a `fundir`, que é reversível; um UPDATE à socapa não seria.
+
+**A imagem é o primeiro campo do Editar (e do Vinho novo), com
+pré-visualização** — perdida a meio da lista como "Imagem (URL direto)",
+ninguém dava por ela. Dá para colar um link ou tirar/carregar uma
+**fotografia** do rótulo: encolhe-se no browser (`wcEncolherBlob`), fica
+PENDENTE (`_wcImgPend`) e só sobe ao bucket **público**
+`winecatalog-rotulos` quando se guarda (`wcSubirImagemPendente`) — subir ao
+escolher deixava lixo pago a cada Cancelar. O `imagem_url` passa a ser o
+endereço público, e o resto do caminho (`editar`/`criar`, força 3) nem sabe
+que houve fotografia. Uma fotografia NOSSA substituída ou tirada apaga-se do
+bucket (`wcApagarImagemVelha`); um link de loja nunca. Público porque as
+outras duas apps mostram o `imagem_url` num `<img>` simples e não têm login
+aqui — e não fere a invariante 1: aquilo é o `imagem_path` levado sem
+ninguém escolher, isto é o admin a escolher a fotografia do rótulo, com o
+ecrã a dizer-lhe que fica pública. Só o admin escreve (policies em
+`db/imagens.sql`). Na ficha, a garrafa do admin é um atalho para o Editar
+(✏️), e a foto lida em "📷 Ler o rótulo" fica também como imagem se ainda
+não houver nenhuma.
 
 **Procurar informação** (`winecatalog.pesquisa_criar` + a Edge Function
 `catalogo-info.ts`) manda uma pesquisa Google a sério para a linha aberta,
