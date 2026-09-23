@@ -50,6 +50,11 @@ tudo o que aqui está foi pago com um erro.
 - `apple-touch-icon.png` / `icon-512.png` — gerados por um script Node
   descartável (encoder PNG à mão, sem dependências); não há fonte vetorial
   guardada no repo. Para os refazer, escreve outro script assim.
+  **O mesmo livro dourado aberto está desenhado em SVG inline** no
+  cabeçalho, no splash e nos três ecrãs de autenticação (`.wc-livro`). Até
+  23/09/2026 era o emoji 📚, que em quase todas as plataformas sai com três
+  livros vermelho/verde/azul — nada a ver com o ícone da app. Se mudares o
+  ícone, muda os cinco SVG no `index.html` com ele.
 
 ## Porque é que esta app existe
 As duas apps de vinhos pagavam ao Gemini para perguntar o mesmo sobre os
@@ -131,7 +136,8 @@ Cada uma custou um erro.
     **AI-API-Control** ("Por app"), que é a app que se abre para ver custos.
 
 ## O que a app faz — os ecrãs
-Nenhum deles é "a lista toda do catálogo" como ecrã inicial.
+O inicial, desde 23/09/2026, é o Catálogo — mas com a procura à frente e
+a lista paginada, nunca "a lista toda do catálogo" despejada no ecrã.
 
 ### O Resumo saiu daqui (23/09/2026) — *quanto é que isto está a poupar*
 Era o separador inicial: gasto, tokens, pedidos servidos pelo catálogo,
