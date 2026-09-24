@@ -785,6 +785,36 @@ de cada app antes de assumir que a que está calada está bem.**
   sem metadata nenhuma, o modelo não pesquisou; com pesquisas mas sem
   chunks, as fontes vêm noutro sítio; com chunks, estávamos a ler mal.
 
+- **De memória ou pesquisado — a resposta, e o que se fez com ela
+  (24/09/2026).** O `grounding` no log respondeu: nas pesquisas da
+  WineSelection, `metadata:false`, zero `webSearchQueries`, zero tokens de
+  ferramenta; nas 25 procuras premium da Garrafeira, o total de tokens era
+  sempre exatamente entrada + saída (~5 s cada). **O modelo não pesquisou
+  nunca.** Ligar o `google_search` só lhe dá a OPÇÃO de pesquisar; ele
+  decide, e para vinhos conhecidos respondeu com o que aprendeu no treino —
+  por isso as respostas estavam certas, e por isso vinham sem fontes. (Os
+  tokens também o mostram no custo: sem pesquisa feita, não houve pesquisa
+  a pagar.)
+  **Decisão do dono das apps:** para toda a gente fica como está — é barato
+  e costuma acertar. Ao **admin** de cada app:
+  · cada resposta diz se houve pesquisa (`pesquisaWeb`, pelo
+    `fezPesquisa()`: `webSearchQueries` ou `groundingChunks` ou
+    `toolUsePromptTokenCount`), e o ecrã marca a de memória com 🧠;
+  · e oferece a **pesquisa profunda** (`profunda:true`): o prompt EXIGE a
+    pesquisa, uma resposta sem ela passa ao modelo seguinte (fica de
+    reserva, e é usada se nenhum pesquisar — nunca se perde uma resposta
+    por isto), e a Edge Function volta a confirmar que é o admin.
+  Está nas QUATRO apps que pesquisam vinhos, com o mesmo critério:
+  `catalogo-info` (aqui), `verificar-vinhos` (WineSelection — por vinho, e
+  a profunda pesquisa também os que já estavam completos),
+  `vinho-info` (Garrafeira — só no modo premium; salta a cache e o
+  catálogo, e escala para o modelo maior) e `prendas-vinho`
+  (AnniversaryGifts). **Mexer no critério é mexer nas quatro.**
+  **Os prompts MANUAIS pedem sempre a pesquisa a sério**
+  (`WC_MANUAL_PESQUISA` aqui, `IA_MANUAL_PESQUISA` na Garrafeira): são de
+  graça (a conta do admin num assistente), por isso não há razão para
+  aceitar memória lá.
+
 ## O que falta, e porque não está feito
 
 ### A mudança da cor na chave (decidida, não feita)

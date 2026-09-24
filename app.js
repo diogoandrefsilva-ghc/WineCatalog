@@ -1511,6 +1511,9 @@ async function wcNovoProcurar(){
    ══════════════════════════════════════════════ */
 const FN_CATALOGO_INFO=SB_URL+'/functions/v1/catalogo-info';
 let _wcProcTimer=null, _wcProcId=null, _wcProcAte=0;
+/* O último pedido automático — é o que a "pesquisa profunda" repete, com os
+   mesmos campos e o mesmo contexto, só que a exigir a pesquisa Google. */
+let _wcProcUltimo=null;
 
 /* CONTEXTO LIVRE: duas caixas de texto em vez de campos fechados — mais
    flexível para o que ajuda a desambiguar ("grande reserva", "edição
@@ -1626,16 +1629,8 @@ async function wcProcurarArrancar(){
     if(!p.jaAndava){
       const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
       const ctx=wcContextoLer();
-      const r=await fetch(FN_CATALOGO_INFO,{
-        method:'POST',
-        headers:{'Content-Type':'application/json',apikey:SB_KEY,
-                 Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-        body:JSON.stringify({pesquisaId:p.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites})
-      });
-      if(!r.ok&&r.status!==202){
-        let msg='';try{msg=(await r.json()).error||'';}catch(_){}
-        throw new Error(msg||('a função respondeu '+r.status));
-      }
+      _wcProcUltimo={vinhoId:_wcFicha.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites};
+      await wcProcChamar(Object.assign({pesquisaId:p.id},_wcProcUltimo,{vinhoId:undefined}));
     }
     wcProcIniciarPolling(p.id);
   }catch(e){
@@ -1643,13 +1638,46 @@ async function wcProcurarArrancar(){
     if(b){b.disabled=false;b.textContent='🔎 Pesquisar';}
   }
 }
+async function wcProcChamar(corpo){
+  const r=await fetch(FN_CATALOGO_INFO,{
+    method:'POST',
+    headers:{'Content-Type':'application/json',apikey:SB_KEY,
+             Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
+    body:JSON.stringify(corpo)
+  });
+  if(!r.ok&&r.status!==202){
+    let msg='';try{msg=(await r.json()).error||'';}catch(_){}
+    throw new Error(msg||('a função respondeu '+r.status));
+  }
+}
+
+/* ── PESQUISA PROFUNDA ──
+   O Gemini decide sozinho se usa a pesquisa Google, e muitas vezes responde
+   com o que aprendeu no treino (`pesquisaWeb:false` no resultado). Isso não
+   se recusa — é barato e costuma acertar —, mas diz-se, e daqui pede-se a
+   mesma pesquisa outra vez a EXIGIR a pesquisa Google (`profunda`). */
+async function wcProcurarProfunda(){
+  if(!_wcFicha||!isAdmin())return;
+  const u=_wcProcUltimo&&_wcProcUltimo.vinhoId===_wcFicha.id?_wcProcUltimo:{campos:null,colheitaEspecifica:false,notas:'',sites:[]};
+  try{
+    const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
+    wcProcEspera(true);
+    if(!p.jaAndava){
+      await wcProcChamar({pesquisaId:p.id,campos:u.campos,colheitaEspecifica:u.colheitaEspecifica,
+        notas:u.notas,sites:u.sites,profunda:true});
+    }
+    wcProcIniciarPolling(p.id);
+  }catch(e){
+    wcProcErro(e.message);
+  }
+}
 
 function wcProcCaixa(){return document.getElementById('proc-caixa');}
-function wcProcEspera(){
+function wcProcEspera(profunda){
   const c=wcProcCaixa();
   if(c)c.innerHTML=`<div class="pr-espera">
     <div class="wc-spin escuro"></div>
-    <div><strong>A pesquisar…</strong>
+    <div><strong>${profunda?'Pesquisa profunda — a obrigar o Gemini a pesquisar…':'A pesquisar…'}</strong>
       <div class="wc-note">Pesquisa Google a sério — pode levar um minuto. Podes fechar isto,
         que o trabalho continua do lado do servidor.</div></div>
   </div>`;
@@ -1732,6 +1760,14 @@ function wcProcResultadoHTML(res){
           usa <strong>Editar</strong> (Mexer na identidade) para aplicar, se estiver certo.</span></div>`).join('')}</div>`;
   }
   if(res.aviso)h+=`<div class="wc-note" style="margin-top:8px">⚠️ ${esc(res.aviso)}</div>`;
+  if(res.pesquisaWeb===false){
+    h+=`<div class="wc-note" style="margin-top:8px">🧠 <strong>${res.profunda?'Mesmo obrigado, o Gemini não pesquisou':'Sem pesquisa Google'}</strong> —
+      ${res.profunda?'nenhum dos modelos usou a pesquisa; o que entrou veio de memória. A pesquisa manual (colar num assistente) é a alternativa.'
+        :'o Gemini respondeu com o que aprendeu no treino. Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.'}</div>`;
+    if(!res.profunda&&isAdmin())h+=`<button class="btn-n larg" style="margin-top:8px" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda — obrigar a pesquisar no Google</button>`;
+  }else if(res.pesquisaWeb===true){
+    h+=`<div class="wc-note" style="margin-top:8px">🌐 Pesquisado no Google${Array.isArray(res.fontes)&&res.fontes.length?` · ${res.fontes.length} fonte${res.fontes.length>1?'s':''}`:''}.</div>`;
+  }
   if(!props.length&&!res.aviso){
     h+='<div class="wc-note">A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: '+
        'é o modelo a não inventar, que é o que se lhe pede.</div>';
@@ -1768,6 +1804,10 @@ function wcManualRegraVivino(colheitaEspecifica){
     ? 'Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA página do Vivino e do vinho certo — confirma produtor, ano e região antes de aceitar. Em dúvida, deixa os três vazios.'
     : 'A página do Vivino é do VINHO, não de uma colheita específica: o ANO NÃO faz parte da identidade da página, e a nota que lá aparece é uma média entre colheitas. Para confirmares que é a página certa, basta o nome (já desambiguado na regra anterior) e o produtor baterem certo — não deixes a nota, as avaliações nem o link vazios só por causa do ano. A nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm logo a seguir, entre parêntesis — não uses números de outra zona da página. Mesmo sem confirmares a nota, mantém o link se tiveres a certeza da página.';
 }
+/* A pesquisa manual é grátis (é a conta do admin num assistente), por isso
+   pede-se SEMPRE a pesquisa a sério — o equivalente à "pesquisa profunda"
+   da automática. Mesmo texto no prompt de um vinho e no do lote. */
+const WC_MANUAL_PESQUISA='PESQUISA OBRIGATÓRIA: antes de responderes, pesquisa MESMO na internet (Pesquisa Google ou a pesquisa web que tiveres) — pelo menos o Vivino do vinho e o preço em lojas portuguesas. NÃO respondas de memória: um valor que não vejas numa página fica vazio, mesmo que aches que sabes. Se não tiveres acesso à internet, diz isso em "aviso" e não preenchas nada.';
 const WC_MANUAL_REGRA_CUVEE='Se o produtor tiver mais do que um vinho com este nome (variantes de gama: Reserva, Grande Reserva, Colheita, Terroir, etc.) e não se souber qual, prefere a versão SEM qualificador extra; se essa não existir, escolhe a que tiver mais avaliações no Vivino (a principal da gama, normalmente) e diz no "aviso" que outras versões encontraste e qual escolheste.';
 
 function wcManualPrompt(campos,colheitaEspecifica,notas,sites){
@@ -1784,6 +1824,8 @@ function wcManualPrompt(campos,colheitaEspecifica,notas,sites){
   const sitesTxt=sites&&sites.length
     ?`\nFONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(', ')}. Só uses outra fonte se estas não tiverem a resposta.\n`:'';
   return `Usa a tua pesquisa na internet para preencheres a ficha deste vinho, como faria um enólogo a construir um catálogo de referência.
+
+${WC_MANUAL_PESQUISA}
 
 VINHO A IDENTIFICAR:
   ${linhas.join('\n  ')}
@@ -2211,6 +2253,8 @@ function wcLotePrompt(vinhos,campos){
   const camposObj=campos.map(k=>`      "${WC_CAMPOS_JSON[k]||k}": ${wcLoteCampoExemplo(k)}`).join(',\n');
   const regras=wcLoteRegras(campos).map((r,i)=>`${i+1}. ${r}`).join('\n');
   return `Usa a tua pesquisa na internet para preencheres, PARA CADA VINHO da lista abaixo, só os campos pedidos — como faria um enólogo a atualizar um catálogo de referência.
+
+${WC_MANUAL_PESQUISA} Faz pelo menos uma pesquisa POR VINHO.
 
 Hoje é ${hoje}.
 CAMPOS A PEDIR (só estes, para todos os vinhos): ${nomesCampos.join(', ')}.

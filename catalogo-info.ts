@@ -310,6 +310,29 @@ function resumoGrounding(gd: any): Record<string, unknown> {
   };
 }
 
+/* HOUVE PESQUISA OU NÃO. Ligar o `google_search` não obriga o modelo a
+   pesquisar — ele decide, e nos registos até 24/09/2026 nunca o fez: as
+   respostas vinham do que aprendeu no treino. Não se recusa (ver acima),
+   mas o resultado passa a dizê-lo (`pesquisaWeb`) e o ecrã oferece a
+   "pesquisa profunda" (`profunda:true`): o prompt exige a pesquisa, e uma
+   resposta sem ela passa ao modelo seguinte. Ver o CLAUDE.md, "De memória
+   ou pesquisado". Mesmo critério na `verificar-vinhos` e na `vinho-info`. */
+function fezPesquisa(gd: any): boolean {
+  const gm = gd?.candidates?.[0]?.groundingMetadata;
+  return (Array.isArray(gm?.webSearchQueries) && gm.webSearchQueries.length > 0) ||
+    (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
+    Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
+}
+const promptProfunda = (nome: string, produtor: string, ano: number | null) => `
+
+OBRIGATÓRIO — PESQUISA A SÉRIO, NÃO DE MEMÓRIA:
+- Antes de escreveres o JSON, usa a ferramenta de pesquisa Google, pelo
+  menos para "${[nome, produtor, ano].filter(Boolean).join(" ")} vivino" e para
+  o preço em lojas portuguesas.
+- Um campo que a pesquisa não confirmar fica FORA do JSON, MESMO que aches
+  que sabes a resposta. Esta pesquisa foi pedida precisamente porque a
+  resposta de memória não chega.`;
+
 /* Estimativa GROSSEIRA, como nas irmãs: os TOKENS são facto (vêm da API),
    o euro é um número redondo para dar ordem de grandeza. A pesquisa Google
    é faturada à parte, por pedido. Calibra pela fatura real no dia em que
@@ -549,7 +572,7 @@ async function lerVinho(id: number, signal?: AbortSignal): Promise<Linha | null>
 async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
   respostaManual: string | null = null, colheitaEspecifica: boolean = false,
-  notas: string = "", sites: string[] = [],
+  notas: string = "", sites: string[] = [], profunda: boolean = false,
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -566,6 +589,8 @@ async function processarPesquisa(
     let usage: UsageMetadata | null = null;
     let fontes: { titulo: string; url: string }[] = [];
     let grounding: Record<string, unknown> | null = null;
+    // null na manual (não há como saber); true/false na automática.
+    let pesquisaWeb: boolean | null = null;
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -587,7 +612,7 @@ async function processarPesquisa(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
         String(antes.ficha.tipo ?? ""), notas, sites,
         new Date().toISOString().slice(0, 10), campos, colheitaEspecifica,
-      );
+      ) + (profunda ? promptProfunda(antes.nome, antes.produtor, antes.ano) : "");
 
       /* O `google_search` está SEMPRE ligado — é a razão de esta função
          existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
@@ -617,6 +642,17 @@ async function processarPesquisa(
          Guarda-se para a mensagem de erro: "MAX_TOKENS" e "SAFETY" são
          avarias muito diferentes e quem lê tem de as poder distinguir. */
       let vazioMotivo = "";
+      // Na profunda, uma resposta sem pesquisa fica de reserva e tenta-se o
+      // modelo seguinte; se nenhum pesquisar, usa-se a reserva.
+      let reserva: { gd: any; bruto: string; model: string } | null = null;
+      const aceitar = (gd: any, bruto: string) => {
+        usage = usageMetadata(gd);
+        parsed = extrairJson(bruto);
+        fontes = fontesGrounding(gd);
+        grounding = resumoGrounding(gd);
+        pesquisaWeb = fezPesquisa(gd);
+        console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
+      };
 
       /* O CORPO LÊ-SE DENTRO DO CICLO, e é essa a correção. Antes o ciclo
          fazia `break` no 200 e só depois é que alguém lia a resposta — por
@@ -640,12 +676,13 @@ async function processarPesquisa(
           const uso = usageMetadata(gd);
           console.log("CATALOGO-INFO resposta:", model, "finishReason:", motivo || "(nenhum)",
                       "texto:", bruto.length, "tokens saída:", uso?.candidatesTokenCount ?? 0);
+          if (bruto && profunda && !fezPesquisa(gd)) {
+            if (!reserva) reserva = { gd, bruto, model };
+            g = null;
+            continue;
+          }
           if (bruto) {
-            usage = uso;
-            parsed = extrairJson(bruto);
-            fontes = fontesGrounding(gd);
-            grounding = resumoGrounding(gd);
-            console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
+            aceitar(gd, bruto);
             break;
           }
           // 200 sem uma letra escrita: não é "não encontrei", é não ter
@@ -657,6 +694,12 @@ async function processarPesquisa(
         }
         if (g.status === 404) { _models = null; continue; }
         if (!transitorio(g.status)) break;
+      }
+
+      if (parsed === undefined && reserva) {
+        aceitar(reserva.gd, reserva.bruto);
+        model = reserva.model;
+        g = new Response(null, { status: 200 });
       }
 
       if (g && !g.ok) {
@@ -716,11 +759,12 @@ async function processarPesquisa(
     if (!Object.keys(ficha).length && !produtorMudou) {
       await registar("ok", { passo: "sem_campos", modelo: model, vinho_id: vinhoId, campos: 0,
         fontes: fontes.length, ...(grounding ? { grounding } : {}),
+        ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}),
         ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: chamadasGemini,
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
         estado: "concluido",
-        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes },
+        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes, pesquisaWeb, profunda },
       });
       return;
     }
@@ -789,13 +833,14 @@ async function processarPesquisa(
       campos: entraram, propostos: propostas.length,
       fontes: fontes.length,
       ...(grounding ? { grounding } : {}),
+      ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}),
       ...(usage ? { usageMetadata: usage } : {}),
       chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
       manual: respostaManual !== null,
     }, quem);
     await fechar(pesquisaId, {
       estado: "concluido",
-      resultado: { modelo: model, campos: entraram, aviso: aviso || null, propostas, fontes },
+      resultado: { modelo: model, campos: entraram, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda },
     });
   } catch (e) {
     const err = e as Error;
@@ -872,6 +917,9 @@ Deno.serve(async (req) => {
     // Vivino em `regraVivino`) — só estrita quando o ecrã de campos manda
     // isto explicitamente.
     const colheitaEspecifica = body?.colheitaEspecifica === true;
+    // Pesquisa profunda: exige a pesquisa Google (ver `fezPesquisa`). Só o
+    // admin chega aqui, por isso não há outra verificação a fazer.
+    const profunda = body?.profunda === true && respostaManual === null;
     /* `notas`/`sites`: contexto LIVRE (duas caixas de texto na app, não
        campos fechados) — ajuda a não confundir este vinho com um homónimo
        e a dar prioridade a fontes de confiança. Só entram no prompt
@@ -901,7 +949,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {
