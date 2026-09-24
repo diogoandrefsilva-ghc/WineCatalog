@@ -38,7 +38,7 @@ const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_SRV = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GAPI = "https://generativelanguage.googleapis.com/v1beta";
 const PROC_TIMEOUT_MS = 90_000;
-const SYNC_TIMEOUT_MS = 10_000;
+const SYNC_TIMEOUT_MS = 20_000; // duas tentativas de 4 s na autorização cabem com folga
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -880,19 +880,43 @@ async function processarPesquisa(
   }
 }
 
+/* Um pedido nosso que fica pendurado. A 24/09/2026 o primeiro fetch de uma
+   instância acabada de arrancar (o /auth/v1/user) nunca chegou ao servidor:
+   dez segundos parados, e a pesquisa morreu com um "The signal has been
+   aborted" cru, antes de sequer começar. Cada pedido da fase síncrona tem
+   por isso o seu tecto curto, e uma segunda tentativa. */
+async function fetchCurto(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  for (let tentativa = 0; ; tentativa++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.any([signal, AbortSignal.timeout(4_000)]) });
+    } catch (e) {
+      if (signal.aborted || tentativa >= 1) throw e;
+      console.log("CATALOGO-INFO pedido pendurado, nova tentativa:", url.replace(/\?.*$/, ""));
+    }
+  }
+}
+
 /* Quem é, e se manda aqui. O `sou_admin()` corre com o JWT DA PESSOA (não
    com a service role): quem decide quem é o admin é a base, e é a mesma
    resposta que o ecrã usa para mostrar o botão. */
 async function admin(auth: string, signal: AbortSignal): Promise<{ ok: boolean; email: string | null }> {
   if (!auth) return { ok: false, email: null };
-  const u = await fetch(`${SB_URL}/auth/v1/user`, {
-    headers: { apikey: SB_SRV, Authorization: auth }, signal,
-  });
+  const u = await fetchCurto(`${SB_URL}/auth/v1/user`, {
+    headers: { apikey: SB_SRV, Authorization: auth },
+  }, signal);
   if (!u.ok) return { ok: false, email: null };
   const email = String((await u.json()).email ?? "").toLowerCase();
   if (!email) return { ok: false, email: null };
   try {
-    const d = await rpc("sou_admin", {}, auth, signal);
+    const r = await fetchCurto(`${SB_URL}/rest/v1/rpc/sou_admin`, {
+      method: "POST",
+      headers: {
+        apikey: SB_SRV, Authorization: auth, "Content-Type": "application/json",
+        "Content-Profile": "winecatalog", "Accept-Profile": "winecatalog",
+      },
+      body: "{}",
+    }, signal);
+    const d = r.ok ? await r.json() : null;
     return { ok: d === true, email };
   } catch (_) {
     return { ok: false, email };
@@ -910,8 +934,15 @@ Deno.serve(async (req) => {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), SYNC_TIMEOUT_MS);
   let quem: string | null = null;
+  let pidAberto: number | null = null;
 
   try {
+    // O corpo lê-se antes da autorização só para se saber que linha de
+    // trabalho fechar se o que vem a seguir ficar pendurado (ver o `catch`).
+    const body = await req.json().catch(() => ({}) as any);
+    const pid = typeof body?.pesquisaId === "number" ? body.pesquisaId : parseInt(String(body?.pesquisaId), 10);
+    if (Number.isFinite(pid)) pidAberto = pid;
+
     const a = await admin(authHeader, ctrl.signal);
     quem = a.email;
     if (!a.ok) {
@@ -919,8 +950,6 @@ Deno.serve(async (req) => {
       return json({ error: "só o admin do catálogo pode mandar pesquisar" }, 403);
     }
 
-    const body = await req.json().catch(() => ({}) as any);
-    const pid = typeof body?.pesquisaId === "number" ? body.pesquisaId : parseInt(String(body?.pesquisaId), 10);
     if (!Number.isFinite(pid)) {
       await registar("erro", { passo: "pesquisaId" }, quem);
       return json({ error: "pesquisa inválida" }, 400);
@@ -956,7 +985,9 @@ Deno.serve(async (req) => {
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
     // e o pedido a uma linha de outra pessoa numa futura app a dois admins.
-    const r = await tabela(`pesquisas?id=eq.${pid}&select=id,vinho_id,quem,estado`, { signal: ctrl.signal });
+    const r = await fetchCurto(`${SB_URL}/rest/v1/pesquisas?id=eq.${pid}&select=id,vinho_id,quem,estado`, {
+      headers: { apikey: SB_SRV, Authorization: "Bearer " + SB_SRV, "Accept-Profile": "winecatalog" },
+    }, ctrl.signal);
     const row = r.ok ? (await r.json())?.[0] : null;
     if (!row) {
       await registar("erro", { passo: "pesquisa_nao_encontrada", pesquisaId: pid }, quem);
@@ -978,8 +1009,22 @@ Deno.serve(async (req) => {
     return json({ estado: "pendente" }, 202);
   } catch (e) {
     const err = e as Error;
+    const timeout = err.name === "AbortError" || err.name === "TimeoutError";
     await registar("erro", { passo: "excecao_inicial", erro: String(err.message).slice(0, 500) }, quem);
-    return json({ error: err.message }, 500);
+    // A linha de trabalho já existe (criada pela app antes de chamar isto):
+    // deixada em 'pendente', bloqueava a pesquisa seguinte do mesmo vinho
+    // durante minutos. Só num tecto de tempo nosso (nunca numa recusa), e só
+    // se ainda estiver pendente, fecha-se já para se poder tentar outra vez.
+    if (timeout && pidAberto != null) {
+      try {
+        await tabela(`pesquisas?id=eq.${pidAberto}&estado=eq.pendente`, {
+          method: "PATCH",
+          headers: { Prefer: "return=minimal" },
+          body: JSON.stringify({ estado: "erro", erro: "o servidor demorou a responder — tenta outra vez", fechado_em: new Date().toISOString() }),
+        });
+      } catch (_) { /* fica para o prazo normal da `pesquisa_criar` */ }
+    }
+    return json({ error: timeout ? "o servidor demorou a responder — tenta outra vez" : err.message }, timeout ? 504 : 500);
   } finally {
     clearTimeout(timer);
   }
