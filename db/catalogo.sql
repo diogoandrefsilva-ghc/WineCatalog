@@ -373,25 +373,35 @@ AS $$
   -- `p_excluir` continua a ser sobre a linha CRUA (é a colheita irmã do
   -- `procurar`, que precisa de saltar a linha que já tem na mão), por isso
   -- compara-se com `v.id` e não com o id já resolvido.
+  --
+  -- AS CHAVES DA PERGUNTA CALCULAM-SE UMA VEZ, na CTE `q`, e não dentro do
+  -- WHERE. Lá dentro, com parâmetros em vez de constantes, o Postgres
+  -- chamava a `tokens()` (NFD + três regex) para CADA linha do catálogo,
+  -- várias vezes por linha: ~1 s por vinho com 180 linhas. Uma carta de
+  -- 11 vinhos pelo `procurar_lote` dava 10 s, o `statement_timeout` de 8 s
+  -- do PostgREST cortava-a com 500, e a WineSelection dizia "não conheço
+  -- nenhum" de uma carta cujos vinhos tinham acabado de ser pesquisados e
+  -- pagos (24/09/2026). O que a chave QUER DIZER não mudou — só quantas
+  -- vezes se calcula.
+  WITH q AS MATERIALIZED (
+    SELECT winecatalog.chave(p_nome, p_produtor, p_ano)  AS k,
+           winecatalog.chave_nome(p_nome, p_ano)         AS kn,
+           winecatalog.chave_base(p_nome, p_produtor)    AS b,
+           winecatalog.base_nome(p_nome)                 AS bn
+  )
   SELECT COALESCE(a.id_para, v.id)
-    FROM winecatalog.vinhos v
+    FROM q, winecatalog.vinhos v
     LEFT JOIN winecatalog.alias a ON a.id_de = v.id
    WHERE (p_excluir IS NULL OR v.id <> p_excluir)
      AND CASE WHEN p_exigir_ano THEN
            -- as quatro combinações das duas chaves de cada lado
-           v.chave = winecatalog.chave(p_nome, p_produtor, p_ano)
-           OR (winecatalog.chave_nome(p_nome, p_ano) IS NOT NULL
-               AND v.chave = winecatalog.chave_nome(p_nome, p_ano))
-           OR (v.chave_nome IS NOT NULL
-               AND v.chave_nome IN (winecatalog.chave(p_nome, p_produtor, p_ano),
-                                    winecatalog.chave_nome(p_nome, p_ano)))
+           v.chave = q.k
+           OR (q.kn IS NOT NULL AND v.chave = q.kn)
+           OR (v.chave_nome IS NOT NULL AND v.chave_nome IN (q.k, q.kn))
          ELSE
-           v.chave_base = winecatalog.chave_base(p_nome, p_produtor)
-           OR (winecatalog.base_nome(p_nome) IS NOT NULL
-               AND v.chave_base = winecatalog.base_nome(p_nome))
-           OR (v.base_nome IS NOT NULL
-               AND v.base_nome IN (winecatalog.chave_base(p_nome, p_produtor),
-                                   winecatalog.base_nome(p_nome)))
+           v.chave_base = q.b
+           OR (q.bn IS NOT NULL AND v.chave_base = q.bn)
+           OR (v.base_nome IS NOT NULL AND v.base_nome IN (q.b, q.bn))
          END
    -- Uma linha que já foi fundida noutra vai para o fim: se a alvo também
    -- casou, é ela que responde por si, e não pelo desvio.

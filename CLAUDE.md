@@ -698,6 +698,20 @@ de cada app antes de assumir que a que está calada está bem.**
   Alonso Douro Wine Company, Lda. · 2022" atropelava o nome do vinho em
   cima. Nome numa linha, produtor · ano noutra, ellipsis nos dois.
 
+- **A `achar` a calcular as chaves 180 vezes por pergunta.** A primeira
+  carta a sério da WineSelection (24/09/2026): oito vinhos pesquisados e
+  pagos, gravados no catálogo como deve ser — e a mesma carta, lida outra
+  vez, "não conhecia nenhum". O `procurar_lote` de 11 vinhos levava **10 s**
+  e o `statement_timeout` de 8 s do PostgREST cortava-o com 500. A causa: a
+  `achar` tinha as chaves da pergunta (`chave`/`chave_nome`/`chave_base`/
+  `base_nome`, cada uma a passar pela `tokens()`, com NFD e três regex)
+  DENTRO do WHERE, e com parâmetros em vez de constantes o Postgres
+  avaliava-as para cada linha do catálogo. Passaram para uma CTE
+  `MATERIALIZED`, calculadas uma vez: **10,2 s → 0,09 s**, com as mesmas
+  respostas (conferido linha a linha antes e depois, fusões e colheitas
+  irmãs incluídas). **Uma função que o `procurar`/`juntar` chama por linha
+  não pode ter trabalho caro por linha do catálogo** — isto piorava a cada
+  vinho novo, que é o contrário do que um catálogo deve fazer.
 - **O 200 vazio que se lia como "não encontrei nada".** A pesquisa
   automática da ficha deixou de dar resultado e não havia erro em lado
   nenhum: a linha de `pesquisas` fechava como `concluido`, com `campos: 0`.
