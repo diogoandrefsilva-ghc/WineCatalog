@@ -323,15 +323,27 @@ function fezPesquisa(gd: any): boolean {
     (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
     Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
 }
-const promptProfunda = (nome: string, produtor: string, ano: number | null) => `
-
-OBRIGATÓRIO — PESQUISA A SÉRIO, NÃO DE MEMÓRIA:
-- Antes de escreveres o JSON, usa a ferramenta de pesquisa Google, pelo
-  menos para "${[nome, produtor, ano].filter(Boolean).join(" ")} vivino" e para
-  o preço em lojas portuguesas.
-- Um campo que a pesquisa não confirmar fica FORA do JSON, MESMO que aches
-  que sabes a resposta. Esta pesquisa foi pedida precisamente porque a
-  resposta de memória não chega.`;
+/* O QUE FAZ O MODELO PESQUISAR A SÉRIO (testado a 24/09/2026, na
+   `diag-grounding-temp`). Não é pedir-lho com mais força: com "Responde SÓ
+   com este JSON", o lite e o flash responderam de MEMÓRIA em todas as
+   tentativas, com ou sem "OBRIGATÓRIO — pesquisa", com ou sem temperatura
+   0 (e deram quatro preços diferentes para o mesmo Papa Figos: 7,95 € a
+   28,34 €). Com o MESMO pedido mas a deixá-lo escrever primeiro o que
+   encontrou, e o JSON só no fim numa linha "JSON:", pesquisaram nas três
+   tentativas (2 a 4 pesquisas, 2 a 5 fontes) e os preços bateram certo.
+   Um formulário para preencher, o modelo preenche de cabeça; um relatório
+   para escrever, vai procurar. Por isso a profunda troca a última
+   instrução do prompt, e a leitura vai buscar o JSON a seguir a "JSON:". */
+const INSTR_JSON = "Responde SÓ com este JSON, sem texto à volta e sem blocos de código:";
+const INSTR_PROFUNDA = `Primeiro PESQUISA no Google (o Vivino deste vinho e o preço em lojas
+portuguesas, pelo menos) e escreve, em texto corrido, o que encontraste e em
+que sítio. Depois, no FIM da resposta, numa linha que comece por JSON:,
+escreve o resultado neste formato — um campo que a pesquisa não confirmou
+fica de fora, MESMO que aches que sabes a resposta:`;
+function jsonDoFim(txt: string): string {
+  const i = txt.lastIndexOf("JSON:");
+  return i >= 0 ? txt.slice(i + 5) : txt;
+}
 
 /* Estimativa GROSSEIRA, como nas irmãs: os TOKENS são facto (vêm da API),
    o euro é um número redondo para dar ordem de grandeza. A pesquisa Google
@@ -612,7 +624,8 @@ async function processarPesquisa(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
         String(antes.ficha.tipo ?? ""), notas, sites,
         new Date().toISOString().slice(0, 10), campos, colheitaEspecifica,
-      ) + (profunda ? promptProfunda(antes.nome, antes.produtor, antes.ano) : "");
+      );
+      const textoPedido = profunda ? texto0.replace(INSTR_JSON, INSTR_PROFUNDA) : texto0;
 
       /* O `google_search` está SEMPRE ligado — é a razão de esta função
          existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
@@ -621,20 +634,25 @@ async function processarPesquisa(
          pesquisar. Era a primeira variante tentada nas funções irmãs e só
          deitava fora uma ida ao Gemini de cada vez, sem nada no ecrã a
          dizê-lo. */
+      // Na profunda, cada modelo tem o seu próprio tecto: um que se arraste
+      // não pode levar consigo a resposta de reserva que o anterior já deu.
       const chamarGemini = (m: string) =>
         fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: ctrl.signal,
+          signal: profunda ? AbortSignal.any([ctrl.signal, AbortSignal.timeout(40_000)]) : ctrl.signal,
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: texto0 }] }],
+            contents: [{ role: "user", parts: [{ text: textoPedido }] }],
             generationConfig: { temperature: 0 },
             tools: [{ google_search: {} }],
           }),
         });
 
       const transitorio = (st: number) => st === 429 || st === 500 || st === 503;
-      const candidatos = await candidatosModelo(ctrl.signal);
+      // A profunda fica pelos dois estáveis: a 24/09/2026 foi a volta pelos
+      // oito candidatos, cada um a responder sem pesquisar, que esgotou os
+      // 90 s e deitou fora a resposta que já havia.
+      const candidatos = (await candidatosModelo(ctrl.signal)).slice(0, profunda ? 2 : undefined);
       if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
       console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
       let g: Response | null = null;
@@ -647,7 +665,7 @@ async function processarPesquisa(
       let reserva: { gd: any; bruto: string; model: string } | null = null;
       const aceitar = (gd: any, bruto: string) => {
         usage = usageMetadata(gd);
-        parsed = extrairJson(bruto);
+        parsed = extrairJson(profunda ? jsonDoFim(bruto) : bruto);
         fontes = fontesGrounding(gd);
         grounding = resumoGrounding(gd);
         pesquisaWeb = fezPesquisa(gd);
@@ -666,7 +684,13 @@ async function processarPesquisa(
          de entrada, 0 de saída, ~4977 gastos a pensar. */
       for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
         model = candidatos[ci];
-        g = await chamarGemini(model);
+        try {
+          g = await chamarGemini(model);
+        } catch (e) {
+          if (ctrl.signal.aborted || !reserva) throw e;
+          g = null;
+          break;
+        }
         console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
         if (g.ok) {
           const gd = await g.json();

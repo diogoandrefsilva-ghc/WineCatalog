@@ -810,6 +810,25 @@ de cada app antes de assumir que a que está calada está bem.**
   `vinho-info` (Garrafeira — só no modo premium; salta a cache e o
   catálogo, e escala para o modelo maior) e `prendas-vinho`
   (AnniversaryGifts). **Mexer no critério é mexer nas quatro.**
+  **A primeira profunda falhou, e o porquê é a lição (24/09/2026).** Com
+  "OBRIGATÓRIO — pesquisa" acrescentado ao prompt, os quatro modelos
+  tentados responderam de memória na mesma, e a volta pelos oito
+  candidatos esgotou os 90 s e deitou fora a resposta de reserva. Uma
+  função de diagnóstico (`diag-grounding-temp`, já desativada) mostrou a
+  causa: **o que impede a pesquisa é o "Responde SÓ com este JSON".** O
+  mesmo pedido em texto livre pesquisou sempre (2–4 pesquisas, 2–5 fontes,
+  até no lite); com a instrução de só-JSON, lite e flash responderam de
+  memória em todas as tentativas, com ou sem "OBRIGATÓRIO", com ou sem
+  temperatura 0 — e deram quatro preços diferentes para o mesmo Papa Figos
+  (7,95 € a 28,34 €). Um formulário para preencher, o modelo preenche de
+  cabeça; um relatório para escrever, vai procurar. Por isso a profunda
+  TROCA essa instrução (`INSTR_JSON` → `INSTR_PROFUNDA`: primeiro escreve o
+  que encontrou e onde, e o JSON só no fim, numa linha `JSON:`, lido com
+  `jsonDoFim`), fica pelos dois modelos estáveis, e cada modelo tem o seu
+  tecto de tempo para nunca levar a reserva consigo. **As pesquisas
+  normais continuam com o só-JSON — ou seja, de memória — por decisão do
+  dono das apps;** mudá-las para o formato da profunda é o que as punha a
+  pesquisar sempre (e a pagar a pesquisa Google).
   **Os prompts MANUAIS pedem sempre a pesquisa a sério**
   (`WC_MANUAL_PESQUISA` aqui, `IA_MANUAL_PESQUISA` na Garrafeira): são de
   graça (a conta do admin num assistente), por isso não há razão para
