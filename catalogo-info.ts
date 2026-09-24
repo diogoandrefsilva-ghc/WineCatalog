@@ -291,6 +291,25 @@ function fontesGrounding(body: any): { titulo: string; url: string }[] {
   return out;
 }
 
+/* O que o Gemini diz sobre a PESQUISA que fez (ou não fez). As fontes vêm a
+   zero em todas as pesquisas do projeto (24/09/2026) e só uma resposta real
+   diz porquê: sem `groundingMetadata` (não pesquisou), com
+   `webSearchQueries` mas sem `groundingChunks` (pesquisou, e as fontes vêm
+   noutro sítio ou não vêm), ou com chunks (estávamos a ler mal).
+   `toolUsePromptTokenCount` é o que a pesquisa meteu na entrada do modelo.
+   A MESMA função está na `verificar-vinhos` da WineSelection. */
+function resumoGrounding(gd: any): Record<string, unknown> {
+  const gm = gd?.candidates?.[0]?.groundingMetadata;
+  return {
+    metadata: !!gm,
+    chaves: gm && typeof gm === "object" ? Object.keys(gm).slice(0, 12) : [],
+    pesquisas: Array.isArray(gm?.webSearchQueries) ? gm.webSearchQueries.slice(0, 8).map((q: unknown) => String(q).slice(0, 120)) : [],
+    chunks: Array.isArray(gm?.groundingChunks) ? gm.groundingChunks.length : 0,
+    supports: Array.isArray(gm?.groundingSupports) ? gm.groundingSupports.length : 0,
+    toolTokens: gd?.usageMetadata?.toolUsePromptTokenCount ?? null,
+  };
+}
+
 /* Estimativa GROSSEIRA, como nas irmãs: os TOKENS são facto (vêm da API),
    o euro é um número redondo para dar ordem de grandeza. A pesquisa Google
    é faturada à parte, por pedido. Calibra pela fatura real no dia em que
@@ -546,6 +565,7 @@ async function processarPesquisa(
     let parsed: any;
     let usage: UsageMetadata | null = null;
     let fontes: { titulo: string; url: string }[] = [];
+    let grounding: Record<string, unknown> | null = null;
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -624,6 +644,8 @@ async function processarPesquisa(
             usage = uso;
             parsed = extrairJson(bruto);
             fontes = fontesGrounding(gd);
+            grounding = resumoGrounding(gd);
+            console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
             break;
           }
           // 200 sem uma letra escrita: não é "não encontrei", é não ter
@@ -693,6 +715,7 @@ async function processarPesquisa(
 
     if (!Object.keys(ficha).length && !produtorMudou) {
       await registar("ok", { passo: "sem_campos", modelo: model, vinho_id: vinhoId, campos: 0,
+        fontes: fontes.length, ...(grounding ? { grounding } : {}),
         ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: chamadasGemini,
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
@@ -754,15 +777,18 @@ async function processarPesquisa(
        invariante 9 proíbe ("uma nota pesquisada e um palpite não podem
        parecer a mesma coisa"). Regista-se primeiro porque não há histórico
        nenhum para comparar: a primeira pesquisa automática a correr até ao
-       fim foi a do Meandro, e veio com zero. Se isto se mantiver a zero, o
-       passo seguinte é recusar a escrita sem grounding — não é uma decisão
-       a tomar com uma amostra de um. */
+       fim foi a do Meandro, e veio com zero. Decidido a 24/09/2026: sem
+       fontes NÃO se recusa (é o que as outras apps fazem, e o que as
+       pesquisas trouxeram foi conferido e estava certo). O `grounding` ao
+       lado serve para perceber se as fontes se perdem do nosso lado — ver
+       `resumoGrounding` e o CLAUDE.md, "ZERO fontes". */
     console.log("CATALOGO-INFO ok:", entraram, "de", propostas.length,
                 "modelo:", model, "fontes:", fontes.length);
     await registar("ok", {
       modelo: model, vinho_id: vinhoId,
       campos: entraram, propostos: propostas.length,
       fontes: fontes.length,
+      ...(grounding ? { grounding } : {}),
       ...(usage ? { usageMetadata: usage } : {}),
       chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
       manual: respostaManual !== null,

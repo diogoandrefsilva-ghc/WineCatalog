@@ -771,9 +771,19 @@ de cada app antes de assumir que a que está calada está bem.**
   no catálogo com a força de uma pesquisa, que é exatamente o que a
   invariante 9 proíbe. **Ainda não se mudou a política**, e de propósito:
   não há amostra nenhuma para comparar (esta foi a primeira). O que se fez
-  foi pôr o `fontes: N` no log de cada pesquisa. **Se isto se mantiver a
-  zero, o passo seguinte é recusar a escrita sem grounding** — como a
-  `verificar-vinhos` já faz ao não ter fallback "sem pesquisa".
+  foi pôr o `fontes: N` no log de cada pesquisa.
+  **Decidido a 24/09/2026: uma pesquisa sem fontes NÃO se recusa** — nesta
+  app nem em nenhuma das outras. Em ~20 pesquisas com o `google_search`
+  ligado (WineCatalog, WineSelection, Anniversary Gifts; a Garrafeira nem
+  as contava) as fontes vieram a zero em TODAS, e o que trouxeram foi
+  conferido à mão e estava certo: não é o modelo a inventar. Recusar era
+  parar o catálogo por causa de um sintoma cuja causa ainda não se sabe.
+  O que se está a apurar é se as fontes se PERDEM do nosso lado: a
+  `catalogo-info` e a `verificar-vinhos` registam agora `grounding` no log
+  (se houve `groundingMetadata`, as `webSearchQueries`, quantos chunks e
+  supports, e o `toolUsePromptTokenCount`). A próxima pesquisa diz qual é:
+  sem metadata nenhuma, o modelo não pesquisou; com pesquisas mas sem
+  chunks, as fontes vêm noutro sítio; com chunks, estávamos a ler mal.
 
 ## O que falta, e porque não está feito
 
