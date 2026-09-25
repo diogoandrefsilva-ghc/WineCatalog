@@ -286,26 +286,26 @@ function detalheDe(a) {
 }
 
 // ── Procurar no Vivino ────────────────────────────────────────────────
-async function procurar(page, v) {
-  const q = [v.nome, v.produtor && !norm(v.nome).includes(norm(v.produtor)) ? v.produtor : ""]
-    .join(" ").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
-  const url = `https://www.vivino.com/search/wines?q=${encodeURIComponent(q)}`;
-  const a = await abrir(page, url);
-  if (bloqueio(a.status, a.info)) return { bloqueado: true, url, detalhe: detalheDe(a) };
-  const links = await page.evaluate(() => {
-    const vistos = new Map();
+// Os links de vinhos (/w/<nº>) que a página mostra agora, menos os que já
+// lá estavam antes de se escrever (`antes`): numa página inicial há vinhos
+// em destaque que não têm nada a ver com a procura.
+async function linksDeVinhos(page, antes = []) {
+  return await page.evaluate((antes) => {
+    const ja = new Set(antes), vistos = new Map();
     for (const el of document.querySelectorAll('a[href*="/w/"]')) {
       const href = el.href;
       const m = href.match(/\/w\/(\d+)/);
-      if (!m || vistos.has(m[1])) continue;
+      if (!m || vistos.has(m[1]) || ja.has(m[1])) continue;
       // O texto do cartão inteiro, não só do link: o produtor e a região
       // costumam estar ao lado, fora do <a>.
       const cartao = el.closest("[class*=card], [class*=Card], li, article") || el;
-      vistos.set(m[1], { href, texto: (cartao.innerText || el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200) });
+      vistos.set(m[1], { id: m[1], href, texto: (cartao.innerText || el.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200) });
     }
     return [...vistos.values()].slice(0, 10);
-  }).catch(() => []);
-  const cands = links.map(l => {
+  }, antes).catch(() => []);
+}
+function candidatosDe(v, links) {
+  return links.map(l => {
     // O NOME no link ("…/quintinha-da-francisca-grande-reserva-tinto/w/…")
     // é o que se compara palavra a palavra: o texto do cartão traz região,
     // preço e "avaliações", e contava tudo isso como palavras a mais.
@@ -319,9 +319,70 @@ async function procurar(page, v) {
       nome_bate: bateNome(v, nomeLink || l.texto),
       a_mais: aMais(v, nomeLink || l.texto),
     };
-  }).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
-    || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
-  return { url, candidatos: cands.slice(0, 5), detalhe: detalheDe(a) };
+  });
+}
+const ordenarCandidatos = cs => cs.sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
+  || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
+const algumServe = cs => cs.some(c => c.cor_bate && c.parecenca >= LIMIAR);
+
+// A caixa de procura do Vivino, como uma pessoa: escrever o nome e ler as
+// sugestões que aparecem por baixo. A 25/09/2026 o dono encontrou ali, à
+// primeira, a "Quinta das Carvalhas Touriga Nacional" que o endereço de
+// procura (que manda para o /explore) não dava. Escrito sem ver o site: o
+// `detalhe.caixa` diz se se achou a caixa e o que ela sugeriu.
+async function procurarNaCaixa(page, v, q) {
+  const det = {};
+  const a = await abrir(page, "https://www.vivino.com/");
+  if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { http: a.status } };
+  const SEL = 'input[type="search"], input[name="q"], input[name*="search" i], input[placeholder*="esquis" i], ' +
+    'input[placeholder*="earch" i], input[placeholder*="rocura" i], input[aria-label*="earch" i], input[aria-label*="esquis" i]';
+  let campo = await page.$(SEL);
+  if (!campo || !(await campo.isVisible().catch(() => false))) {
+    // Em ecrãs estreitos a caixa esconde-se atrás de uma lupa.
+    const lupa = await page.$('button[aria-label*="earch" i], button[aria-label*="esquis" i], [class*="search" i] button, a[href*="search"]');
+    if (lupa) { await lupa.click().catch(() => {}); await page.waitForTimeout(800); }
+    campo = await page.$(SEL);
+  }
+  if (!campo) return { detalhe: { ...det, sem_caixa: true } };
+  const antes = (await linksDeVinhos(page)).map(l => l.id);
+  await campo.click().catch(() => {});
+  // Letra a letra: as sugestões nascem de cada tecla, e o `fill` (tudo de
+  // uma vez) nem sempre as acorda.
+  await campo.fill("").catch(() => {});
+  await page.keyboard.type(q, { delay: 60 }).catch(() => {});
+  let links = [];
+  for (let t = 0; t < 12 && !links.length; t++) {           // até ~6 s
+    await page.waitForTimeout(500);
+    links = await linksDeVinhos(page, antes);
+  }
+  det.sugestoes = links.length;
+  det.nomes = links.slice(0, 6).map(l => l.texto.slice(0, 80));
+  // Sem sugestões, o Enter leva à página de resultados — que também se lê.
+  if (!links.length) {
+    await Promise.all([page.waitForLoadState("domcontentloaded").catch(() => {}), campo.press("Enter").catch(() => {})]);
+    await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
+    links = await linksDeVinhos(page, antes);
+    det.enter = { url: page.url(), resultados: links.length };
+  }
+  return { links, detalhe: det };
+}
+
+async function procurar(page, v) {
+  const q = [v.nome, v.produtor && !norm(v.nome).includes(norm(v.produtor)) ? v.produtor : ""]
+    .join(" ").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+  // 1) A caixa de procura (o que uma pessoa faz).
+  const cx = await procurarNaCaixa(page, v, q).catch(e => ({ links: [], detalhe: { erro: String(e.message || e).slice(0, 200) } }));
+  if (cx.bloqueado) return { bloqueado: true, url: "https://www.vivino.com/", detalhe: { caixa: cx.detalhe } };
+  let cands = ordenarCandidatos(candidatosDe(v, cx.links || []));
+  if (algumServe(cands)) return { url: "caixa de procura", candidatos: cands.slice(0, 5), detalhe: { caixa: cx.detalhe } };
+  // 2) O endereço de procura (que o Vivino manda para o /explore).
+  await pausa();
+  const url = `https://www.vivino.com/search/wines?q=${encodeURIComponent(q)}`;
+  const a = await abrir(page, url);
+  if (bloqueio(a.status, a.info)) return { bloqueado: true, url, detalhe: { caixa: cx.detalhe, ...detalheDe(a) } };
+  const vistos = new Set(cands.map(c => idDoVinho(c.vivino_url)));
+  cands = ordenarCandidatos(cands.concat(candidatosDe(v, (await linksDeVinhos(page)).filter(l => !vistos.has(l.id)))));
+  return { url, candidatos: cands.slice(0, 5), detalhe: { caixa: cx.detalhe, ...detalheDe(a) } };
 }
 
 // As mesmas duas regras do motor Serper, aqui também: a MENÇÃO igual dos
@@ -429,10 +490,9 @@ async function verificar(page, v) {
     det.procura = { url: r.url, ...r.detalhe };
     if (r.bloqueado) return { estado: "bloqueado", nome_pagina: nomePagina, detalhe: det };
     candidatos = r.candidatos;
-    // A procura do Vivino passou a mandar para o /explore, que é mais pobre:
-    // a "Quinta das Carvalhas Touriga Nacional" deu só o "Quinta dos
-    // Carvalhais" (25/09/2026). Sem nada que passe, UMA pesquisa Google pelo
-    // Serper, se a chave estiver no .env — gasta uma do limite, só aqui.
+    // 3) Último recurso: nem a caixa nem o /explore deram nada que passe →
+    // UMA pesquisa Google pelo Serper, se a chave estiver no .env (gasta
+    // uma do limite, só aqui). Sem a chave, não se usa.
     if (!candidatos.some(c => c.cor_bate && c.parecenca >= LIMIAR) && SERPER_KEY) {
       try {
         const q = [String(v.nome || "").replace(/\(.*?\)/g, " "), v.produtor && !norm(v.nome).includes(norm(v.produtor)) ? v.produtor : "", "site:vivino.com"]

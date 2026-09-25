@@ -655,9 +655,15 @@ valores errados que deixou foram corrigidos à mão (no histórico):
 **Depois da 3.ª corrida (o dono tratou à mão os três casos):**
 - **A procura do Vivino passou a mandar para o `/explore`**, mais pobre: a
   "Quinta das Carvalhas Touriga Nacional" deu só o "Quinta dos Carvalhais"
-  (outro vinho, do Dão — recusado, e bem). Sem nada que passe, o motor
-  browser faz UMA pesquisa Google pelo Serper, se a `SEARCH_API_KEY`
-  estiver no `batch/.env` (opcional).
+  (outro vinho, do Dão — recusado, e bem), e o dono achou-a à primeira na
+  CAIXA de procura do site. Por isso a procura é agora em três degraus
+  (`procurar`): **(1)** a caixa, como uma pessoa — abre a página inicial,
+  escreve o nome letra a letra e lê as sugestões (`procurarNaCaixa`; os
+  links que já lá estavam antes de escrever não contam, e o `detalhe.caixa`
+  diz o que ela sugeriu); **(2)** o endereço `/search/wines` (→ `/explore`);
+  **(3)** UMA pesquisa Google pelo Serper, só se a `SEARCH_API_KEY` estiver
+  no `batch/.env` (opcional). A caixa foi escrita sem ver o site — se o
+  Vivino a mudar, cai-se no degrau 2 sem erro.
 - **A ambiguidade por casta resolve-se pela ficha**: se o nome não diz a
   casta mas as `castas` do catálogo dizem (o dono pôs Touriga Nacional no
   "Casa Santar Vinha dos Amores"), escolhe-se o candidato com essa casta, e
