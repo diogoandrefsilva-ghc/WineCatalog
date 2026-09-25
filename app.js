@@ -1097,7 +1097,9 @@ function wcCamposEditHTML(prefixo,ficha,origens){
     const marca=(k in ficha)
       ? `<span class="ed-de"><span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span></span>`
       : '';
-    return wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca);
+    return wcCampoEditHTML(prefixo,k,lbl,tp,ops,val,marca)+(k==='beber_ate'
+      ?`<p class="wc-note ed-oculto" id="${prefixo}jan-nota">Sem colheita não há <strong>janela de
+         consumo</strong>: os anos dela seriam os de uma colheita qualquer.</p>`:'');
   }).join('');
 }
 /* ── A IMAGEM ──
@@ -1223,9 +1225,25 @@ async function wcApagarNome(nome){
    número guardado como texto quebrava a comparação da Garrafeira (13.5 vs.
    "13.5") — ver o comentário grande onde isto vivia antes de ganhar um
    `prefixo`. */
-function wcLerCampos(prefixo){
+/* A janela de consumo (`beber_de`/`beber_ate`) só existe com colheita: são
+   anos de UMA colheita, e sem ela seriam os de uma qualquer. O catálogo
+   recusa-a na mesma (trigger `vinhos_sem_colheita`); aqui o campo esconde-se
+   e não se manda. */
+const WC_JANELA=['beber_de','beber_ate'];
+function wcJanelaSincronizar(prefixo,ano){
+  const sem=ano==null||String(ano).trim()==='';
+  WC_JANELA.forEach(k=>{
+    const el=document.getElementById(prefixo+k);
+    const c=el&&el.closest('.ed-campo');
+    if(c)c.classList.toggle('ed-oculto',sem);
+  });
+  const n=document.getElementById(prefixo+'jan-nota');
+  if(n)n.classList.toggle('ed-oculto',!sem);
+}
+function wcLerCampos(prefixo,semColheita){
   const out={};
   for(const [k,,tp] of WC_EDIT){
+    if(semColheita&&WC_JANELA.includes(k))continue;
     const el=document.getElementById(prefixo+k);
     if(!el)continue;
     const cru=String(el.value||'').trim();
@@ -1271,7 +1289,8 @@ function wcAbrirEditar(){
     <div class="ed-campo"><label for="ed-produtor">Produtor</label>
       <input type="text" id="ed-produtor" value="${esc(v.produtor||'')}"></div>
     <div class="ed-campo"><label for="ed-ano">Colheita (vazio = sem colheita)</label>
-      <input type="text" id="ed-ano" inputmode="numeric" value="${esc(v.ano==null?'':String(v.ano))}"></div>
+      <input type="text" id="ed-ano" inputmode="numeric" value="${esc(v.ano==null?'':String(v.ano))}"
+        oninput="wcJanelaSincronizar('ed-',this.value)"></div>
   </div>
   <div class="macoes fim">
     <button class="btn-n" onclick="fecharModal('modal-editar')">Cancelar</button>
@@ -1279,11 +1298,13 @@ function wcAbrirEditar(){
   </div>`;
   box.innerHTML=h;
   document.getElementById('editar-titulo').textContent=v.nome||'(sem nome)';
+  wcJanelaSincronizar('ed-',v.ano);
   abrirModal('modal-editar');
 }
 function wcEdIdent(){
   const on=document.getElementById('ed-ident').checked;
   document.getElementById('ed-ident-box').classList.toggle('ed-oculto',!on);
+  wcJanelaSincronizar('ed-',on?(document.getElementById('ed-ano')||{}).value:(_wcFicha||{}).ano);
 }
 
 async function wcGuardarEdicao(){
@@ -1295,9 +1316,10 @@ async function wcGuardarEdicao(){
   let subida=null;
   try{subida=await wcSubirImagemPendente('ed-');}
   catch(e){toast('Erro: '+e.message,1);if(b){b.disabled=false;b.textContent='Guardar';}return;}
-  const args={p_id:_wcFicha.id,p_campos:wcLerCampos('ed-')};
+  const anoEd=String((document.getElementById('ed-ano')||{}).value||'').trim();
+  const args={p_id:_wcFicha.id,p_campos:wcLerCampos('ed-',ident?anoEd==='':_wcFicha.ano==null)};
   if(ident){
-    const ano=String((document.getElementById('ed-ano')||{}).value||'').trim();
+    const ano=anoEd;
     args.p_nome=String((document.getElementById('ed-nome')||{}).value||'').trim();
     args.p_produtor=String((document.getElementById('ed-produtor')||{}).value||'').trim();
     args.p_ano=ano===''?null:(parseInt(ano,10)||null);
@@ -1351,7 +1373,7 @@ function wcAbrirNovo(){
     <div class="ed-campo"><label for="nv-produtor">Produtor</label>
       <input type="text" id="nv-produtor"></div>
     <div class="ed-campo"><label for="nv-ano">Colheita (ano, vazio se não tiver)</label>
-      <input type="text" id="nv-ano" inputmode="numeric"></div>
+      <input type="text" id="nv-ano" inputmode="numeric" oninput="wcJanelaSincronizar('nv-',this.value)"></div>
 
     <div class="divi"></div>
     <p class="wc-note">Duas portas para encher o resto — com o nome (e produtor/ano, se
@@ -1370,6 +1392,7 @@ function wcAbrirNovo(){
       <button class="btn-n" onclick="fecharModal('modal-novo')">Cancelar</button>
       <button class="btn-prim auto" id="nv-criar" onclick="wcCriarVinho()">Criar vinho</button>
     </div>`;
+  wcJanelaSincronizar('nv-',null);
   abrirModal('modal-novo');
   const nomeEl=document.getElementById('nv-nome');
   if(nomeEl)nomeEl.focus();
@@ -1447,7 +1470,7 @@ async function wcNovoFoto(input){
     }
     if(d.nome)document.getElementById('nv-nome').value=d.nome;
     if(d.produtor)document.getElementById('nv-produtor').value=d.produtor;
-    if(d.ano)document.getElementById('nv-ano').value=String(d.ano);
+    if(d.ano){document.getElementById('nv-ano').value=String(d.ano);wcJanelaSincronizar('nv-',d.ano);}
     const campos=d.campos||{};
     for(const [k,,tp] of WC_EDIT){
       if(!(k in campos)||tp==='img')continue;
@@ -1482,7 +1505,7 @@ async function wcCriarVinho(){
   let subida=null;
   try{
     subida=await wcSubirImagemPendente('nv-');
-    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
+    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-',ano==null)});
     fecharModal('modal-novo');
     toast('Vinho criado ✓');
     wcCarregarCatalogo(true);
@@ -1510,7 +1533,7 @@ async function wcNovoProcurar(){
   let subida=null;
   try{
     subida=await wcSubirImagemPendente('nv-');
-    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-')});
+    const r=await catRpc('criar',{p_nome:nome,p_produtor:produtor,p_ano:ano,p_campos:wcLerCampos('nv-',ano==null)});
     fecharModal('modal-novo');
     wcCarregarCatalogo(true);
     if(r&&r.id){
@@ -1610,6 +1633,7 @@ function wcAbrirProcurar(){
     ${temProdutor?`<span class="pr-falta">atual: ${esc(_wcFicha.produtor)}</span>`:'<span class="pr-falta">vazio</span>'}
   </label>`;
   for(const [k,lbl] of WC_EDIT.map(([k,l])=>[k,l])){
+    if(_wcFicha.ano==null&&WC_JANELA.includes(k))continue;   // sem colheita não há janela
     const tem=k in ficha;
     const o=origens[k]||{}, f=Number(o.f||0);
     h+=`<label class="pr-campo">
@@ -1873,7 +1897,7 @@ REGRAS, e são a sério:
 5. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que ficou por confirmar em "aviso".
 6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
 7. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
-8. "beberDe"/"beberAte" são anos.
+8. ${v.ano?'"beberDe"/"beberAte" são anos (a janela DESTA colheita).':'Este vinho não tem colheita: NÃO há janela de consumo — deixa "beberDe"/"beberAte" de fora.'}
 9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja oficial — usa o que vier em "Produtor" acima se estiver certo, ou corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
 
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
@@ -1896,9 +1920,9 @@ Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
   "vivinoUrl": "",
   "imagemUrl": "",
   "precoMedio": 18.5,
-  "beberDe": 2026,
+${v.ano?`  "beberDe": 2026,
   "beberAte": 2034,
-  "notasProva": "duas ou três frases sobre aroma, boca e final",
+`:''}  "notasProva": "duas ou três frases sobre aroma, boca e final",
   "harmonizacao": "com que pratos",
   "resumo": "duas ou três frases sobre o vinho e o produtor",
   "aviso": "vazio, ou o que ficou por confirmar"
@@ -2271,7 +2295,8 @@ function wcLoteRegras(campos){
   if(campos.includes('preco_medio'))
     r.push('"precoMedio" é o preço de retalho em euros, garrafa de 0,75L.');
   if(campos.includes('beber_de')||campos.includes('beber_ate'))
-    r.push('"beberDe"/"beberAte" são anos.');
+    r.push('"beberDe"/"beberAte" são anos, a janela da colheita indicada. Um vinho SEM ano na '+
+      'lista não tem janela de consumo: deixa "beberDe"/"beberAte" de fora do objeto dele.');
   r.push('O "id" de cada resultado tem de ser EXATAMENTE o "id" da lista de entrada — é assim '+
     'que sei a que vinho corresponde cada objeto, nunca pela posição na lista.');
   r.push('Se não conseguires identificar um vinho de todo, o objeto dele fica só '+

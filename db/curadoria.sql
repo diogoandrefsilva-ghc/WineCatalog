@@ -542,6 +542,12 @@ BEGIN
         FROM (SELECT jsonb_object_keys(r.ficha) AS k
               UNION
               SELECT jsonb_object_keys(COALESCE(p_ficha,'{}'::jsonb))) ks
+        -- A janela de consumo é escrita em anos de UMA colheita: só se
+        -- compara (e só se oferece) entre a mesma colheita, conhecida dos
+        -- dois lados. A de outro ano — ou a de nenhum — não é um desacordo
+        -- nem informação que falte, é outra garrafa.
+       WHERE NOT (k IN ('beber_de', 'beber_ate')
+                  AND NOT COALESCE(r.ano = p_ano, false))
     ) y
    WHERE (x ->> 'difere')::boolean OR (x ->> 'soCatalogo')::boolean;
 

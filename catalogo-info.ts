@@ -194,6 +194,15 @@ function extrairJson(txt: string): any | null {
    base. Os tipos e os enums validam-se no servidor — nunca se confia
    cegamente no JSON do Gemini, e menos ainda quando o destino é uma tabela
    que outras duas apps leem. */
+/* Sem colheita não se pede a janela de consumo (ver `winecatalog.da_colheita`):
+   seria a de uma colheita qualquer. Se só se tinha pedido a janela, fica a
+   lista como estava — a regra 8 do prompt diz ao modelo que não há. */
+function camposSemJanela(campos: string[] | null, ano: number | null): string[] | null {
+  if (ano !== null || !campos) return campos;
+  const f = campos.filter((k) => k !== "beber_de" && k !== "beber_ate");
+  return f.length ? f : campos;
+}
+
 function normalizar(raw: any, campos: string[] | null): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || raw.encontrado === false) return {};
 
@@ -451,7 +460,7 @@ REGRAS:
    ficou por confirmar no "aviso".
 6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
 7. "precoMedio" é o preço de RETALHO em euros, garrafa de 0,75 L.
-8. "beberDe"/"beberAte" são anos.
+8. ${ano ? `"beberDe"/"beberAte" são anos (a janela DESTA colheita).` : `Este vinho não tem colheita: NÃO há janela de consumo — deixa "beberDe"/"beberAte" de fora.`}
 9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja
    oficial — usa o que vier em "Produtor" acima se estiver certo, ou
    corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
@@ -476,9 +485,9 @@ Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
   "vivinoUrl": "",
   "imagemUrl": "",
   "precoMedio": 18.5,
-  "beberDe": 2026,
+${ano ? `  "beberDe": 2026,
   "beberAte": 2034,
-  "notasProva": "duas ou três frases sobre aroma, boca e final",
+` : ""}  "notasProva": "duas ou três frases sobre aroma, boca e final",
   "harmonizacao": "com que pratos",
   "resumo": "duas ou três frases sobre o vinho e o produtor",
   "aviso": "vazio, ou o que ficou por confirmar"
@@ -685,7 +694,7 @@ async function processarPesquisa(
       const textoPedido = promptFicha(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
         String(antes.ficha.tipo ?? ""), notas, sites,
-        new Date().toISOString().slice(0, 10), campos, colheitaEspecifica, evidencia,
+        new Date().toISOString().slice(0, 10), camposSemJanela(campos, antes.ano), colheitaEspecifica, evidencia,
       );
 
       /* O `google_search` está SEMPRE ligado — é a razão de esta função
@@ -801,6 +810,10 @@ async function processarPesquisa(
     }
 
     const ficha = normalizar(parsed, campos);
+    // Sem colheita não há janela de consumo: os anos dela seriam os de uma
+    // colheita qualquer. O trigger `vinhos_sem_colheita` também a tira, mas
+    // assim nem aparece no relatório como se tivesse entrado.
+    if (antes.ano === null) { delete ficha.beber_de; delete ficha.beber_ate; }
     const aviso = texto(parsed?.aviso, 300);
     // A pesquisa manual não tem forma de citar fontes de verdade (não há
     // `groundingMetadata` nenhum a colar aqui) — inventar uma era pior do

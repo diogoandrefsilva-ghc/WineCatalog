@@ -442,6 +442,63 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------
+-- Campos DA COLHEITA: os que só são verdade para UM ano
+--
+-- São os voláteis MAIS a janela de consumo (`beber_de`/`beber_ate`). A
+-- janela não envelhece — "beber entre 2026 e 2034" continua a ser o que
+-- era daqui a um ano, por isso não entra na `volatil` (que é também o
+-- corte por idade) — mas é escrita em ANOS, e esses anos são os de UMA
+-- colheita: a do 2015 dada ao 2022 é uma invenção com ar de facto
+-- (invariante 6). Até 25/09/2026 a janela contava como estável e passava
+-- de uma colheita para a outra na `procurar`, como as castas.
+--
+-- E pela mesma razão um vinho SEM colheita não tem janela nenhuma: é a
+-- janela de uma colheita qualquer que o modelo imaginou, e no ano em que
+-- sair a seguinte continua a dizer o mesmo. Quem o garante é o trigger
+-- `vinhos_sem_colheita`, logo abaixo — na tabela e não em cada função,
+-- pela razão do histórico: são seis portas de escrita, e a que se
+-- esquecesse era um buraco calado.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.da_colheita(p_campo text)
+  RETURNS boolean LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT winecatalog.volatil(p_campo)
+      OR COALESCE(p_campo, '') IN ('beber_de', 'beber_ate');
+$$;
+
+CREATE OR REPLACE FUNCTION winecatalog.sem_colheita_sem_janela()
+  RETURNS trigger LANGUAGE plpgsql
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF NEW.ano IS NULL THEN
+    NEW.ficha   := COALESCE(NEW.ficha,   '{}'::jsonb) - 'beber_de' - 'beber_ate';
+    NEW.origens := COALESCE(NEW.origens, '{}'::jsonb) - 'beber_de' - 'beber_ate';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS vinhos_sem_colheita ON winecatalog.vinhos;
+CREATE TRIGGER vinhos_sem_colheita
+  BEFORE INSERT OR UPDATE ON winecatalog.vinhos
+  FOR EACH ROW EXECUTE FUNCTION winecatalog.sem_colheita_sem_janela();
+
+-- E o que já lá estava (25/09/2026: quatro linhas sem ano com janela, todas
+-- vindas de pesquisas). Idempotente; fica no histórico como limpeza.
+DO $$
+BEGIN
+  PERFORM set_config('winecatalog.quem', 'limpeza: janela de um vinho sem colheita', true);
+  UPDATE winecatalog.vinhos
+     SET ficha   = ficha   - 'beber_de' - 'beber_ate',
+         origens = origens - 'beber_de' - 'beber_ate'
+   WHERE ano IS NULL AND (ficha ? 'beber_de' OR ficha ? 'beber_ate');
+  PERFORM set_config('winecatalog.quem', '', true);
+END;
+$$;
+
+-- ---------------------------------------------------------------------
 -- A REGIÃO, normalizada — "DOURO" e "Douro" não podem responder por
 -- facetas diferentes no Catálogo, e "Península de Setúbal" é a mesma
 -- região que "Setúbal", só escrita como uma carta a escreveria.
@@ -789,10 +846,12 @@ BEGIN
 
   v_ficha := r.ficha;
   v_orig  := r.origens;
+  -- Da outra colheita não vem nada que seja DA colheita (a nota, o preço,
+  -- a janela); dos voláteis, também não vem o que for velho de mais.
   FOR k IN SELECT key FROM jsonb_each(r.ficha) LOOP
-    IF winecatalog.volatil(k)
-       AND (v_outra
-            OR COALESCE((r.origens -> k ->> 'em')::timestamptz, r.criado_em) < v_corte) THEN
+    IF (v_outra AND winecatalog.da_colheita(k))
+       OR (winecatalog.volatil(k)
+           AND COALESCE((r.origens -> k ->> 'em')::timestamptz, r.criado_em) < v_corte) THEN
       v_ficha := v_ficha - k;
     END IF;
   END LOOP;
@@ -809,14 +868,15 @@ BEGIN
   -- Por isso: o que a linha CERTA sabe manda sempre, e só o que lhe FALTA
   -- se vai pedir emprestado à irmã — e apenas os campos ESTÁVEIS. As
   -- castas de um Papa Figos são as mesmas em 2019 e em 2021; a nota do
-  -- Vivino e o preço não são, e esses nunca atravessam colheitas (é a
-  -- mesma regra do `v_outra` aqui em cima, e não pode ter duas versões).
+  -- Vivino, o preço e a janela de consumo não são, e esses nunca
+  -- atravessam colheitas (é a mesma regra do `v_outra` aqui em cima, e
+  -- não pode ter duas versões: `winecatalog.da_colheita`).
   IF v_exato THEN
     v_irmao := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, false, r.id);
     IF v_irmao IS NOT NULL THEN
       SELECT * INTO r2 FROM winecatalog.vinhos v WHERE v.id = v_irmao;
       FOR k IN SELECT key FROM jsonb_each(r2.ficha) LOOP
-        IF NOT winecatalog.volatil(k) AND NOT (v_ficha ? k) THEN
+        IF NOT winecatalog.da_colheita(k) AND NOT (v_ficha ? k) THEN
           v_ficha := v_ficha || jsonb_build_object(k, r2.ficha -> k);
           v_orig  := v_orig  || jsonb_build_object(k, COALESCE(r2.origens -> k, '{}'::jsonb));
           v_empr  := v_empr  || to_jsonb(k);
