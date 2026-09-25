@@ -44,7 +44,8 @@ tudo o que aqui está foi pago com um erro.
 - `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
   (o bucket das fotografias) → `vivino.sql` (a verificação dos links do
-  Vivino e dos preços) → `historico.sql` (o histórico campo a campo) (+ `README.md`
+  Vivino e dos preços) → `historico.sql` (o histórico campo a campo) → `amigos.sql` (as marcas
+  dos amigos na WineSelection) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -113,6 +114,10 @@ Cada uma custou um erro.
    sobre quem o tem?**
 2. **Isto não abre garrafeira nenhuma.** Ninguém passa a ver uma linha de
    `vinhos`, `garrafas` ou `locais` de outra pessoa.
+   **A única exceção, consciente (25/09/2026): as marcas dos amigos**
+   (`db/amigos.sql`, ver a secção própria). Dentro do grupo FECHADO das
+   Prendas de Anos, cada um vê que um amigo tem, bebeu, deseja ou recebeu
+   um vinho — só o nome do amigo e o mínimo à volta, nunca a linha.
 3. **A `pontuacaoAprox` da WineSelection NUNCA entra.** É uma estimativa de
    memória do modelo, sem pesquisa. A `forca()` devolve 0 para ela.
 4. **O "barato/justo/caro" também não entra**, por outra razão: não é do
@@ -686,6 +691,36 @@ do dono das apps, para umas dezenas de páginas de cada vez do seu próprio
 catálogo, a partir do seu computador. Se o Vivino recusar (`bloqueado` na
 lista), não se contorna — nada de proxies nem de disfarçar o browser:
 fica o motor Serper, ou a validação à mão.
+
+### As marcas dos amigos na WineSelection (25/09/2026)
+Na carta da WineSelection, cada vinho ganha pastilhas: **🍾** está na
+garrafeira de um amigo · **⭐** um amigo bebeu-o e deu-lhe nota (a
+`consumo_avaliacao` das garrafas consumidas) · **💭** está na wishlist de
+um amigo · **🎁** já foi prenda de anos. Tudo numa função só,
+`winecatalog.marcas_amigos(p_pedidos)` em `db/amigos.sql`, que a app chama
+com o JWT de quem está à mesa.
+- **Os amigos são o grupo das Prendas de Anos** (`anniversarygifts.amigos`,
+  ativos com email), e o grupo é **fechado**, por decisão do dono das apps:
+  quem não está lá recebe `NULL` (nem erro, nem marcas), e só contam as
+  garrafeiras cujo dono está lá. É a exceção à invariante 2 — e o que se
+  mostra é o mínimo: nome, garrafas, colheitas, nota dada, data. Alargar a
+  quem não é do grupo é outra decisão, não uma linha a mais.
+- **A surpresa das prendas vale aqui também**: uma prenda por entregar
+  nunca aparece a quem a vai receber (a mesma regra da `eventos_v`).
+- **"O mesmo vinho" é a chave do catálogo, sem exigir colheita**: as
+  `chave_base`/`base_nome` de cada lado, a casar se qualquer uma bater (o
+  `achar` com `p_exigir_ano = false`), mais as da linha do catálogo que a
+  carta achou e das fundidas nela (`alias`) — uma grafia que os Duplicados
+  já resolveram casa aqui também. Nada disto é calculado fora do SQL
+  (invariante 8), e a cor ainda não conta, como no resto do catálogo.
+- **Tudo em CTEs `MATERIALIZED`, e a primeira versão pagou isso**: com o
+  `rid` (a `achar`) e o ARRAY das chaves desdobrados pelo Postgres para
+  dentro dos subselects, uma carta de oito vinhos levou **29 s**. Agora 40
+  vinhos levam ~0,3 s. É a mesma lição da `achar` (ver "Coisas que já
+  aconteceram"): nada de `tokens()` por linha e por pergunta.
+- **Não se grava no `resultado` da análise**: a WineSelection pergunta de
+  cada vez que desenha uma carta, por isso o histórico mostra o que os
+  amigos têm HOJE. Se falhar, a carta aparece sem marcas (invariante 7).
 
 ### Histórico de alterações — *o que mudou, quem e quando* (25/09/2026)
 `db/historico.sql`: um trigger na própria `vinhos` (`registar_alteracoes`)
