@@ -203,6 +203,25 @@ function camposSemJanela(campos: string[] | null, ano: number | null): string[] 
   return f.length ? f : campos;
 }
 
+/* ── O link do Vivino: só o formato que o Vivino usa ──
+   A página de um vinho no Vivino é SEMPRE `/<nome>/w/<nº>` — o número é o
+   do vinho e não muda. Um modelo que responda de memória (sem pesquisar —
+   é o normal, ver o CLAUDE.md, "De memória ou pesquisado") escreve links
+   com ar de verdadeiros que nunca existiram: `/Wines/<nome>`,
+   `/Wineries/<x>/Wines/<y>`, `/pt-pt/<nome>` sem número. Até 25/09/2026 só
+   se exigia o domínio, e esses entravam no catálogo e partiam ao abrir.
+   `/wines/<nº>` também sai: é o número de UMA colheita, não o do vinho.
+   Devolve-se o link limpo (sem país, língua, ?year=, ?srsltid) — a MESMA
+   regra do `urlLimpo` do `batch/vivino-verificar.mjs`. */
+function vivinoLink(u: unknown): string {
+  try {
+    const url = new URL(String(u ?? "").trim());
+    if (!/(^|\.)vivino\.com$/i.test(url.hostname)) return "";
+    const m = url.pathname.match(/\/([a-z0-9-]+)\/w\/(\d+)/i);
+    return m ? `https://www.vivino.com/${m[1].toLowerCase()}/w/${m[2]}` : "";
+  } catch { return ""; }
+}
+
 function normalizar(raw: any, campos: string[] | null): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || raw.encontrado === false) return {};
 
@@ -237,11 +256,9 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
     estagio_texto: texto(raw.estagioTexto, 160),
     vivino_nota: numero(raw.vivinoNota, 1, 5, 2),
     vivino_avaliacoes: (() => { const n = numero(raw.vivinoAvaliacoes, 0, 10_000_000, 0); return n === null ? null : Math.round(n); })(),
-    // Exige-se o domínio do Vivino, não basta ser um http qualquer: reduz o
-    // risco de o link vir de uma loja por engano. Não chega para apanhar um
-    // homónimo — isso é a regra 2 do prompt — mas apanha o resto.
-    vivino_url: /^https?:\/\/([a-z0-9-]+\.)*vivino\.com\//i.test(String(raw.vivinoUrl ?? "").trim())
-      ? texto(raw.vivinoUrl, 300) : "",
+    // Só `/<nome>/w/<nº>` (ver `vivinoLink`). Não chega para apanhar um
+    // homónimo — isso é a regra 2 do prompt — mas apanha os inventados.
+    vivino_url: vivinoLink(raw.vivinoUrl),
     // Aqui é mais apertado ainda: exige-se a extensão da imagem. O modelo
     // tende a devolver o link da PÁGINA em vez do da fotografia, e isso dá
     // um <img> partido na ficha — pior do que não ter foto nenhuma.
@@ -629,6 +646,7 @@ async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
   respostaManual: string | null = null, colheitaEspecifica: boolean = false,
   notas: string = "", sites: string[] = [], profunda: boolean = false,
+  vivinoDado: string = "",
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -693,7 +711,9 @@ async function processarPesquisa(
       }
       const textoPedido = promptFicha(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
-        String(antes.ficha.tipo ?? ""), notas, sites,
+        String(antes.ficha.tipo ?? ""),
+        vivinoDado ? `${notas}\nA página do Vivino deste vinho é ${vivinoDado} — usa esta, é a certa.`.trim() : notas,
+        sites,
         new Date().toISOString().slice(0, 10), camposSemJanela(campos, antes.ano), colheitaEspecifica, evidencia,
       );
 
@@ -810,6 +830,10 @@ async function processarPesquisa(
     }
 
     const ficha = normalizar(parsed, campos);
+    // O link do Vivino que quem pesquisa colou nos sites de confiança é
+    // FACTO (abriu-o), e ganha ao que o modelo escreveu — que, de memória,
+    // costuma ser inventado.
+    if (vivinoDado && (!campos || campos.includes("vivino_url"))) ficha.vivino_url = vivinoDado;
     // Sem colheita não há janela de consumo: os anos dela seriam os de uma
     // colheita qualquer. O trigger `vinhos_sem_colheita` também a tira, mas
     // assim nem aparece no relatório como se tivesse entrado.
@@ -1040,6 +1064,12 @@ Deno.serve(async (req) => {
     const sites: string[] = Array.isArray(body?.sites)
       ? [...new Set(body.sites.map((s: unknown) => texto(s, 100).replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean))].slice(0, 5) as string[]
       : [];
+    // Os sites viram só o domínio (acima) — mas um link do Vivino de UM vinho
+    // colado ali é a resposta, não uma fonte: guarda-se inteiro, antes de o
+    // corte o reduzir a "www.vivino.com".
+    const vivinoDado = Array.isArray(body?.sites)
+      ? (body.sites as unknown[]).map((s) => vivinoLink(texto(s, 300))).find(Boolean) ?? ""
+      : "";
 
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
@@ -1063,7 +1093,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda, vivinoDado),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {

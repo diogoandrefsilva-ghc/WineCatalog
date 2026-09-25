@@ -1594,7 +1594,10 @@ function wcContextoHTML(){
 function wcContextoLer(){
   const notas=(document.getElementById('pr-notas')?.value||'').trim().slice(0,300);
   const sites=(document.getElementById('pr-sites')?.value||'')
-    .split(/[,\n]/).map(s=>s.trim().replace(/^https?:\/\//i,'').replace(/\/.*$/,'')).filter(Boolean).slice(0,5);
+    .split(/[,\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
+  // Inteiros, e não só o domínio: um link do Vivino de UM vinho colado aqui
+  // é a resposta (a `catalogo-info` usa-o como vivino_url). O corte ao
+  // domínio, para o prompt, faz-se lá.
   return {notas,sites};
 }
 
@@ -1931,6 +1934,7 @@ ${v.ano?`  "beberDe": 2026,
 Se não conseguires identificar o vinho de todo, responde {"encontrado": false, "aviso": "porquê"}.`;
 }
 
+let _wcManualSites=[];
 function wcProcurarManual(){
   if(!_wcFicha||!isAdmin())return;
   const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
@@ -1938,6 +1942,7 @@ function wcProcurarManual(){
   _wcManualCampos=campos.length<WC_PROC_TOTAL?campos:null;
   const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
   const ctx=wcContextoLer();
+  _wcManualSites=ctx.sites; // o ecrã manual substitui a caixa: lê-se aqui
   const txt=wcManualPrompt(_wcManualCampos,colheitaEspecifica,ctx.notas,ctx.sites);
   const box=document.getElementById('procurar-corpo');
   if(!box)return;
@@ -1987,7 +1992,7 @@ async function wcProcurarManualEnviar(){
         method:'POST',
         headers:{'Content-Type':'application/json',apikey:SB_KEY,
                  Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-        body:JSON.stringify({pesquisaId:p.id,campos:_wcManualCampos,resposta:texto})
+        body:JSON.stringify({pesquisaId:p.id,campos:_wcManualCampos,resposta:texto,sites:_wcManualSites})
       });
       if(!r.ok&&r.status!==202){
         let msg='';try{msg=(await r.json()).error||'';}catch(_){}
