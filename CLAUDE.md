@@ -632,6 +632,26 @@ valores errados que deixou foram corrigidos à mão (no histórico):
 - Cada procura numa loja guarda os primeiros `nomes` que a loja mostrou —
   é o que diz porque é que nenhum passou (a Quinta das Carvalhas teve 4).
 
+**O que a 3.ª corrida ensinou (17 vinhos, 25/09/2026):**
+- **O histórico mostrava um EMAIL ao lado de um produtor.** Nome, produtor
+  e ano não levam origem, e a regra do "uma garrafeira" só olhava para a
+  origem — quando a garrafeira de alguém corrigia o produtor, ficava o email
+  dessa pessoa (invariante 2). Agora a `quem_escreve` só mostra um email se
+  for o do ADMIN; qualquer outra sessão é "uma garrafeira". O email que lá
+  estava foi apagado.
+- **Um nome sem casta e vários vinhos que só diferem na casta** ("Casa
+  Santar Vinha dos Amores": Alfrocheiro, Touriga Nacional, Encruzado) não se
+  resolve à sorte: `ambiguoPorCasta` deixa-o por decidir (`detalhe.ambiguo`),
+  no Vivino e nas lojas.
+- **Contagens de avaliações impossíveis** (43974 num vinho de nicho): um
+  salto de mais de 5× (e de mais de mil) não entra; e no texto os milhares
+  só se aceitam em grupos de três (a mesma lição do Serper).
+- "Aragonês" = "Aragonez", "Shiraz" = "Syrah" nas palavras; "75cl" não é
+  nome; o produtor dentro do NOSSO nome não é exigido quando o resto tem uma
+  palavra que não é casta (a GN escreve "Invisível Aragonês", sem
+  "Ervideira"); um valor com o rótulo seguinte colado ("… Ano da colheita:
+  2017") corta-se; os links de rodapé/menu não contam como produtos.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista
