@@ -47,20 +47,40 @@ Uma vez só:
    `SUPABASE_SERVICE_ROLE_KEY`. **Este ficheiro nunca vai para o GitHub** e
    não se manda a ninguém: a chave abre a base de dados de todas as apps.
 
-De cada vez que quiseres correr:
+De cada vez que quiseres correr — **duplo clique em `vinhos.bat`** (Windows):
 
-```
-cd caminho/para/WineCatalog/batch
-npm run vivino
-```
+1. faz `git pull` (fica sempre com a versão mais recente do script);
+2. na primeira vez, instala o Playwright e o Chromium;
+3. abre o **painel** no browser (`http://127.0.0.1:8787`). Deixa a janela
+   preta aberta enquanto o usas; fechá-la desliga o painel.
 
-Vês uma linha por vinho. No fim, abre a app › Alertas.
+No painel:
 
-- Muda `LIMITE=` no `.env` para tratar mais ou menos vinhos.
-- `ENSAIO=true` lê as páginas mas não grava nada — bom para um primeiro teste.
+- **Correr** — quantos vinhos, se lê os preços das lojas, e:
+  - **Simular** — lê tudo e não grava nada. Guarda uma simulação em
+    `batch/simulacoes/` (fica só no teu computador);
+  - **Enriquecer** — grava logo no catálogo.
+- **Registo** — uma linha por vinho, enquanto corre.
+- **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
+  depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e
+  carrega em **Gravar selecionados**. Grava exatamente o que viste, sem
+  voltar a abrir página nenhuma; o que desmarcaste fica escrito no ficheiro.
+  Desmarcar um link novo do Vivino desmarca também a nota e as avaliações
+  lidas nessa página — eram desse link.
+
+Tudo o que é gravado (pelas duas vias) fica em **Alertas › Alterações ao
+catálogo** na app, com "Repor".
+
+Notas:
+
+- Uma simulação antiga ainda se pode gravar: o catálogo só aceita cada campo
+  se a força da origem chegar (a mesma regra de sempre).
 - Se aparecer **bloqueado**, o Vivino também recusa a partir de tua casa.
   Não se insiste: o script pára sozinho à segunda recusa.
 - Os vinhos que tratas são os da **fila** (o botão "🍷 Verificar no Vivino"
   na ficha de um vinho) e depois os que nunca foram verificados.
-- Quando acabares de usar, podes apagar o `.env` — voltas a criá-lo da
-  próxima vez.
+- Sem o painel (Mac, ou à mão): `npm run vivino`, com `LIMITE=`, `ENSAIO=true`
+  e `LOJAS=` no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
+  simulação revista à mão (põe `"aplicar": false` no que não queres).
+- O painel só escuta neste computador (127.0.0.1) e cada pedido que corre o
+  script leva um código que só a página aberta conhece.

@@ -23,6 +23,10 @@
 //   bata → `nao_encontrado`. Gasta do limite do Serper: uma por vinho, e
 //   uma segunda (sem o produtor) só quando a primeira não chega.
 //
+// No PC corre-se pelo vinhos.bat (simular / enriquecer / gravar uma
+// simulação revista). APLICAR=<ficheiro> grava uma simulação sem abrir
+// página nenhuma.
+//
 // Variáveis: SUPABASE_SERVICE_ROLE_KEY (obrigatória), SEARCH_API_KEY (só
 // no motor serper — a chave do serper.dev), MOTOR, MANUAL=true (não
 // pergunta se hoje é dia), LIMITE (nº de vinhos; vazio = o das
@@ -585,6 +589,7 @@ async function verificarSerper(v) {
 // ── Main ──────────────────────────────────────────────────────────────
 async function main() {
   if (!SB_KEY) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY.");
+  if (process.env.APLICAR) return aplicarSimulacao(process.env.APLICAR);
   if (MOTOR === "serper" && !SERPER_KEY) throw new Error("Falta SEARCH_API_KEY (a chave do Serper).");
   if (!["serper", "browser"].includes(MOTOR)) throw new Error(`MOTOR desconhecido: ${MOTOR}`);
   const plano = await rpc("vivino_a_tratar", { p_manual: MANUAL, p_limite: LIMITE });
@@ -605,6 +610,7 @@ async function main() {
     page = await ctx.newPage();
   }
   const resumo = {};
+  const simulacao = [];
   const lojasBloqueadas = new Set();
   let bloqueios = 0;
   try {
@@ -659,46 +665,18 @@ async function main() {
       }
       const escolha = PRIORIDADE_PRECO.find(k => precos[k] && numero(precos[k].preco) != null);
 
-      if (!ENSAIO) try {
-        // Desde 25/09/2026 o script ESCREVE (a pedido do dono), pela
-        // `aplicar_fontes` — mesma regra de força da `juntar`, e cada campo
-        // que muda fica no histórico, com "Repor" na ficha.
-        const origemVivino = MOTOR === "serper" ? "vivino-serper" : "vivino-pagina";
-        let aplicado = false;
-        if (res.proposta && res.proposta.vivino_url) {
-          const campos = { vivino_url: res.proposta.vivino_url };
-          if (res.proposta.vivino_nota != null) campos.vivino_nota = res.proposta.vivino_nota;
-          if (res.proposta.vivino_avaliacoes != null) campos.vivino_avaliacoes = res.proposta.vivino_avaliacoes;
-          const r = await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: campos, p_origem: origemVivino,
-            p_quem: QUEM, p_fontes: [{ url: res.proposta.vivino_url, titulo: "Vivino" }] });
-          aplicado = true;
-          console.log(`   → catálogo: ${r.entrou.length ? r.entrou.join(", ") : "nada mudou"}` +
-            (r.ficou.length ? ` · ficou (mais forte): ${r.ficou.map(f => f.campo).join(", ")}` : ""));
+      const pl = planoDoVinho(v, res, precos, precosMudaram, escolha);
+      for (const a of pl.alteracoes)
+        console.log(`   ${ENSAIO ? "(simulação)" : "→"} ${a.campo}: ${mostra(a.antes)} → ${mostra(a.depois)}`);
+      if (ENSAIO) simulacao.push(pl);
+      else {
+        try { await aplicarPlano(pl); }
+        catch (e) {
+          // Um vinho que não se consegue gravar (fundido entretanto, a rede)
+          // não pode parar os outros.
+          console.log(`   ✗ não gravou: ${String(e.message || e).slice(0, 200)}`);
+          resumo.erros_a_gravar = (resumo.erros_a_gravar || 0) + 1;
         }
-        if (precosMudaram) {
-          await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: { precos }, p_origem: "lojas-script", p_quem: QUEM });
-        }
-        if (escolha) {
-          const loja = LOJAS.find(l => l.id === escolha);
-          const r = await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: { preco_medio: precos[escolha].preco },
-            p_origem: loja ? loja.origem : origemVivino, p_quem: QUEM,
-            p_fontes: [{ url: precos[escolha].url, titulo: loja ? loja.nome : "Vivino" }] });
-          console.log(`   → preço de mercado: ${Number(precos[escolha].preco).toFixed(2)} € (${loja ? loja.nome : "Vivino"})` +
-            (r.ficou.length ? " — NÃO entrou: o que lá está é mais forte" : ""));
-        }
-        // A verificação fica registada; só o que PEDE uma decisão (apagar um
-        // link morto, um link que abre outro vinho sem alternativa) fica à
-        // espera em Alertas.
-        const revisao = aplicado ? "aceite"
-          : (res.proposta && res.proposta.vivino_url === null) || res.estado === "errado" ? "pendente"
-          : "sem_acao";
-        await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: { ...res, url_antes: v.vivino_url || null },
-          p_execucao: EXECUCAO, p_revisao: revisao });
-      } catch (e) {
-        // Um vinho que não se consegue gravar (fundido entretanto, a rede)
-        // não pode parar os outros.
-        console.log(`   ✗ não gravou: ${String(e.message || e).slice(0, 200)}`);
-        resumo.erros_a_gravar = (resumo.erros_a_gravar || 0) + 1;
       }
       bloqueios = res.estado === "bloqueado" ? bloqueios + 1 : 0;
       if (bloqueios >= MAX_BLOQUEIOS) { console.log("O Vivino está a recusar as páginas — paro aqui."); break; }
@@ -707,6 +685,118 @@ async function main() {
     if (browser) await browser.close();
   }
   console.log("Resumo:", JSON.stringify(resumo));
+  if (ENSAIO && simulacao.length) {
+    const fich = await gravarSimulacao(simulacao);
+    console.log(`\nSimulação guardada em: ${fich}`);
+    console.log(`Para gravar: no painel (vinhos.bat), escolhe esta simulação, desmarca o que não quiseres e carrega em "Gravar selecionados".`);
+  }
+}
+
+// ── O que se grava de um vinho — uma PLANTA, e não chamadas soltas ──────
+// A mesma planta serve os dois caminhos: gravar já (Enriquecer) ou ir para
+// o ficheiro da simulação, que o dono revê e manda gravar depois — sem
+// voltar a abrir página nenhuma, e exatamente o que viu.
+function planoDoVinho(v, res, precos, precosMudaram, escolha) {
+  const origemVivino = MOTOR === "serper" ? "vivino-serper" : "vivino-pagina";
+  const alteracoes = [], fontes = {};
+  const junta = (campo, antes, depois, origem) => {
+    if (depois == null || JSON.stringify(antes ?? null) === JSON.stringify(depois)) return;
+    alteracoes.push({ campo, antes: antes ?? null, depois, origem, aplicar: true });
+  };
+  let aplicado = false;
+  if (res.proposta && res.proposta.vivino_url) {
+    aplicado = true;
+    junta("vivino_url", v.vivino_url, res.proposta.vivino_url, origemVivino);
+    junta("vivino_nota", v.vivino_nota, res.proposta.vivino_nota, origemVivino);
+    junta("vivino_avaliacoes", v.vivino_avaliacoes, res.proposta.vivino_avaliacoes, origemVivino);
+    fontes[origemVivino] = [{ url: res.proposta.vivino_url, titulo: "Vivino" }];
+  }
+  if (precosMudaram) junta("precos", v.precos, precos, "lojas-script");
+  if (escolha) {
+    const loja = LOJAS.find(l => l.id === escolha);
+    const origem = loja ? loja.origem : origemVivino;
+    junta("preco_medio", v.preco_medio, precos[escolha].preco, origem);
+    fontes[origem] = (fontes[origem] || []).concat([{ url: precos[escolha].url, titulo: loja ? loja.nome : "Vivino" }]);
+  }
+  // Só o que PEDE uma decisão (apagar um link morto, um link que abre outro
+  // vinho sem alternativa) fica à espera em Alertas.
+  const revisao = aplicado ? "aceite"
+    : (res.proposta && res.proposta.vivino_url === null) || res.estado === "errado" ? "pendente"
+    : "sem_acao";
+  return { aplicar: true, id: v.id, nome: v.nome, ano: v.ano ?? null, estado: res.estado,
+           pagina: res.nome_pagina || null, alteracoes, fontes, revisao,
+           registo: { ...res, url_antes: v.vivino_url || null } };
+}
+
+// Grava uma planta: os campos pela `aplicar_fontes` (a regra de força da
+// `juntar`; cada campo que muda fica no histórico, com "Repor"), agrupados
+// pela origem; depois a verificação.
+async function aplicarPlano(pl, quem = QUEM) {
+  // Um link novo desmarcado na revisão leva atrás o que se leu NA PÁGINA
+  // dele (a nota, as avaliações, o preço do Vivino): eram de outro vinho.
+  const recusouLink = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false);
+  const doVivino = a => /^vivino-/.test(a.origem);
+  const porOrigem = {};
+  for (const a of pl.alteracoes || []) {
+    if (a.aplicar === false) continue;
+    if (recusouLink && doVivino(a)) continue;
+    let depois = a.depois;
+    if (recusouLink && a.campo === "precos" && depois && depois.vivino) {
+      depois = { ...depois }; delete depois.vivino;
+      if (!Object.keys(depois).length) continue;
+    }
+    (porOrigem[a.origem] = porOrigem[a.origem] || {})[a.campo] = depois;
+  }
+  for (const [origem, campos] of Object.entries(porOrigem)) {
+    const r = await rpc("aplicar_fontes", { p_vinho_id: pl.id, p_campos: campos, p_origem: origem,
+      p_quem: quem, p_fontes: (pl.fontes || {})[origem] || [] });
+    if (r.ficou.length)
+      console.log(`   ! não entrou (o que lá está é mais forte): ${r.ficou.map(f => `${f.campo} [${f.origem}]`).join(", ")}`);
+  }
+  // E a verificação fica registada sem ação, e não como "aceite".
+  await rpc("vivino_gravar", { p_vinho_id: pl.id, p_res: pl.registo, p_execucao: EXECUCAO,
+    p_revisao: recusouLink && pl.revisao === "aceite" ? "sem_acao" : pl.revisao });
+  return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
+}
+
+function mostra(x) {
+  if (x == null) return "vazio";
+  if (typeof x === "object") return Object.entries(x).map(([k, o]) => `${k} ${o?.preco ?? "?"}€`).join(", ");
+  return String(x);
+}
+
+async function gravarSimulacao(vinhos) {
+  const { mkdir, writeFile } = await import("node:fs/promises");
+  const d = new Date(), z = n => String(n).padStart(2, "0");
+  const nome = `simulacao-${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}.json`;
+  await mkdir("simulacoes", { recursive: true });
+  const corpo = {
+    _leia_me: "Cada vinho tem \"aplicar\": true. Põe false no vinho que não queres gravar, ou numa alteração só. " +
+      "Revê-se e grava-se no painel (vinhos.bat › Simulações). Nada disto foi gravado ainda.",
+    criado: d.toISOString(), motor: MOTOR, vinhos,
+  };
+  await writeFile(`simulacoes/${nome}`, JSON.stringify(corpo, null, 2), "utf8");
+  return `simulacoes/${nome}`;
+}
+
+// ── Gravar uma simulação já revista (o painel do vinhos.bat) ──────────
+async function aplicarSimulacao(fich) {
+  const { readFile } = await import("node:fs/promises");
+  const sim = JSON.parse(await readFile(fich, "utf8"));
+  const vinhos = (sim.vinhos || []).filter(p => p && p.aplicar !== false);
+  console.log(`A gravar ${vinhos.length} vinho(s) da simulação ${fich} (${(sim.vinhos || []).length - vinhos.length} desligado(s))`);
+  let ok = 0, falhou = 0;
+  for (const pl of vinhos) {
+    try {
+      const n = await aplicarPlano(pl, "script no PC (simulação revista)");
+      console.log(`#${pl.id} ${pl.nome} → ${n ? n + " campo(s)" : "só a verificação"}`);
+      ok++;
+    } catch (e) {
+      console.log(`#${pl.id} ${pl.nome} → ✗ ${String(e.message || e).slice(0, 200)}`);
+      falhou++;
+    }
+  }
+  console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
 export { lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,

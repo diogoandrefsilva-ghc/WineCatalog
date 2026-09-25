@@ -1,0 +1,238 @@
+// =====================================================================
+// Painel local da verificação do Vivino e das lojas — abre-se pelo
+// vinhos.bat. Um servidor pequeno (sem dependências) em 127.0.0.1 que:
+//   · corre o vivino-verificar.mjs (Simular / Enriquecer) e mostra o registo;
+//   · lista as simulações guardadas numa tabela com caixas, e grava só o
+//     que ficou marcado (a opção APLICAR do script — sem voltar a abrir
+//     página nenhuma).
+//
+// Porque um servidor e não só uma página: uma página aberta do disco não
+// pode correr o node nem o git. Só escuta em 127.0.0.1, e cada pedido que
+// mexe em alguma coisa leva um código que só esta página conhece — outro
+// site aberto no mesmo browser não consegue pôr o script a correr.
+// =====================================================================
+import http from "node:http";
+import { spawn, exec } from "node:child_process";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const DIR = path.dirname(fileURLToPath(import.meta.url));
+const PORTA = Number(process.env.PAINEL_PORTA || 8787);
+const TOKEN = randomBytes(16).toString("hex");
+
+let corrida = null;          // { modo, inicio, linhas: [], fim, codigo }
+
+function correr(modo, opcoes) {
+  if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
+  const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
+  delete env.APLICAR;
+  if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
+  else {
+    env.ENSAIO = modo === "simular" ? "true" : "false";
+    env.LIMITE = String(Math.max(1, Math.min(50, Number(opcoes.limite) || 10)));
+    env.LOJAS = opcoes.lojas === false ? "false" : "true";
+  }
+  corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null };
+  const c = corrida;
+  const p = spawn(process.execPath, ["--env-file=.env", "vivino-verificar.mjs"], { cwd: DIR, env });
+  const junta = d => { for (const l of String(d).split(/\r?\n/)) if (l.trim()) c.linhas.push(l); };
+  p.stdout.on("data", junta);
+  p.stderr.on("data", junta);
+  p.on("close", code => { c.fim = new Date().toISOString(); c.codigo = code; });
+  p.on("error", e => { c.linhas.push("Erro a arrancar: " + e.message); c.fim = new Date().toISOString(); c.codigo = -1; });
+}
+
+async function simulacoes() {
+  try {
+    return (await readdir(path.join(DIR, "simulacoes"))).filter(f => /^simulacao-.*\.json$/.test(f)).sort().reverse();
+  } catch { return []; }
+}
+function nomeSeguro(n) {
+  if (!/^simulacao-[\w-]+\.json$/.test(String(n || ""))) throw new Error("Nome de simulação inválido.");
+  return path.join(DIR, "simulacoes", n);
+}
+
+function lerCorpo(req) {
+  return new Promise((ok, falha) => {
+    let b = "";
+    req.on("data", d => { b += d; if (b.length > 5e6) req.destroy(); });
+    req.on("end", () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { falha(e); } });
+  });
+}
+function json(res, cod, obj) {
+  res.writeHead(cod, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  res.end(JSON.stringify(obj));
+}
+
+const servidor = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, `http://127.0.0.1:${PORTA}`);
+    // Só daqui: um pedido vindo de outro site traz outro Host/Origin.
+    if (!/^(127\.0\.0\.1|localhost):\d+$/.test(req.headers.host || "")) return json(res, 403, { erro: "host" });
+    if (req.method === "POST") {
+      if (req.headers["x-painel"] !== TOKEN) return json(res, 403, { erro: "código do painel inválido — recarrega a página" });
+    }
+    if (req.method === "GET" && url.pathname === "/") {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(PAGINA.replace("__TOKEN__", TOKEN));
+    }
+    if (req.method === "GET" && url.pathname === "/estado") {
+      const desde = Number(url.searchParams.get("desde") || 0);
+      return json(res, 200, corrida ? { ...corrida, linhas: corrida.linhas.slice(desde), total: corrida.linhas.length } : null);
+    }
+    if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
+    if (req.method === "GET" && url.pathname === "/simulacao") {
+      return json(res, 200, JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8")));
+    }
+    if (req.method === "POST" && url.pathname === "/correr") {
+      const b = await lerCorpo(req);
+      if (!["simular", "enriquecer"].includes(b.modo)) return json(res, 400, { erro: "modo" });
+      correr(b.modo, b);
+      return json(res, 200, { ok: true });
+    }
+    if (req.method === "POST" && url.pathname === "/gravar") {
+      // As caixas desmarcadas passam a "aplicar": false no próprio ficheiro —
+      // fica escrito o que se decidiu — e o script grava o resto.
+      const b = await lerCorpo(req);
+      const fich = nomeSeguro(b.nome);
+      const sim = JSON.parse(await readFile(fich, "utf8"));
+      const escolhas = b.escolhas || {};
+      for (const [i, pl] of (sim.vinhos || []).entries()) {
+        const e = escolhas[i] || {};
+        pl.alteracoes = (pl.alteracoes || []).map((a, j) => ({ ...a, aplicar: e.campos ? e.campos[j] !== false : a.aplicar !== false }));
+        pl.aplicar = e.vinho !== false;
+      }
+      sim.revista = new Date().toISOString();
+      await writeFile(fich, JSON.stringify(sim, null, 2), "utf8");
+      correr("gravar", { ficheiro: path.join("simulacoes", path.basename(fich)) });
+      return json(res, 200, { ok: true });
+    }
+    json(res, 404, { erro: "não existe" });
+  } catch (e) {
+    json(res, 500, { erro: String(e.message || e) });
+  }
+});
+
+servidor.listen(PORTA, "127.0.0.1", () => {
+  const url = `http://127.0.0.1:${PORTA}/`;
+  console.log(`Painel em ${url} — deixa esta janela aberta enquanto o usas (fecha-a para parar).`);
+  const abrir = process.platform === "win32" ? `start "" "${url}"` : process.platform === "darwin" ? `open "${url}"` : `xdg-open "${url}"`;
+  if (process.env.PAINEL_SEM_BROWSER !== "1") exec(abrir, () => {});
+});
+servidor.on("error", e => {
+  console.error(e.code === "EADDRINUSE"
+    ? `A porta ${PORTA} está ocupada — o painel já está aberto noutra janela? Abre http://127.0.0.1:${PORTA}/`
+    : e.message);
+  process.exit(1);
+});
+
+// ── A página ──────────────────────────────────────────────────────────
+const PAGINA = `<!doctype html>
+<html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vinhos — Vivino e lojas</title>
+<style>
+:root{--bd:#6b1a2e;--bd2:#8a2640;--ou:#b98b2e;--bg:#f6f1ea;--card:#fffdfb;--bo:#e6ddd2;--tx:#2b2220;--mu:#8a7d74;--ok:#2f7a4b;--er:#b3261e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--bd);color:#fff;padding:14px 20px}header h1{margin:0;font:600 18px Georgia,serif}header p{margin:2px 0 0;opacity:.8;font-size:12.5px}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
+.linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+label{font-size:13px}input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
+button{font:600 13px system-ui;border-radius:9px;padding:8px 14px;border:1px solid var(--bo);background:#fff;cursor:pointer}
+button.prim{background:var(--bd);border-color:var(--bd);color:#fff}button.prim:hover{background:var(--bd2)}
+button:disabled{opacity:.5;cursor:default}
+.nota{color:var(--mu);font-size:12.5px;margin:6px 0 0}
+pre{background:#1f1a19;color:#eee;border-radius:10px;padding:12px;max-height:340px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:0}
+.estado{font-size:12.5px;margin-bottom:8px}.estado b.ok{color:var(--ok)}.estado b.er{color:var(--er)}
+table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--mu);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;padding:6px;border-bottom:1px solid var(--bo)}
+td{padding:6px;border-bottom:1px solid var(--bo);vertical-align:top;word-break:break-word}
+tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.alt.dim td{opacity:.45}
+.antes{color:var(--mu);text-decoration:line-through}.seta{color:var(--mu);padding:0 4px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#f1e7d6;color:#7a5a17;font-weight:600}
+a{color:var(--bd)}
+</style></head><body>
+<header><h1>🍷 Vinhos — Vivino e lojas</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
+<main>
+<div class="card"><h2>Correr</h2>
+  <div class="linha">
+    <label>Vinhos: <input type="number" id="limite" min="1" max="50" value="10"></label>
+    <label><input type="checkbox" id="lojas" checked> preços na Garrafeira Nacional e Granvine</label>
+    <button class="prim" onclick="correr('simular')">Simular</button>
+    <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>
+  </div>
+  <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").
+  Trata primeiro os vinhos pedidos na ficha ("🍷 Verificar no Vivino") e depois os que nunca foram verificados.</p>
+</div>
+<div class="card"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div><pre id="log"></pre></div>
+<div class="card"><h2>Simulações</h2>
+  <div class="linha"><select id="sims" onchange="abrirSim()"></select><button onclick="listarSims()">🔄</button>
+    <button class="prim" id="btn-gravar" onclick="gravar()" disabled>Gravar selecionados</button></div>
+  <p class="nota">Desmarca o que não queres gravar — um vinho inteiro ou só um campo. Desmarcar um link novo do Vivino desmarca também a nota e as avaliações lidas nessa página. Ao gravar, fica no ficheiro o que decidiste.</p>
+  <div id="tabela"></div>
+</div>
+</main>
+<script>
+const TOKEN="__TOKEN__";let visto=0,timer=null,sim=null,simNome=null;
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
+async function correr(modo){
+  if(modo==="enriquecer"&&!confirm("Gravar já no catálogo, sem simular primeiro?"))return;
+  try{await post("/correr",{modo,limite:+document.getElementById("limite").value,lojas:document.getElementById("lojas").checked});comecar();}
+  catch(e){alert(e.message);}
+}
+function comecar(){visto=0;document.getElementById("log").textContent="";clearInterval(timer);timer=setInterval(seguir,1000);seguir();}
+async function seguir(){
+  const r=await fetch("/estado?desde="+visto).then(r=>r.json()).catch(()=>null);
+  if(!r)return;
+  const log=document.getElementById("log");
+  if(r.linhas.length){log.textContent+=r.linhas.join("\\n")+"\\n";log.scrollTop=log.scrollHeight;}
+  visto=r.total;
+  const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação"};
+  document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+" a correr…"
+    :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
+  document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer/))b.disabled=r.fim==null;});
+  if(r.fim!=null){clearInterval(timer);timer=null;if(r.modo!=="enriquecer")listarSims(r.modo==="simular");}
+}
+async function listarSims(abrirPrimeira){
+  const l=await fetch("/simulacoes").then(r=>r.json());const s=document.getElementById("sims");
+  const atual=abrirPrimeira?l[0]:(s.value||l[0]);
+  s.innerHTML=l.length?l.map(n=>'<option'+(n===atual?' selected':'')+'>'+esc(n)+'</option>').join(""):'<option value="">(ainda não há simulações)</option>';
+  abrirSim();
+}
+function valor(c,x){
+  if(x==null)return"<i>vazio</i>";
+  if(typeof x==="object")return Object.entries(x).map(([k,o])=>esc(k.replace("_"," "))+" "+(o&&o.url?'<a href="'+esc(o.url)+'" target="_blank">'+esc(o.preco)+" €</a>":esc(o&&o.preco))+(o&&o.colheita?" ("+esc(o.colheita)+")":"")).join("<br>");
+  const t=String(x);return /^https?:/.test(t)?'<a href="'+esc(t)+'" target="_blank">'+esc(t.replace(/^https?:\\/\\/(www\\.)?/,""))+'</a>':esc(t)+(c==="preco_medio"?" €":"");
+}
+async function abrirSim(){
+  const n=document.getElementById("sims").value;const t=document.getElementById("tabela");
+  if(!n){t.innerHTML="";document.getElementById("btn-gravar").disabled=true;return;}
+  sim=await fetch("/simulacao?nome="+encodeURIComponent(n)).then(r=>r.json());simNome=n;
+  const rows=[];
+  (sim.vinhos||[]).forEach((v,i)=>{
+    rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">#'+esc(v.id)+" "+esc(v.nome)+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">— nada a mudar; só regista a verificação</span>':"")+'</td></tr>');
+    (v.alteracoes||[]).forEach((a,j)=>rows.push('<tr class="alt'+(a.aplicar===false?' off':'')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(a.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td><span class="antes">'+valor(a.campo,a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+'</td><td class="nota">'+esc(a.origem)+'</td></tr>'));
+  });
+  t.innerHTML=rows.length?'<table><tr><th></th><th>Campo</th><th>Antes → depois</th><th>Origem</th></tr>'+rows.join("")+'</table>':'<p class="nota">Simulação vazia.</p>';
+  document.getElementById("btn-gravar").disabled=!rows.length||!!sim.revista;
+  if(sim.revista)t.insertAdjacentHTML("afterbegin",'<p class="nota">Esta simulação já foi gravada ('+esc(sim.revista)+').</p>');
+}
+function marca(el){el.closest("tr").classList.toggle("off",!el.checked);
+  if(el.dataset.c==null)document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-c]').forEach(c=>{c.disabled=!el.checked;c.closest("tr").classList.toggle("dim",!el.checked);});
+  // Sem o link novo, o que se leu na página dele também não entra (o script faz o mesmo).
+  if(el.dataset.campo==="vivino_url")document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-o^="vivino-"]').forEach(c=>{
+    if(c!==el){c.checked=el.checked;c.disabled=!el.checked;c.closest("tr").classList.toggle("off",!el.checked);}});}
+async function gravar(){
+  const escolhas={};
+  document.querySelectorAll("#tabela input[type=checkbox]").forEach(c=>{const i=c.dataset.v;escolhas[i]=escolhas[i]||{campos:{}};
+    if(c.dataset.c==null)escolhas[i].vinho=c.checked;else escolhas[i].campos[c.dataset.c]=c.checked;});
+  const n=Object.values(escolhas).filter(e=>e.vinho!==false).length;
+  if(!confirm("Gravar "+n+" vinho(s) desta simulação no catálogo?"))return;
+  try{await post("/gravar",{nome:simNome,escolhas});comecar();}catch(e){alert(e.message);}
+}
+listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
+</script></body></html>`;

@@ -33,7 +33,7 @@ tudo o que aqui está foi pago com um erro.
   UMA linha do catálogo, a pedido do admin (ver "Editar, Procurar,
   Comparar, Reportar" abaixo). Deploy à parte:
   `supabase functions deploy catalogo-info`.
-- `batch/` (`vivino-verificar.mjs`, `README.md`, `package.json`) +
+- `batch/` (`vivino-verificar.mjs`, `painel.mjs` + `vinhos.bat`, `README.md`, `package.json`) +
   `.github/workflows/vivino.yml` — a verificação dos links do Vivino (ver
   "Links do Vivino"). O único sítio do repo com `npm`, e só para correr no
   computador do admin: o site continua sem build.
@@ -571,6 +571,23 @@ sem ela, a mais recente (aceite, com a colheita ao lado). Os três preços
 ficam em `ficha.precos` (`{garrafeira_nacional|granvine|vivino: {preco, url,
 colheita, nome, em}}`, volátil) e o `preco_medio` fica com o primeiro da
 ordem, com a origem da loja — é o que a ficha mostra.
+
+**No PC corre-se pelo `vinhos.bat` → `painel.mjs`** (25/09/2026, a pedido
+do dono): `git pull`, e um painel local (`127.0.0.1:8787`, sem
+dependências) com **Simular** / **Enriquecer** e a revisão das simulações.
+O script não chama o `aplicar_fontes` solto: cada vinho vira uma PLANTA
+(`planoDoVinho`: `alteracoes[]` com antes/depois/origem/`aplicar`, as
+`fontes`, a `revisao` e o registo da verificação), que o Enriquecer grava
+já (`aplicarPlano`) e o Simular escreve em `batch/simulacoes/*.json`
+(gitignored). "Gravar selecionados" põe `aplicar:false` no ficheiro e corre
+o script com `APLICAR=<ficheiro>` — grava exatamente o que se viu, sem
+voltar a abrir páginas. Um link novo desmarcado leva atrás a nota, as
+avaliações e o preço do Vivino lidos nessa página (eram de outro vinho), e
+a verificação fica `sem_acao`. O painel só escuta em 127.0.0.1, confere o
+`Host` e exige num cabeçalho um código aleatório de cada arranque: outro
+site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
+é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
+`git pull` pode trocá-lo a meio.
 
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à

@@ -1,3 +1,4 @@
 batch/node_modules/
 batch/.env
 batch/package-lock.json
+batch/simulacoes/
