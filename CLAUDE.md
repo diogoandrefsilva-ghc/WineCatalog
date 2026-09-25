@@ -652,6 +652,14 @@ site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
 `git pull` pode trocá-lo a meio.
 
+**Escolher no catálogo pelo painel** (25/09/2026): o painel lista o
+catálogo (`vivino_catalogo` — leve: tem fotografia? preço? link? quando foi
+visto; sem os fundidos) e os vinhos marcados (até 50) correm com
+`IDS=1,2,3` em vez da fila (`vivino_estes`, pela ordem marcada; um id
+fundido responde pelo vinho que ficou). As duas só aceitam a
+`service_role`: o painel lê a chave do `batch/.env` (`process.loadEnvFile`)
+e o pedido `/catalogo` também exige o código do painel.
+
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à
 espera o link de um "Post Reserve Cabernet Sauvignon" americano, e

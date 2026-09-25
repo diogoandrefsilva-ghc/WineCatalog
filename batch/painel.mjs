@@ -19,6 +19,9 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
+// A chave para a lista do catálogo (o script lê-a sozinho, pelo --env-file).
+try { if (!process.env.SUPABASE_SERVICE_ROLE_KEY) process.loadEnvFile(path.join(DIR, ".env")); } catch {}
+const SB_URL = process.env.SUPABASE_URL || "https://gjweqwfbnkgnibhajldc.supabase.co";
 const PORTA = Number(process.env.PAINEL_PORTA || 8787);
 const TOKEN = randomBytes(16).toString("hex");
 
@@ -27,7 +30,7 @@ let corrida = null;          // { modo, inicio, linhas: [], fim, codigo }
 function correr(modo, opcoes) {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
-  delete env.APLICAR;
+  delete env.APLICAR; delete env.IDS; delete env.NOVO;
   if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
   else if (modo === "novo") {
     // Vinho novo: sempre SIMULAÇÃO — só nasce no catálogo ao gravá-la.
@@ -37,6 +40,9 @@ function correr(modo, opcoes) {
   } else {
     env.ENSAIO = modo === "simular" ? "true" : "false";
     env.LIMITE = String(Math.max(1, Math.min(50, Number(opcoes.limite) || 10)));
+    // Escolhidos na lista do catálogo: só esses, em vez da fila.
+    const ids = (Array.isArray(opcoes.ids) ? opcoes.ids : []).map(x => parseInt(x, 10)).filter(x => x > 0).slice(0, 50);
+    if (ids.length) env.IDS = ids.join(",");
     env.LOJAS = opcoes.lojas === false ? "false" : "true";
   }
   corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null };
@@ -86,6 +92,17 @@ const servidor = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/estado") {
       const desde = Number(url.searchParams.get("desde") || 0);
       return json(res, 200, corrida ? { ...corrida, linhas: corrida.linhas.slice(desde), total: corrida.linhas.length } : null);
+    }
+    if (req.method === "GET" && url.pathname === "/catalogo") {
+      // Também com o código: é a lista do catálogo, não um ficheiro nosso.
+      if (req.headers["x-painel"] !== TOKEN) return json(res, 403, { erro: "código do painel inválido — recarrega a página" });
+      const r = await fetch(`${SB_URL}/rest/v1/rpc/vivino_catalogo`, { method: "POST", body: "{}", headers: {
+        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || "", Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ""}`,
+        "Content-Type": "application/json", "Content-Profile": "winecatalog", "Accept-Profile": "winecatalog" } });
+      const tx = await r.text();
+      if (!r.ok) return json(res, 502, { erro: `Supabase ${r.status}: ${tx.slice(0, 200)}` });
+      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+      return res.end(tx);
     }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
@@ -157,7 +174,8 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
 .linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-label{font-size:13px}#novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
+label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
+#novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
 input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
 button{font:600 13px system-ui;border-radius:9px;padding:8px 14px;border:1px solid var(--bo);background:#fff;cursor:pointer}
@@ -185,6 +203,18 @@ a{color:var(--bd)}
   <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").
   Trata primeiro os vinhos pedidos na ficha ("🍷 Verificar no Vivino") e depois os que nunca foram verificados.</p>
 </div>
+<div class="card"><h2>Escolher no catálogo</h2>
+  <p class="nota" style="margin:0 0 10px">Marca os vinhos que queres tratar (até 50) e corre só esses — em vez da fila.</p>
+  <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
+    <label><input type="checkbox" id="cat-semimg" onchange="pintarCatalogo()"> sem fotografia</label>
+    <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
+    <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label></div>
+  <div id="cat-lista" style="max-height:380px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
+  <div class="linha" style="margin-top:10px"><span id="cat-n" class="nota">0 escolhidos</span>
+    <button onclick="catMarcarVisiveis()">Marcar os que se veem</button><button onclick="catLimpar()">Limpar</button>
+    <button class="prim" onclick="correrEscolhidos('simular')">Simular escolhidos</button>
+    <button onclick="correrEscolhidos('enriquecer')">Enriquecer escolhidos</button></div>
+</div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
   <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th></th></tr></table>
@@ -203,6 +233,36 @@ a{color:var(--bd)}
 const TOKEN="__TOKEN__";let visto=0,timer=null,sim=null,simNome=null;
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
+let CAT=[];const ESC=new Set();
+async function carregarCatalogo(){
+  try{const r=await fetch("/catalogo",{headers:{"X-Painel":TOKEN}});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);CAT=j;pintarCatalogo();}
+  catch(e){document.getElementById("cat-lista").innerHTML='<p class="nota" style="padding:10px">Não consegui ler o catálogo: '+esc(e.message)+'</p>';}
+}
+const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
+function catVisiveis(){
+  const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
+  const si=document.getElementById("cat-semimg").checked,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked;
+  return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
+    return q.every(p=>t.includes(p))&&(!si||!v.imagem)&&(!sp||!v.preco)&&(!nv||!v.visto);});
+}
+function pintarCatalogo(){
+  const l=catVisiveis();
+  const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
+    '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
+    '<td class="ic">'+(v.imagem?"📷":"<span title=\'sem fotografia\'>—</span>")+' '+(v.preco?"€":"")+' '+(v.vivino?"V":"")+'</td>'+
+    '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
+  document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':''):'<p class="nota" style="padding:10px">Nenhum vinho com estes filtros.</p>';
+  catContar();
+}
+function catMarca(id,el){if(el.checked){if(ESC.size>=50){el.checked=false;return alert("Até 50 de cada vez.");}ESC.add(id);}else ESC.delete(id);el.closest("tr").classList.toggle("sel",el.checked);catContar();}
+function catMarcarVisiveis(){for(const v of catVisiveis()){if(ESC.size>=50)break;ESC.add(v.id);}pintarCatalogo();}
+function catLimpar(){ESC.clear();pintarCatalogo();}
+function catContar(){document.getElementById("cat-n").textContent=ESC.size+" escolhido"+(ESC.size===1?"":"s");}
+async function correrEscolhidos(modo){
+  if(!ESC.size)return alert("Marca pelo menos um vinho.");
+  if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
+  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,lojas:document.getElementById("lojas").checked});comecar();}catch(e){alert(e.message);}
+}
 async function correr(modo){
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo, sem simular primeiro?"))return;
   try{await post("/correr",{modo,limite:+document.getElementById("limite").value,lojas:document.getElementById("lojas").checked});comecar();}
@@ -219,7 +279,7 @@ async function seguir(){
   document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+" a correr…"
     :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
   document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer|Procurar/))b.disabled=r.fim==null;});
-  if(r.fim!=null){clearInterval(timer);timer=null;if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
+  if(r.fim!=null){clearInterval(timer);timer=null;carregarCatalogo();if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
 }
 async function listarSims(abrirPrimeira){
   const l=await fetch("/simulacoes").then(r=>r.json());const s=document.getElementById("sims");
@@ -278,5 +338,6 @@ async function procurarNovos(){
   try{await post("/novo",{vinhos,lojas:document.getElementById("lojas").checked});comecar();}catch(e){alert(e.message);}
 }
 novaLinha();
+carregarCatalogo();
 listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
 </script></body></html>`;

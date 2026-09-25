@@ -30,7 +30,9 @@
 // Variáveis: SUPABASE_SERVICE_ROLE_KEY (obrigatória), SEARCH_API_KEY (só
 // no motor serper — a chave do serper.dev), MOTOR, MANUAL=true (não
 // pergunta se hoje é dia), LIMITE (nº de vinhos; vazio = o das
-// Definições), ENSAIO=true (não grava nada), EXECUCAO (o id do run).
+// Definições), ENSAIO=true (não grava nada), EXECUCAO (o id do run),
+// IDS=1,2,3 (só estes vinhos, escolhidos no painel), NOVO=[…] (vinhos novos),
+// APLICAR=<ficheiro> (grava uma simulação revista).
 // =====================================================================
 import { pathToFileURL } from "node:url";
 
@@ -864,6 +866,10 @@ async function main() {
   if (process.env.NOVO) {
     // "Vinho novo" do painel: os vinhos vêm escritos pelo admin, não da fila.
     plano = { vinhos: await vinhosNovos(JSON.parse(process.env.NOVO)), motivo: "vinho novo" };
+  } else if (process.env.IDS) {
+    // Escolhidos à mão na lista do catálogo do painel (até 50).
+    const ids = process.env.IDS.split(",").map(x => parseInt(x, 10)).filter(Number.isFinite).slice(0, 50);
+    plano = { vinhos: await rpc("vivino_estes", { p_ids: ids }), motivo: "escolhidos no painel" };
   } else {
     plano = await rpc("vivino_a_tratar", { p_manual: MANUAL, p_limite: LIMITE });
     if (!plano?.correr) { console.log(`Hoje não: ${plano?.motivo}`); return; }

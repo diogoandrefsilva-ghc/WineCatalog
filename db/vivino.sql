@@ -564,6 +564,53 @@ END;
 $$;
 
 
+-- ---------------------------------------------------------------------
+-- ESCOLHER NO PAINEL (25/09/2026). O painel do vinhos.bat mostra o catálogo
+-- e o admin marca os vinhos a tratar. `vivino_catalogo`: a lista, leve (o
+-- que ajuda a escolher — tem fotografia? preço? quando foi visto?), sem os
+-- fundidos. `vivino_estes`: esses vinhos, na forma que o script recebe, pela
+-- ordem marcada; um id fundido responde pelo vinho que ficou.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.vivino_catalogo()
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  RETURN COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+      'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
+      'tipo', v.ficha ->> 'tipo', 'regiao', v.ficha ->> 'regiao',
+      'imagem', v.ficha ? 'imagem_url', 'preco', v.ficha ? 'preco_medio', 'vivino', v.ficha ? 'vivino_url',
+      'campos', (SELECT count(*) FROM jsonb_object_keys(v.ficha)),
+      'visto', (SELECT max(x.verificado_em) FROM winecatalog.vivino_verificacoes x WHERE x.vinho_id = v.id))
+      ORDER BY lower(v.nome), v.ano NULLS FIRST)
+    FROM winecatalog.vinhos v
+    WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)), '[]'::jsonb);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION winecatalog.vivino_estes(p_ids bigint[])
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  RETURN COALESCE((
+    SELECT jsonb_agg(winecatalog.vivino_linha(v) ORDER BY o.ord)
+      FROM (SELECT DISTINCT ON (alvo) alvo, ord FROM (
+              SELECT COALESCE((SELECT id_para FROM winecatalog.alias WHERE id_de = i), i) alvo, ord
+                FROM unnest(p_ids[1:50]) WITH ORDINALITY AS u(i, ord)) z
+            ORDER BY alvo, ord) o
+      JOIN winecatalog.vinhos v ON v.id = o.alvo), '[]'::jsonb);
+END;
+$$;
+
+
 -- =====================================================================
 -- GRANTS — cada função nasce com EXECUTE para PUBLIC; tira-se sempre.
 -- =====================================================================
@@ -596,6 +643,10 @@ REVOKE ALL ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) 
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_linha(winecatalog.vinhos)       TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_achar(text, text, integer)      TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) TO service_role;
+REVOKE ALL ON FUNCTION winecatalog.vivino_catalogo()       FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.vivino_estes(bigint[])   FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_catalogo()     TO service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_estes(bigint[]) TO service_role;
 
 -- Confirmar (deve dar ZERO linhas):
 -- SELECT p.proname, r.rolname FROM pg_proc p

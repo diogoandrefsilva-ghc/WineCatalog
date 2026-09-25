@@ -62,6 +62,10 @@ No painel:
   - **Simular** — lê tudo e não grava nada. Guarda uma simulação em
     `batch/simulacoes/` (fica só no teu computador);
   - **Enriquecer** — grava logo no catálogo.
+- **Escolher no catálogo** — a lista dos vinhos do catálogo, com procura e
+  filtros (sem fotografia, sem preço, nunca verificados). Marca os que
+  queres (até 50) e **Simular escolhidos** / **Enriquecer escolhidos**
+  correm só esses, em vez da fila.
 - **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
