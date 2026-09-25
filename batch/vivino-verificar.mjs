@@ -371,6 +371,20 @@ function aMais(v, titulo) {
 }
 const MAX_A_MAIS = 1;
 
+// A MENÇÃO separa vinhos da mesma casa, e está na lista das genéricas
+// (sozinha não identifica nada): na 2.ª corrida, "Carm Grande Reserva
+// Branco" casou com "CARM Reserva Branco". Tem de ser a MESMA dos dois
+// lados — incluindo nenhuma: "Herdade dos Grous" não é o "…Grous Reserva".
+function mencao(t) {
+  const n = ` ${norm(t)} `;
+  if (/ (grande|gran) (reserva|reserve) | grande escolha /.test(n)) return "grande reserva";
+  if (/ garrafeira /.test(n)) return "garrafeira";
+  if (/ colheita seleccionada | colheita selecionada /.test(n)) return "colheita selecionada";
+  if (/ (reserva|reserve) /.test(n)) return "reserva";
+  return "";
+}
+function mencaoBate(v, titulo) { return mencao(v.nome) === mencao(titulo); }
+
 async function verificarSerper(v) {
   const nome = String(v.nome || "").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
   const prod = v.produtor && !norm(nome).includes(norm(v.produtor))
@@ -381,6 +395,10 @@ async function verificarSerper(v) {
   // o Vivino nem sempre o põe no título ("Rui Roboredo Madeira" deu zero).
   const consultas = [`${nome}${prod ? " " + prod : ""} site:vivino.com`];
   if (prod) consultas.push(`${nome} site:vivino.com`);
+  // …e sem a cor no nome: o Vivino escreve "Tapada do Chaves Reserva Tinto"
+  // e o nosso "Tapada do Chaves Tinto Reserva" não deu nada na 2.ª corrida.
+  const semCor = nome.replace(/\b(tinto|branco|ros[ée])\b/gi, " ").replace(/\s+/g, " ").trim();
+  if (semCor && semCor !== nome && consultas.length < 2) consultas.push(`${semCor} site:vivino.com`);
   const det = { motor: "serper", consultas: [] };
 
   const atualId = idDoVinho(v.vivino_url);
@@ -400,7 +418,8 @@ async function verificarSerper(v) {
       const txt = `${tit} ${r.link.replace(/[-/]/g, " ")}`;
       const { nota, aval } = numerosDoResultado(r);
       const c = porId.get(id) || { vivino_url: urlLimpo(r.link), texto: tit || r.link, notas: [], avals: [],
-        parecenca: 0, cor_bate: false, a_mais: null };
+        parecenca: 0, cor_bate: false, a_mais: null, mencao_bate: false };
+      if (mencaoBate(v, tit)) c.mencao_bate = true;
       const p = Math.round(parecenca(v, txt) * 100) / 100;
       if (p > c.parecenca || c.a_mais == null) {
         c.parecenca = Math.max(c.parecenca, p); c.cor_bate = corBate(v, txt);
@@ -414,16 +433,21 @@ async function verificarSerper(v) {
     const moda = xs => xs.length ? [...xs].sort((a, b) => xs.filter(x => x === b).length - xs.filter(x => x === a).length)[0] : null;
     candidatos = [...porId.values()].map(c => ({
       vivino_url: c.vivino_url, texto: c.texto, parecenca: c.parecenca, cor_bate: c.cor_bate,
-      a_mais: c.a_mais || [], nota: moda(c.notas), avaliacoes: moda(c.avals),
-    })).sort((x, y) => (y.cor_bate - x.cor_bate) || (x.a_mais.length - y.a_mais.length) || (y.parecenca - x.parecenca));
-    bons = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR && c.a_mais.length <= MAX_A_MAIS);
+      a_mais: c.a_mais || [], mencao_bate: c.mencao_bate, nota: moda(c.notas), avaliacoes: moda(c.avals),
+    // A parecença primeiro: faltar uma palavra do NOSSO nome ("Syrah") é
+    // pior do que o título ter uma a mais ("Signature"). Na 2.ª corrida, a
+    // ordem ao contrário escolheu o "Aldeias de Juromenha Reserva" (sem o
+    // Syrah) em vez do "Signature Reserva Syrah".
+    })).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.mencao_bate - x.mencao_bate)
+      || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
+    bons = candidatos.filter(c => c.cor_bate && c.mencao_bate && c.parecenca >= LIMIAR && c.a_mais.length <= MAX_A_MAIS);
     if (bons.length) break;
   }
 
   // Entre resultados igualmente bons, o do link atual primeiro: não se
   // propõe trocar um link por outro que o Google considera equivalente.
   const melhor = bons.find(c => idDoVinho(c.vivino_url) === atualId
-    && c.a_mais.length === bons[0].a_mais.length && c.parecenca === bons[0].parecenca) || bons[0];
+    && c.parecenca === bons[0].parecenca && c.a_mais.length === bons[0].a_mais.length) || bons[0];
 
   let estado, proposta = null;
   if (melhor) {
@@ -503,7 +527,7 @@ async function main() {
   console.log("Resumo:", JSON.stringify(resumo));
 }
 
-export { tituloLimpo, aMais, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
