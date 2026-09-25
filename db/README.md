@@ -31,6 +31,7 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 6. db/imagens.sql          (bucket público das fotografias do catálogo)
 7. db/vivino.sql           (a verificação dos links do Vivino — depois do curadoria.sql)
 8. db/historico.sql        (o histórico campo a campo, com "Repor" — depois do curadoria.sql)
+9. db/amigos.sql           (as marcas dos amigos na WineSelection — precisa dos schemas `garrafeira` e `anniversarygifts`)
 ```
 
 O `vivino.sql` precisa de um passo fora do Supabase: o secret
