@@ -125,7 +125,17 @@ Cada uma custou um erro.
    semanas os 3106 campos estavam TODOS a 3, nenhum tinha entrado por uma
    pesquisa, e nenhum podia, porque 3 tapa 2.
 6. **A colheita separa um facto de uma invenção.** Campos voláteis nunca
-   atravessam colheitas; os estáveis atravessam.
+   atravessam colheitas; os estáveis atravessam. **A janela de consumo
+   (`beber_de`/`beber_ate`) também não** — não envelhece (por isso não é
+   `volatil`), mas é escrita em anos de UMA colheita: é
+   `winecatalog.da_colheita()` = voláteis + janela, e é essa que a
+   `procurar` usa para cortar e para emprestar. E **um vinho sem colheita
+   não tem janela nenhuma** (25/09/2026): o trigger `vinhos_sem_colheita`
+   tira-a em qualquer escrita (limparam-se 4 linhas, ficou no histórico), a
+   `comparar` só a mostra entre a mesma colheita conhecida, a
+   `catalogo-info` não a pede nem a aceita sem ano, e os formulários
+   escondem o campo. A Garrafeira faz o mesmo do lado dela (Wishlist
+   incluída).
 7. **Nada disto pode deitar uma procura abaixo.** É uma poupança, não uma
    dependência.
 8. **A chave vive só no SQL** (ver acima).
