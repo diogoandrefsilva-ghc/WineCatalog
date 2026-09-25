@@ -365,7 +365,7 @@ async function pesquisarSerper(consultas: string[], signal: AbortSignal):
   }
   const texto = linhas.map((x, i) =>
     `[${i + 1}] ${String(x?.title || "").trim()}\nURL: ${String(x.link).trim()}\n` +
-    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}`).join("\n\n");
+    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}` + (x?.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : "")).join("\n\n");
   return {
     texto: texto.slice(0, 8000),
     fontes: linhas.slice(0, 8).map((x) => ({ titulo: String(x?.title || x.link).slice(0, 120), url: String(x.link).slice(0, 400) })),
@@ -661,7 +661,7 @@ async function processarPesquisa(
       if (profunda) {
         const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
         const siteQ = sites.length ? ` (${sites.map((s) => `site:${s}`).join(" OR ")})` : "";
-        const consultas = [`${quem_} vinho preço${siteQ}`, `${antes.nome} ${antes.produtor} vivino`.trim()];
+        const consultas = [`${quem_} vinho preço${siteQ}`, `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " ")];
         try {
           const s = await pesquisarSerper(consultas, ctrl.signal);
           evidencia = s.texto;

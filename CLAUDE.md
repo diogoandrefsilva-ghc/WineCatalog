@@ -803,7 +803,10 @@ de cada app antes de assumir que a que está calada está bem.**
   · e oferece a **pesquisa profunda** (`profunda:true`), que desde
     25/09/2026 é **Serper, não grounding**: a Edge Function faz ela própria
     duas consultas ao Google pelo Serper (uma geral — lojas, produtor — e
-    uma ao Vivino), e o Gemini só LÊ esses resultados, sem `google_search`,
+    uma ao Vivino, `"nome" produtor site:vivino.com`, cujo excerto costuma
+    trazer a nota e o link; as estrelas que o Google mostra — `rating`/
+    `ratingCount` do Serper — vão também no texto), e o Gemini só LÊ esses
+    resultados, sem `google_search`,
     com "responde APENAS com base nisto" e JSON direto. Se o Serper falhar
     ou não trouxer nada, a pesquisa fecha em erro e o Gemini nem é chamado.
     A Edge Function volta a confirmar que é o admin.
