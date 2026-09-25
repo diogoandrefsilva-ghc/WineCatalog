@@ -177,6 +177,23 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
     <div id="rep-lista"></div>
+
+    <!-- Os links do Vivino verificados à noite (batch/vivino-verificar.mjs).
+         O batch só PROPÕE; decide-se aqui. Ver db/vivino.sql. -->
+    <div class="wc-card">
+      <h3>Links do Vivino por validar</h3>
+      <p class="wc-note">
+        À noite, um script abre a página do Vivino de cada vinho e confere o nome
+        com o do catálogo — <strong>sem IA</strong>. Se o link não abre ou é de outro
+        vinho, procura no próprio Vivino. <strong>Nada entra no catálogo sem
+        carregares em “Aplicar”.</strong>
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcVivinoLista('pendente')">Por validar</button>
+        <button class="btn-n" onclick="wcVivinoLista('todos')">Histórico</button>
+      </div>
+    </div>
+    <div id="viv-lista"></div>
   </div>
 
   <!-- ═══ DEFINIÇÕES ═══ -->
@@ -234,6 +251,31 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
         <select id="adm-novo-admin"></select>
         <button class="btn-gold" onclick="wcPassarAdmin()">Passar</button>
       </div>
+    </div>
+
+    <!-- ═══ LINKS DO VIVINO (admin) — a frequência e o tamanho do lote do
+         batch da noite. O GitHub Actions acorda todas as noites e pergunta à
+         `vivino_a_tratar` se hoje é dia: é por isso que isto se escolhe aqui
+         e não no ficheiro do cron. ═══ -->
+    <div class="wc-card admin-only" id="fcard-vivino" style="display:none">
+      <h3>Links do Vivino</h3>
+      <p class="wc-note">
+        Um script abre, à noite, a página do Vivino de alguns vinhos e confere se o
+        link abre o vinho certo, com a nota e as avaliações de lá. Não usa IA nem
+        Serper, e não escreve no catálogo: o que encontra fica em
+        <strong>Alertas</strong> para validares.
+      </p>
+      <label>Quando corre</label>
+      <select id="viv-freq">
+        <option value="desligado">Desligado</option>
+        <option value="diario">Todos os dias</option>
+        <option value="dia_sim_dia_nao">Dia sim, dia não</option>
+        <option value="semanal">Uma vez por semana</option>
+      </select>
+      <label>Vinhos de cada vez</label>
+      <input type="text" inputmode="numeric" id="viv-lote" placeholder="10">
+      <button class="btn-prim" onclick="wcVivinoGuardar()">Guardar</button>
+      <p class="wc-note" id="viv-estado"></p>
     </div>
 
     <!-- O tamanho do catálogo e de onde veio cada campo (`wcCarregarNumeros`).

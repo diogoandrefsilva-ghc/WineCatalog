@@ -172,10 +172,10 @@ function itab(tab){
   if(el)el.classList.add('on');
   try{localStorage.setItem('wc_tab',tab);}catch(e){}
   wcFabSincronizar();
-  if(tab==='cfg')wcCarregarNumeros();
+  if(tab==='cfg'){wcCarregarNumeros();if(isAdmin())wcVivinoConfig();}
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
-  if(tab==='alertas')wcCarregarReportes('aberto');
+  if(tab==='alertas'){wcCarregarReportes('aberto');wcVivinoLista('pendente');}
 }
 function restaurarTab(){
   let tab=null;
@@ -912,6 +912,7 @@ function wcFichaHTML(v){
     h+=`<div class="macoes">
       <button class="btn-prim auto" onclick="wcAbrirProcurar()">🔎 Procurar informação</button>
       <button class="btn-n" onclick="wcAbrirEditar()">✏️ Editar</button>
+      <button class="btn-n" onclick="wcVivinoPedir(${Number(v.id)})" title="Na próxima noite, o script abre o Vivino deste vinho">🍷 Verificar no Vivino</button>
     </div>`;
   }
   h+=`<div id="proc-caixa"></div>`;
@@ -2571,7 +2572,12 @@ async function wcContarAlertas(){
   const el=document.getElementById('alertas-n');
   if(!el)return;
   try{
-    const n=await catRpc('contar_reportes',{});
+    /* Os alertas das garrafeiras e os links do Vivino por validar contam
+       os dois: são as duas coisas à espera de uma decisão do admin. */
+    const [n1,n2]=await Promise.all([
+      catRpc('contar_reportes',{}),
+      catRpc('vivino_contar',{}).catch(()=>0)]);
+    const n=Number(n1||0)+Number(n2||0);
     el.textContent=Number(n)>0?String(n):'';
     el.classList.toggle('on',Number(n)>0);
   }catch(e){el.textContent='';}
@@ -2644,6 +2650,168 @@ async function wcResolverReporte(id,estado){
     toast(estado==='aberto'?'Reaberto':'Tratado ✓');
     wcCarregarReportes(_wcRepEstado);
   }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* ══════════════════════════════════════════════
+   LINKS DO VIVINO — o batch da noite, e o que ele propõe
+
+   O script (`batch/vivino-verificar.mjs`, no GitHub Actions) abre a página
+   de cada vinho, confere o nome e lê a nota e as avaliações; se o link não
+   abre ou é de outro vinho, procura no próprio Vivino. Sem IA e sem Serper.
+   NÃO escreve na ficha: deixa uma proposta em `vivino_verificacoes`, e é
+   aqui que o admin a aplica (pela `editar`, a mesma porta de uma correção
+   à mão) ou a deixa como está. Ver db/vivino.sql.
+
+   Porque é que não aplica sozinho: os links errados que isto veio apanhar
+   foram escritos por uma máquina com ar de verdadeiros. Trocá-los por
+   outros escolhidos por outra máquina, sem ninguém olhar, era repetir o erro.
+   ══════════════════════════════════════════════ */
+let _wcVivRev='pendente';
+let _wcVivLista=[];
+const WC_VIV_ESTADO={
+  certo:['certo','o link abre este vinho'],
+  errado:['outro vinho','o link abre OUTRO vinho'],
+  nao_existe:['não abre','o link não abre (não existe ou não é de um vinho)'],
+  sem_link:['sem link','o catálogo não tinha link'],
+  bloqueado:['bloqueado','o Vivino recusou a página ao script'],
+  erro:['erro','o script falhou neste vinho']
+};
+const WC_VIV_FREQ={desligado:'desligado',diario:'todos os dias',dia_sim_dia_nao:'dia sim, dia não',semanal:'uma vez por semana'};
+
+async function wcVivinoConfig(){
+  const out=document.getElementById('viv-estado');
+  if(!out)return;
+  try{
+    const c=await catRpc('vivino_config',{});
+    document.getElementById('viv-freq').value=c.frequencia||'desligado';
+    document.getElementById('viv-lote').value=c.lote||10;
+    const ult=c.ultima?dataFmt(c.ultima):'nunca';
+    out.innerHTML=`Última execução: <strong>${esc(ult)}</strong> · verificados: ${nFmt(c.verificados)} de ${nFmt(c.total)}`+
+      (c.fila?` · <strong>${nFmt(c.fila)}</strong> pedido(s) na fila para a próxima noite`:'')+
+      (c.pendentes?` · <strong>${nFmt(c.pendentes)}</strong> por validar em Alertas`:'');
+  }catch(e){out.innerHTML=`<span class="erro">${esc(e.message)}</span>`;}
+}
+
+async function wcVivinoGuardar(){
+  const freq=document.getElementById('viv-freq').value;
+  const lote=parseInt(String(document.getElementById('viv-lote').value||'').replace(/\D/g,''),10);
+  if(!(lote>=1&&lote<=30)){toast('Vinhos de cada vez: de 1 a 30',1);return;}
+  try{
+    await catRpc('vivino_definir',{p_frequencia:freq,p_lote:lote});
+    toast(freq==='desligado'?'Desligado ✓':`Guardado ✓ — ${WC_VIV_FREQ[freq]}, ${lote} de cada vez`);
+    wcVivinoConfig();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+async function wcVivinoPedir(id){
+  try{
+    const r=await catRpc('vivino_pedir',{p_ids:[id]});
+    toast(`Na fila ✓ — corre na próxima noite (${r.fila} na fila)`);
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+async function wcVivinoLista(revisao){
+  _wcVivRev=revisao||'pendente';
+  const box=document.getElementById('viv-lista');
+  if(!box)return;
+  box.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';
+  try{
+    const l=await catRpc('vivino_listar',{p_revisao:_wcVivRev});
+    _wcVivLista=Array.isArray(l)?l:[];
+    if(!_wcVivLista.length){
+      box.innerHTML=`<div class="wc-card"><p class="wc-note">${
+        _wcVivRev==='pendente'?'Nada por validar.':'O script ainda não verificou nenhum vinho.'
+      } A frequência e o número de vinhos escolhem-se em Definições › Links do Vivino.</p></div>`;
+      return;
+    }
+    box.innerHTML=_wcVivLista.map(wcVivinoHTML).join('');
+  }catch(e){
+    box.innerHTML=`<div class="wc-card"><p class="wc-note erro">${esc(e.message)}</p></div>`;
+  }
+}
+
+/* Um link lê-se ABRINDO-O, não lendo o texto — o endereço inteiro, porque é
+   o número do fim que distingue um do outro (mesma regra do `escLink` da
+   Garrafeira). */
+function wcVivLink(u){
+  if(u==null||u==='')return '<em>sem link</em>';
+  const t=esc(String(u));
+  return /^https?:\/\/[^\s]+$/.test(String(u))
+    ?`<a href="${t}" target="_blank" rel="noopener">${t}</a>`:t;
+}
+function wcVivNum(n,casas){
+  if(n==null||n==='')return '—';
+  const x=Number(n);
+  return isFinite(x)?x.toLocaleString('pt-PT',casas?{minimumFractionDigits:casas,maximumFractionDigits:casas}:{}):esc(String(n));
+}
+
+function wcVivinoHTML(r,i){
+  const [rot,desc]=WC_VIV_ESTADO[r.estado]||[r.estado,''];
+  const a=r.agora||{}, p=r.proposta||null;
+  const apagar=p&&('vivino_url' in p)&&p.vivino_url==null;
+  const pesq='https://www.vivino.com/search/wines?q='+encodeURIComponent(
+    [r.nome,r.produtor&&!String(r.nome||'').toLowerCase().includes(String(r.produtor).toLowerCase())?r.produtor:'']
+      .join(' ').replace(/\(.*?\)/g,' ').trim());
+  const cands=(Array.isArray(r.candidatos)?r.candidatos:[]).filter(c=>c&&c.vivino_url&&(!p||c.vivino_url!==p.vivino_url));
+  const pend=r.revisao==='pendente';
+  return `<div class="wc-card rep">
+    <div class="rep-cab">
+      <div>
+        <div class="cat-nome">${esc(r.nome||'(vinho apagado)')}${r.ano?` <span class="cat-ano">${esc(String(r.ano))}</span>`:''}</div>
+        <div class="cat-sub">${esc(r.produtor||'—')}${r.tipo?' · '+esc(r.tipo):''}</div>
+      </div>
+      <span class="rep-est viv-${esc(r.estado)}" title="${esc(desc)}">${esc(rot)}</span>
+    </div>
+    <p class="wc-note" style="margin-top:6px">${esc(desc)}${r.nomePagina?` — a página diz <strong>“${esc(r.nomePagina)}”</strong>`:''}</p>
+    <div class="rep-vals">
+      <div><span>no catálogo agora</span><b class="viv-url">${wcVivLink(a.vivino_url)}</b>
+        <b>${wcVivNum(a.vivino_nota,1)} ★ · ${wcVivNum(a.vivino_avaliacoes)} avaliações</b></div>
+      ${p?`<div class="agora"><span>${apagar?'proposta':'o script propõe'}</span>
+        ${apagar?'<b>apagar o link (não encontrou o vinho no Vivino)</b>':
+        `<b class="viv-url">${wcVivLink(p.vivino_url)}</b>
+         <b>${wcVivNum(p.vivino_nota,1)} ★ · ${wcVivNum(p.vivino_avaliacoes)} avaliações</b>
+         ${p.nome?`<span class="viv-sub">“${esc(p.nome)}”${p.confianca!=null?` · parecença ${Math.round(Number(p.confianca)*100)}%`:''}</span>`:''}`}
+      </div>`:''}
+    </div>
+    ${cands.length?`<div class="viv-cands"><span class="viv-sub">Outros resultados da procura no Vivino:</span>
+      ${cands.map((c,k)=>`<div class="viv-cand">
+        <a href="${esc(c.vivino_url)}" target="_blank" rel="noopener">${esc(c.texto||c.vivino_url)}</a>
+        <span class="viv-sub">${c.parecenca!=null?Math.round(Number(c.parecenca)*100)+'%':''}${c.cor_bate===false?' · outra cor':''}</span>
+        ${pend?`<button class="btn-n" onclick="wcVivinoUsar(${i},${k})">Usar este</button>`:''}
+      </div>`).join('')}</div>`:''}
+    <p class="wc-note">${esc(dataFmt(r.quando))}${r.revisao!=='pendente'?` · ${esc(r.revisao)}${r.revistoPor?' por '+esc(r.revistoPor):''}`:''}</p>
+    <div class="rep-acoes">
+      ${pend&&p?`<button class="btn-prim auto" onclick="wcVivinoResolver(${r.id},'aceite')">${apagar?'Apagar o link':'Aplicar'}</button>`:''}
+      ${pend?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'recusado')">Deixar como está</button>`:''}
+      ${!pend&&r.revisao!=='sem_acao'?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'pendente')">Reabrir</button>`:''}
+      <a class="btn-n" href="${esc(pesq)}" target="_blank" rel="noopener">Procurar no Vivino ↗</a>
+      ${r.vinhoId?`<button class="btn-n" onclick="wcVerFicha(${Number(r.vinhoId)})">Abrir a ficha</button>`:''}
+    </div>
+  </div>`;
+}
+
+async function wcVivinoResolver(id,decisao,campos){
+  try{
+    await catRpc('vivino_resolver',{p_id:id,p_decisao:decisao,p_campos:campos||null});
+    toast(decisao==='aceite'?'Aplicado ✓':decisao==='pendente'?'Reaberto':'Fica como está ✓');
+    wcVivinoLista(_wcVivRev);
+    wcContarAlertas();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* Escolher um dos outros resultados: só o LINK entra — a nota e as
+   avaliações desse resultado não foram lidas (a página dele não foi
+   aberta), e ficar com os números do vinho errado era pior do que não os
+   mudar. Na noite seguinte em que este vinho voltar a ser verificado, o
+   script lê-os da página certa. */
+function wcVivinoUsar(i,k){
+  const r=_wcVivLista[i];
+  if(!r)return;
+  const p=r.proposta||null;
+  const cands=(Array.isArray(r.candidatos)?r.candidatos:[]).filter(c=>c&&c.vivino_url&&(!p||c.vivino_url!==p.vivino_url));
+  const c=cands[k];
+  if(!c)return;
+  wcVivinoResolver(r.id,'aceite',{vivino_url:c.vivino_url});
 }
 
 /* ══════════════════════════════════════════════
@@ -2902,6 +3070,9 @@ async function sbAposLogin(){
   document.getElementById('fcard-utilizadores').style.display=_souAdmin?'':'none';
   document.getElementById('fcard-admin').style.display=_souAdmin?'':'none';
   document.querySelectorAll('.admin-only').forEach(el=>{el.style.display=_souAdmin?'':'none';});
+  /* O cartão dos links do Vivino só se preenche sabendo que é o admin — e
+     isso só se sabe aqui, depois de o separador já poder estar aberto. */
+  if(_souAdmin&&document.getElementById('t-cfg')?.classList.contains('on'))wcVivinoConfig();
   if(_souAdmin)wcContarAlertas();
   /* A password temporária é do DONO DA CONTA, não do admin do catálogo:
      mexe em auth.users, e a conta continua a ser de quem a paga mesmo

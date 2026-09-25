@@ -29,7 +29,12 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 4. db/policies.sql          (RLS das tabelas da app)
 5. db/admin_pass_temp.sql   (password temporária)
 6. db/imagens.sql          (bucket público das fotografias do catálogo)
+7. db/vivino.sql           (a verificação dos links do Vivino — depois do curadoria.sql)
 ```
+
+O `vivino.sql` precisa de um passo fora do Supabase: o secret
+`SUPABASE_SERVICE_ROLE_KEY` no repo do GitHub (Settings › Secrets and
+variables › Actions), que é o que o `.github/workflows/vivino.yml` usa.
 
 E, do repo **Garrafeira**, o `db/catalogo-partilhado.sql` — que passou a ser
 só o gancho dela (o trigger que leva cada vinho gravado numa garrafeira

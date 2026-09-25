@@ -33,13 +33,18 @@ tudo o que aqui está foi pago com um erro.
   UMA linha do catálogo, a pedido do admin (ver "Editar, Procurar,
   Comparar, Reportar" abaixo). Deploy à parte:
   `supabase functions deploy catalogo-info`.
+- `batch/vivino-verificar.mjs` + `.github/workflows/vivino.yml` — o batch
+  da noite que confere os links do Vivino (ver "Links do Vivino"). O único
+  sítio do repo com `npm`, e só dentro do GitHub Actions: o site continua
+  sem build.
 - `catalogo-foto.ts` — Edge Function (Deno). Lê o RÓTULO de uma fotografia
   para pré-preencher o formulário "Vinho novo" — visão, nunca pesquisa web
   (ver "Vinho novo" abaixo). Deploy à parte:
   `supabase functions deploy catalogo-foto`.
 - `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
-  (o bucket das fotografias) (+ `README.md`
+  (o bucket das fotografias) → `vivino.sql` (a verificação dos links do
+  Vivino) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -487,6 +492,60 @@ chave mexida) nem a alvo (que tem outra), e nascia uma **terceira** linha.
 O duplicado voltava, e voltava por causa da própria ferramenta que servia
 para o resolver. É o género de avaria que não dá erro nenhum — só a conta a
 não descer.
+
+### Links do Vivino — *o batch da noite* (25/09/2026)
+Olhou-se para os 135 links do Vivino do catálogo: 18 errados quase de
+certeza (formatos que o Vivino não usa — `/Wines/…`, `/Wineries/…`, só o
+nome sem `/w/<nº>` —, o mesmo número em dois vinhos diferentes, o link do
+tinto num branco, um com texto inventado lá dentro) e 21 no formato
+`/wines/<nº>`, que é o número de UMA colheita e não o do vinho. **Não é o
+Vivino a mudar links** — o número depois de `/w/` é estável: é o que as
+pesquisas de memória escreveram, com ar de verdadeiro.
+
+O que existe agora, **sem IA e sem Serper**:
+- `batch/vivino-verificar.mjs` — Node + Playwright (Chromium). Abre o link
+  de cada vinho, lê o nome, a nota e as avaliações (o JSON-LD primeiro, o
+  texto visível depois), e confere o nome com o do catálogo por regras de
+  código (`parecenca`: as palavras DISTINTIVAS do nome, as genéricas — cor,
+  região, gama — não contam; e a cor tem de bater). Não abre, ou é outro
+  vinho → procura no próprio Vivino (`/search/wines?q=`) e abre o melhor
+  resultado. Devagar de propósito (4–7 s entre páginas) e pára à segunda
+  recusa seguida.
+- `.github/workflows/vivino.yml` — acorda TODAS as noites (03:17 UTC) e
+  pergunta à `winecatalog.vivino_a_tratar` se hoje é dia. **A frequência
+  vive na base de dados e não no cron**, porque o cron é um ficheiro do repo
+  e a app não lhe chega: Definições › **Links do Vivino** (desligado · todos
+  os dias · dia sim, dia não · uma vez por semana) e quantos de cada vez
+  (1–30). Corre-se à mão em Actions › Run workflow (com `limite` e `ensaio`).
+- `db/vivino.sql` — a tabela `vivino_verificacoes` (uma linha por vinho
+  tratado: o estado, o nome que a página mostra, a PROPOSTA e os outros
+  resultados da procura) e as funções. As do batch só aceitam a
+  `service_role`; as do ecrã só o admin.
+- **A fila** (`vivino_pedir`, botão "🍷 Verificar no Vivino" na ficha):
+  vinhos pedidos à mão correm na noite seguinte mesmo que a frequência
+  diga que não é dia. Depois da fila, os nunca verificados, depois os
+  verificados há mais tempo; quem tem uma proposta por decidir fica de
+  fora.
+
+**O batch NÃO escreve na ficha.** Propõe, e o admin decide em **Alertas ›
+Links do Vivino por validar**: "Aplicar" passa pela `editar` (a mesma porta
+de uma correção à mão, com o antes e o depois no `sync_log`), "Usar este"
+aplica só o LINK de outro resultado (os números dele não foram lidos), e
+"Deixar como está" fecha sem mexer. Não é desconfiança do código: os links
+errados que isto veio apanhar foram escritos por uma máquina com ar de
+verdadeiros, e trocá-los por outros escolhidos por outra máquina, sem
+ninguém olhar, era repetir o erro. Um link certo com os mesmos números
+fecha sozinho (`sem_acao`); `bloqueado`/`erro` não são respostas sobre o
+vinho e ele volta a entrar numa próxima noite.
+
+O link proposto é sempre o do VINHO (`https://www.vivino.com/<nome>/w/<nº>`),
+sem país, língua, `?year=` nem `?srsltid=` do Google — é o que não muda e
+abre em qualquer sítio.
+
+**Os termos do Vivino proíbem a recolha automática** — decisão consciente
+do dono das apps, para umas dezenas de páginas por noite do seu próprio
+catálogo. Se o Vivino começar a recusar (`bloqueado` na lista), não se
+contorna: desliga-se.
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/

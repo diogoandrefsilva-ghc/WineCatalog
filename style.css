@@ -561,6 +561,20 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   padding:2px 8px;border-radius:99px;background:var(--bg);color:var(--mu);border:1px solid var(--bo);flex-shrink:0}
 .rep-est.aberto{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
 .rep-est.resolvido{background:#eef7f1;color:var(--vd);border-color:#cfe3d8}
+/* Os links do Vivino verificados à noite (Alertas). Verde só o "certo";
+   o resto pede atenção, e o "bloqueado"/"erro" não é sobre o vinho. */
+.rep-est.viv-certo{background:#eef7f1;color:var(--vd);border-color:#cfe3d8}
+.rep-est.viv-errado,.rep-est.viv-nao_existe{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
+.rep-est.viv-sem_link{background:#fdf6e8;color:#8a6a1f;border-color:#f0e0b8}
+.rep-vals b.viv-url{font-size:12px;font-weight:500}
+.rep-vals b.viv-url a{word-break:break-all}
+.viv-sub{display:block;font-size:11px;color:var(--mu);margin-top:3px}
+.rep-vals span.viv-sub{text-transform:none;letter-spacing:0;font-weight:500}
+.viv-cands{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.viv-cand{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;min-width:0}
+.viv-cand a{flex:1 1 200px;min-width:0;word-break:break-word}
+.viv-cand .viv-sub{display:inline;margin:0}
+.rep-acoes a.btn-n{text-decoration:none;display:inline-flex;align-items:center}
 /* Os dois valores lado a lado, que é a única forma de isto se ler num
    segundo. O terceiro ("agora") só aparece quando já mudou. */
 .rep-vals{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
