@@ -1,0 +1,49 @@
+# Verificação dos links do Vivino — ver batch/vivino-verificar.mjs e
+# db/vivino.sql. Acorda TODAS as noites e pergunta à base de dados se hoje
+# é dia (a frequência e o nº de vinhos escolhem-se na app, em Definições).
+# À mão: separador Actions → "Vivino — verificar links" → Run workflow.
+name: Vivino — verificar links
+
+on:
+  schedule:
+    - cron: "17 3 * * *"   # 03:17 UTC, todas as noites
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Quantos vinhos (vazio = o das Definições)"
+        required: false
+        default: ""
+      ensaio:
+        description: "Ensaio: lê as páginas mas não grava nada"
+        type: boolean
+        default: false
+
+concurrency:
+  group: vivino
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: batch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Instalar o Playwright (Chromium)
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+      - name: Verificar
+        run: node vivino-verificar.mjs
+        env:
+          SUPABASE_URL: https://gjweqwfbnkgnibhajldc.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          LIMITE: ${{ inputs.limite }}
+          ENSAIO: ${{ inputs.ensaio }}
+          EXECUCAO: ${{ github.run_id }}
