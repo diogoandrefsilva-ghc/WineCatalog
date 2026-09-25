@@ -800,35 +800,30 @@ de cada app antes de assumir que a que está calada está bem.**
   · cada resposta diz se houve pesquisa (`pesquisaWeb`, pelo
     `fezPesquisa()`: `webSearchQueries` ou `groundingChunks` ou
     `toolUsePromptTokenCount`), e o ecrã marca a de memória com 🧠;
-  · e oferece a **pesquisa profunda** (`profunda:true`): o prompt EXIGE a
-    pesquisa, uma resposta sem ela passa ao modelo seguinte (fica de
-    reserva, e é usada se nenhum pesquisar — nunca se perde uma resposta
-    por isto), e a Edge Function volta a confirmar que é o admin.
+  · e oferece a **pesquisa profunda** (`profunda:true`), que desde
+    25/09/2026 é **Serper, não grounding**: a Edge Function faz ela própria
+    duas consultas ao Google pelo Serper (uma geral — lojas, produtor — e
+    uma ao Vivino), e o Gemini só LÊ esses resultados, sem `google_search`,
+    com "responde APENAS com base nisto" e JSON direto. Se o Serper falhar
+    ou não trouxer nada, a pesquisa fecha em erro e o Gemini nem é chamado.
+    A Edge Function volta a confirmar que é o admin.
   Está nas QUATRO apps que pesquisam vinhos, com o mesmo critério:
-  `catalogo-info` (aqui), `verificar-vinhos` (WineSelection — por vinho, e
-  a profunda pesquisa também os que já estavam completos),
-  `vinho-info` (Garrafeira — só no modo premium; salta a cache e o
-  catálogo, e escala para o modelo maior) e `prendas-vinho`
-  (AnniversaryGifts). **Mexer no critério é mexer nas quatro.**
-  **A primeira profunda falhou, e o porquê é a lição (24/09/2026).** Com
-  "OBRIGATÓRIO — pesquisa" acrescentado ao prompt, os quatro modelos
-  tentados responderam de memória na mesma, e a volta pelos oito
-  candidatos esgotou os 90 s e deitou fora a resposta de reserva. Uma
-  função de diagnóstico (`diag-grounding-temp`, já desativada) mostrou a
-  causa: **o que impede a pesquisa é o "Responde SÓ com este JSON".** O
-  mesmo pedido em texto livre pesquisou sempre (2–4 pesquisas, 2–5 fontes,
-  até no lite); com a instrução de só-JSON, lite e flash responderam de
-  memória em todas as tentativas, com ou sem "OBRIGATÓRIO", com ou sem
-  temperatura 0 — e deram quatro preços diferentes para o mesmo Papa Figos
-  (7,95 € a 28,34 €). Um formulário para preencher, o modelo preenche de
-  cabeça; um relatório para escrever, vai procurar. Por isso a profunda
-  TROCA essa instrução (`INSTR_JSON` → `INSTR_PROFUNDA`: primeiro escreve o
-  que encontrou e onde, e o JSON só no fim, numa linha `JSON:`, lido com
-  `jsonDoFim`), fica pelos dois modelos estáveis, e cada modelo tem o seu
-  tecto de tempo para nunca levar a reserva consigo. **As pesquisas
-  normais continuam com o só-JSON — ou seja, de memória — por decisão do
-  dono das apps;** mudá-las para o formato da profunda é o que as punha a
-  pesquisar sempre (e a pagar a pesquisa Google).
+  `catalogo-info` (aqui), `verificar-vinhos` (WineSelection),
+  `vinho-info` (Garrafeira — é o "modo grátis" que ela já tinha) e
+  `prendas-vinho` (AnniversaryGifts). A chave é a `SEARCH_API_KEY`, segredo
+  do PROJETO Supabase (serve as quatro). O log leva `pesquisa: "serper"` e
+  `serper_consultas`. **Mexer no critério é mexer nas quatro.**
+  **Porque não o grounding "obrigado" (24/09/2026).** Não há parâmetro
+  nenhum na API do Gemini que o OBRIGUE a pesquisar — o `google_search` só
+  lhe dá a opção. Uma função de diagnóstico (`diag-grounding-temp`, já
+  desativada — e que chamou o Gemini SEM passar pelo `ia_uso`, ~12
+  chamadas; não voltar a fazer isso) mostrou que o "Responde SÓ com este
+  JSON" o põe a responder de memória e que um pedido em texto livre o põe
+  a pesquisar. Mudou-se o prompt da profunda nesse sentido — e na primeira
+  pesquisa a sério pela app, a Garrafeira respondeu de memória na mesma.
+  Mudar o prompt mexe nas probabilidades; só uma pesquisa feita POR NÓS é
+  garantida. **As pesquisas normais continuam de memória, por decisão do
+  dono das apps** (é barato e costuma acertar).
   **Os prompts MANUAIS pedem sempre a pesquisa a sério**
   (`WC_MANUAL_PESQUISA` aqui, `IA_MANUAL_PESQUISA` na Garrafeira): são de
   graça (a conta do admin num assistente), por isso não há razão para

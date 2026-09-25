@@ -313,36 +313,63 @@ function resumoGrounding(gd: any): Record<string, unknown> {
 /* HOUVE PESQUISA OU NÃO. Ligar o `google_search` não obriga o modelo a
    pesquisar — ele decide, e nos registos até 24/09/2026 nunca o fez: as
    respostas vinham do que aprendeu no treino. Não se recusa (ver acima),
-   mas o resultado passa a dizê-lo (`pesquisaWeb`) e o ecrã oferece a
-   "pesquisa profunda" (`profunda:true`): o prompt exige a pesquisa, e uma
-   resposta sem ela passa ao modelo seguinte. Ver o CLAUDE.md, "De memória
-   ou pesquisado". Mesmo critério na `verificar-vinhos` e na `vinho-info`. */
+   mas o resultado passa a dizê-lo (`pesquisaWeb`) e o ecrã oferece ao
+   admin a "pesquisa profunda" (ver `pesquisarSerper`). Ver o CLAUDE.md,
+   "De memória ou pesquisado". Mesmo critério na `verificar-vinhos`, na
+   `vinho-info` e na `prendas-vinho`. */
 function fezPesquisa(gd: any): boolean {
   const gm = gd?.candidates?.[0]?.groundingMetadata;
   return (Array.isArray(gm?.webSearchQueries) && gm.webSearchQueries.length > 0) ||
     (Array.isArray(gm?.groundingChunks) && gm.groundingChunks.length > 0) ||
     Number(gd?.usageMetadata?.toolUsePromptTokenCount ?? 0) > 0;
 }
-/* O QUE FAZ O MODELO PESQUISAR A SÉRIO (testado a 24/09/2026, na
-   `diag-grounding-temp`). Não é pedir-lho com mais força: com "Responde SÓ
-   com este JSON", o lite e o flash responderam de MEMÓRIA em todas as
-   tentativas, com ou sem "OBRIGATÓRIO — pesquisa", com ou sem temperatura
-   0 (e deram quatro preços diferentes para o mesmo Papa Figos: 7,95 € a
-   28,34 €). Com o MESMO pedido mas a deixá-lo escrever primeiro o que
-   encontrou, e o JSON só no fim numa linha "JSON:", pesquisaram nas três
-   tentativas (2 a 4 pesquisas, 2 a 5 fontes) e os preços bateram certo.
-   Um formulário para preencher, o modelo preenche de cabeça; um relatório
-   para escrever, vai procurar. Por isso a profunda troca a última
-   instrução do prompt, e a leitura vai buscar o JSON a seguir a "JSON:". */
-const INSTR_JSON = "Responde SÓ com este JSON, sem texto à volta e sem blocos de código:";
-const INSTR_PROFUNDA = `Primeiro PESQUISA no Google (o Vivino deste vinho e o preço em lojas
-portuguesas, pelo menos) e escreve, em texto corrido, o que encontraste e em
-que sítio. Depois, no FIM da resposta, numa linha que comece por JSON:,
-escreve o resultado neste formato — um campo que a pesquisa não confirmou
-fica de fora, MESMO que aches que sabes a resposta:`;
-function jsonDoFim(txt: string): string {
-  const i = txt.lastIndexOf("JSON:");
-  return i >= 0 ? txt.slice(i + 5) : txt;
+
+/* A PESQUISA PROFUNDA É SERPER, NÃO GROUNDING (decidido a 25/09/2026).
+   Não há parâmetro nenhum na API do Gemini que o OBRIGUE a pesquisar: o
+   `google_search` só lhe dá a opção, e mudar o prompt só mexe nas
+   probabilidades (a 24/09/2026, com o prompt a pedir "primeiro pesquisa",
+   a Garrafeira voltou a responder de memória). A única forma de a pesquisa
+   ser garantida é sermos NÓS a fazê-la: o Serper devolve os resultados do
+   Google (título, link, resumo), e o Gemini só os lê — sem `google_search`
+   e com "responde APENAS com base nisto". Se o Serper não trouxer nada, a
+   pesquisa falha limpa e o Gemini nem é chamado: pagar para ele adivinhar
+   era exatamente o que isto veio evitar.
+   A chave (`SEARCH_API_KEY`) é a mesma que o "modo grátis" da `vinho-info`
+   da Garrafeira já usava — os segredos do Supabase são do projeto, não de
+   cada função. Custa ~1 $ por 1000 consultas (depois das 2500 grátis) e
+   cada profunda faz DUAS: uma geral (lojas, produtor) e uma ao Vivino. */
+const SEARCH_API_KEY = Deno.env.get("SEARCH_API_KEY") ?? "";
+const SEARCH_API_URL = Deno.env.get("SEARCH_API_URL") || "https://google.serper.dev/search";
+const CUSTO_SERPER_EUR = 0.001; // por consulta, grosseiro como os outros
+async function pesquisarSerper(consultas: string[], signal: AbortSignal):
+  Promise<{ texto: string; fontes: { titulo: string; url: string }[] }> {
+  if (!SEARCH_API_KEY) throw new Error("a pesquisa externa não está configurada (falta SEARCH_API_KEY)");
+  const respostas = await Promise.all(consultas.map(async (q) => {
+    const r = await fetch(SEARCH_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-KEY": SEARCH_API_KEY },
+      body: JSON.stringify({ q, gl: "pt", hl: "pt", num: 8 }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
+    });
+    if (!r.ok) throw new Error(`a pesquisa externa respondeu ${r.status}`);
+    const d = await r.json();
+    return Array.isArray(d?.organic) ? d.organic : [];
+  }));
+  const vistos = new Set<string>();
+  const linhas: any[] = [];
+  for (const x of respostas.flat()) {
+    const url = String(x?.link || "").trim();
+    if (!/^https?:\/\//i.test(url) || vistos.has(url)) continue;
+    vistos.add(url);
+    linhas.push(x);
+  }
+  const texto = linhas.map((x, i) =>
+    `[${i + 1}] ${String(x?.title || "").trim()}\nURL: ${String(x.link).trim()}\n` +
+    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}`).join("\n\n");
+  return {
+    texto: texto.slice(0, 8000),
+    fontes: linhas.slice(0, 8).map((x) => ({ titulo: String(x?.title || x.link).slice(0, 120), url: String(x.link).slice(0, 400) })),
+  };
 }
 
 /* Estimativa GROSSEIRA, como nas irmãs: os TOKENS são facto (vêm da API),
@@ -350,6 +377,7 @@ function jsonDoFim(txt: string): string {
    é faturada à parte, por pedido. Calibra pela fatura real no dia em que
    isto passar de curiosidade a orçamento. */
 const CUSTO_PESQUISA_EUR = 0.01;
+const CUSTO_GEMINI_SO_EUR = 0.002; // a profunda: o Gemini só lê, não pesquisa
 
 /* ── A REGRA DO VIVINO, e porque tem DUAS versões ──
    Espelho da mesma correção em `vinho-info.ts` (Garrafeira) — ver o
@@ -389,10 +417,14 @@ const regraCuvee = `Se o produtor tiver mais do que um vinho com este nome
 
 const promptFicha = (
   nome: string, produtor: string, ano: number | null, regiao: string, tipo: string, notas: string, sites: string[],
-  hoje: string, campos: string[] | null, colheitaEspecifica: boolean,
+  hoje: string, campos: string[] | null, colheitaEspecifica: boolean, evidencia = "",
 ) => `
 És um enólogo a preencher a ficha de um vinho para um catálogo de referência.
-Usa PESQUISA WEB (grounding search) para confirmar os dados — não respondas de memória.
+${evidencia
+  ? `Responde APENAS com base na BASE DE EVIDÊNCIA abaixo (resultados de uma
+pesquisa Google já feita). Não uses o que sabes de memória: o que não estiver
+nestes resultados fica fora do JSON.`
+  : "Usa PESQUISA WEB (grounding search) para confirmar os dados — não respondas de memória."}
 
 VINHO A IDENTIFICAR:
   Nome: ${nome}
@@ -404,6 +436,9 @@ Concentra a pesquisa NELES e deixa os outros fora da resposta.
 ` : ""}
 ${sites.length ? `
 FONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(", ")}. Só uses outra fonte se estas não tiverem a resposta.
+` : ""}${evidencia ? `
+BASE DE EVIDÊNCIA:
+${evidencia}
 ` : ""}
 REGRAS:
 1. NÃO INVENTES. Um campo que não confirmes fica FORA do JSON (ou null).
@@ -603,6 +638,7 @@ async function processarPesquisa(
     let grounding: Record<string, unknown> | null = null;
     // null na manual (não há como saber); true/false na automática.
     let pesquisaWeb: boolean | null = null;
+    let serperConsultas = 0; // só na profunda
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -620,12 +656,37 @@ async function processarPesquisa(
          confundir este vinho com um homónimo e a dar prioridade a fontes de
          confiança. Nunca entram na lista `campos` (o que se pede de volta);
          só no texto do prompt. */
-      const texto0 = promptFicha(
+      // Profunda: a pesquisa faz-se AQUI, antes do Gemini (ver `pesquisarSerper`).
+      let evidencia = "";
+      if (profunda) {
+        const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
+        const siteQ = sites.length ? ` (${sites.map((s) => `site:${s}`).join(" OR ")})` : "";
+        const consultas = [`${quem_} vinho preço${siteQ}`, `${antes.nome} ${antes.produtor} vivino`.trim()];
+        try {
+          const s = await pesquisarSerper(consultas, ctrl.signal);
+          evidencia = s.texto;
+          fontes = s.fontes;
+        } catch (e) {
+          if (ctrl.signal.aborted) throw e;
+          await registar("erro", { passo: "serper", vinho_id: vinhoId, profunda: true,
+            erro: String((e as Error).message).slice(0, 300) }, quem);
+          await fechar(pesquisaId, { estado: "erro", erro: `a pesquisa Google não respondeu — ${(e as Error).message}. Tenta outra vez.` });
+          return;
+        }
+        serperConsultas = consultas.length;
+        if (!evidencia) {
+          await registar("ok", { passo: "serper_vazio", vinho_id: vinhoId, profunda: true, pesquisa: "serper",
+            serper_consultas: serperConsultas, custo_estimado_eur: serperConsultas * CUSTO_SERPER_EUR }, quem);
+          await fechar(pesquisaId, { estado: "erro", erro: "a pesquisa Google não encontrou nada sobre este vinho — confirma o nome e o produtor." });
+          return;
+        }
+        pesquisaWeb = true;
+      }
+      const textoPedido = promptFicha(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
         String(antes.ficha.tipo ?? ""), notas, sites,
-        new Date().toISOString().slice(0, 10), campos, colheitaEspecifica,
+        new Date().toISOString().slice(0, 10), campos, colheitaEspecifica, evidencia,
       );
-      const textoPedido = profunda ? texto0.replace(INSTR_JSON, INSTR_PROFUNDA) : texto0;
 
       /* O `google_search` está SEMPRE ligado — é a razão de esta função
          existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
@@ -633,26 +694,24 @@ async function processarPesquisa(
          argument"), e a pesquisa precisa mesmo de pensar para decidir o que
          pesquisar. Era a primeira variante tentada nas funções irmãs e só
          deitava fora uma ida ao Gemini de cada vez, sem nada no ecrã a
-         dizê-lo. */
-      // Na profunda, cada modelo tem o seu próprio tecto: um que se arraste
-      // não pode levar consigo a resposta de reserva que o anterior já deu.
+         dizê-lo.
+         Na PROFUNDA é ao contrário: a pesquisa já foi feita (Serper), o
+         `google_search` fica desligado e pede-se JSON direto. */
       const chamarGemini = (m: string) =>
         fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          signal: profunda ? AbortSignal.any([ctrl.signal, AbortSignal.timeout(40_000)]) : ctrl.signal,
+          signal: ctrl.signal,
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: textoPedido }] }],
-            generationConfig: { temperature: 0 },
-            tools: [{ google_search: {} }],
+            ...(profunda
+              ? { generationConfig: { temperature: 0, responseMimeType: "application/json" } }
+              : { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }),
           }),
         });
 
       const transitorio = (st: number) => st === 429 || st === 500 || st === 503;
-      // A profunda fica pelos dois estáveis: a 24/09/2026 foi a volta pelos
-      // oito candidatos, cada um a responder sem pesquisar, que esgotou os
-      // 90 s e deitou fora a resposta que já havia.
-      const candidatos = (await candidatosModelo(ctrl.signal)).slice(0, profunda ? 2 : undefined);
+      const candidatos = await candidatosModelo(ctrl.signal);
       if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
       console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
       let g: Response | null = null;
@@ -660,12 +719,10 @@ async function processarPesquisa(
          Guarda-se para a mensagem de erro: "MAX_TOKENS" e "SAFETY" são
          avarias muito diferentes e quem lê tem de as poder distinguir. */
       let vazioMotivo = "";
-      // Na profunda, uma resposta sem pesquisa fica de reserva e tenta-se o
-      // modelo seguinte; se nenhum pesquisar, usa-se a reserva.
-      let reserva: { gd: any; bruto: string; model: string } | null = null;
       const aceitar = (gd: any, bruto: string) => {
         usage = usageMetadata(gd);
-        parsed = extrairJson(profunda ? jsonDoFim(bruto) : bruto);
+        parsed = extrairJson(bruto);
+        if (profunda) return; // fontes e pesquisaWeb já vieram do Serper
         fontes = fontesGrounding(gd);
         grounding = resumoGrounding(gd);
         pesquisaWeb = fezPesquisa(gd);
@@ -684,13 +741,7 @@ async function processarPesquisa(
          de entrada, 0 de saída, ~4977 gastos a pensar. */
       for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
         model = candidatos[ci];
-        try {
-          g = await chamarGemini(model);
-        } catch (e) {
-          if (ctrl.signal.aborted || !reserva) throw e;
-          g = null;
-          break;
-        }
+        g = await chamarGemini(model);
         console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
         if (g.ok) {
           const gd = await g.json();
@@ -700,11 +751,6 @@ async function processarPesquisa(
           const uso = usageMetadata(gd);
           console.log("CATALOGO-INFO resposta:", model, "finishReason:", motivo || "(nenhum)",
                       "texto:", bruto.length, "tokens saída:", uso?.candidatesTokenCount ?? 0);
-          if (bruto && profunda && !fezPesquisa(gd)) {
-            if (!reserva) reserva = { gd, bruto, model };
-            g = null;
-            continue;
-          }
           if (bruto) {
             aceitar(gd, bruto);
             break;
@@ -718,12 +764,6 @@ async function processarPesquisa(
         }
         if (g.status === 404) { _models = null; continue; }
         if (!transitorio(g.status)) break;
-      }
-
-      if (parsed === undefined && reserva) {
-        aceitar(reserva.gd, reserva.bruto);
-        model = reserva.model;
-        g = new Response(null, { status: 200 });
       }
 
       if (g && !g.ok) {
@@ -766,7 +806,12 @@ async function processarPesquisa(
     // `groundingMetadata` nenhum a colar aqui) — inventar uma era pior do
     // que não ter nenhuma.
     const chamadasGemini = respostaManual !== null ? 0 : 1;
-    const custoEstimado = respostaManual !== null ? 0 : CUSTO_PESQUISA_EUR;
+    // Na profunda o Gemini não pesquisa (não há pesquisa Google a pagar
+    // lá); paga-se o Serper, à parte.
+    const custoEstimado = respostaManual !== null ? 0
+      : profunda ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR
+      : CUSTO_PESQUISA_EUR;
+    const serperLog = profunda ? { pesquisa: "serper", serper_consultas: serperConsultas } : {};
 
     /* O PRODUTOR não é campo de ficha — não passa pela `juntar` nem pela
        `forca()` que decide os outros. É IDENTIDADE (parte da `chave`), e
@@ -783,7 +828,7 @@ async function processarPesquisa(
     if (!Object.keys(ficha).length && !produtorMudou) {
       await registar("ok", { passo: "sem_campos", modelo: model, vinho_id: vinhoId, campos: 0,
         fontes: fontes.length, ...(grounding ? { grounding } : {}),
-        ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}),
+        ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}), ...serperLog,
         ...(usage ? { usageMetadata: usage } : {}), chamadas_gemini: chamadasGemini,
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
@@ -857,7 +902,7 @@ async function processarPesquisa(
       campos: entraram, propostos: propostas.length,
       fontes: fontes.length,
       ...(grounding ? { grounding } : {}),
-      ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}),
+      ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}), ...serperLog,
       ...(usage ? { usageMetadata: usage } : {}),
       chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
       manual: respostaManual !== null,
@@ -970,8 +1015,9 @@ Deno.serve(async (req) => {
     // Vivino em `regraVivino`) — só estrita quando o ecrã de campos manda
     // isto explicitamente.
     const colheitaEspecifica = body?.colheitaEspecifica === true;
-    // Pesquisa profunda: exige a pesquisa Google (ver `fezPesquisa`). Só o
-    // admin chega aqui, por isso não há outra verificação a fazer.
+    // Pesquisa profunda: a pesquisa é nossa, pelo Serper (ver
+    // `pesquisarSerper`). Só o admin chega aqui, por isso não há outra
+    // verificação a fazer.
     const profunda = body?.profunda === true && respostaManual === null;
     /* `notas`/`sites`: contexto LIVRE (duas caixas de texto na app, não
        campos fechados) — ajuda a não confundir este vinho com um homónimo

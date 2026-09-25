@@ -1655,7 +1655,9 @@ async function wcProcChamar(corpo){
    O Gemini decide sozinho se usa a pesquisa Google, e muitas vezes responde
    com o que aprendeu no treino (`pesquisaWeb:false` no resultado). Isso não
    se recusa — é barato e costuma acertar —, mas diz-se, e daqui pede-se a
-   mesma pesquisa outra vez a EXIGIR a pesquisa Google (`profunda`). */
+   mesma pesquisa outra vez com a pesquisa GARANTIDA (`profunda`): a Edge
+   Function pesquisa ela própria no Google (Serper) e o Gemini só lê os
+   resultados. Ver o CLAUDE.md, "De memória ou pesquisado". */
 async function wcProcurarProfunda(){
   if(!_wcFicha||!isAdmin())return;
   const u=_wcProcUltimo&&_wcProcUltimo.vinhoId===_wcFicha.id?_wcProcUltimo:{campos:null,colheitaEspecifica:false,notas:'',sites:[]};
@@ -1677,7 +1679,7 @@ function wcProcEspera(profunda){
   const c=wcProcCaixa();
   if(c)c.innerHTML=`<div class="pr-espera">
     <div class="wc-spin escuro"></div>
-    <div><strong>${profunda?'Pesquisa profunda — a obrigar o Gemini a pesquisar…':'A pesquisar…'}</strong>
+    <div><strong>${profunda?'Pesquisa profunda — a pesquisar no Google…':'A pesquisar…'}</strong>
       <div class="wc-note">Pesquisa Google a sério — pode levar um minuto. Podes fechar isto,
         que o trabalho continua do lado do servidor.</div></div>
   </div>`;
@@ -1761,12 +1763,12 @@ function wcProcResultadoHTML(res){
   }
   if(res.aviso)h+=`<div class="wc-note" style="margin-top:8px">⚠️ ${esc(res.aviso)}</div>`;
   if(res.pesquisaWeb===false){
-    h+=`<div class="wc-note" style="margin-top:8px">🧠 <strong>${res.profunda?'Mesmo obrigado, o Gemini não pesquisou':'Sem pesquisa Google'}</strong> —
-      ${res.profunda?'nenhum dos modelos usou a pesquisa; o que entrou veio de memória. A pesquisa manual (colar num assistente) é a alternativa.'
-        :'o Gemini respondeu com o que aprendeu no treino. Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.'}</div>`;
-    if(!res.profunda&&isAdmin())h+=`<button class="btn-n larg" style="margin-top:8px" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda — obrigar a pesquisar no Google</button>`;
+    h+=`<div class="wc-note" style="margin-top:8px">🧠 <strong>Sem pesquisa Google</strong> —
+      o Gemini respondeu com o que aprendeu no treino. Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.</div>`;
+    if(isAdmin())h+=`<button class="btn-n larg" style="margin-top:8px" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda — pesquisar mesmo no Google</button>`;
   }else if(res.pesquisaWeb===true){
-    h+=`<div class="wc-note" style="margin-top:8px">🌐 Pesquisado no Google${Array.isArray(res.fontes)&&res.fontes.length?` · ${res.fontes.length} fonte${res.fontes.length>1?'s':''}`:''}.</div>`;
+    const nf=Array.isArray(res.fontes)?res.fontes.length:0;
+    h+=`<div class="wc-note" style="margin-top:8px">🌐 ${res.profunda?'Pesquisa profunda: resposta tirada só dos resultados do Google':'Pesquisado no Google'}${nf?` · ${nf} fonte${nf>1?'s':''}`:''}.</div>`;
   }
   if(!props.length&&!res.aviso){
     h+='<div class="wc-note">A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: '+
