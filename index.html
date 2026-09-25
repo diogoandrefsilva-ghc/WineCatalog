@@ -184,9 +184,10 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       <h3>Links do Vivino por validar</h3>
       <p class="wc-note">
         Um script confere o link de cada vinho — <strong>sem IA</strong> — pelo Google
-        (no GitHub) ou abrindo a página do Vivino (no teu computador), e propõe o link,
-        a nota e as avaliações certos. <strong>Nada entra no catálogo sem
-        carregares em “Aplicar”.</strong>
+        (no GitHub) ou abrindo a página do Vivino (no teu computador), e
+        <strong>escreve no catálogo</strong> o link, a nota e as avaliações que encontra
+        (vê em “Alterações ao catálogo”, abaixo, e repõe o que quiseres). Aqui ficam só
+        os casos que pedem uma decisão: um link que não abre, ou que abre outro vinho.
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="btn-n" onclick="wcVivinoLista('pendente')">Por validar</button>
@@ -194,6 +195,21 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
     <div id="viv-lista"></div>
+
+    <!-- O histórico campo a campo do catálogo todo (db/historico.sql). Na
+         ficha de cada vinho está o dele. -->
+    <div class="wc-card">
+      <h3>Alterações ao catálogo</h3>
+      <p class="wc-note">
+        Tudo o que muda num vinho — pelo script, por uma pesquisa, por uma garrafeira
+        ou à mão — fica aqui, campo a campo, com o valor de antes. Cada alteração
+        pode ser <strong>reposta</strong>. Na ficha de cada vinho está a história dele.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcHistorico(null,'hist-lista')">🔄 Atualizar</button>
+      </div>
+    </div>
+    <div id="hist-lista"></div>
   </div>
 
   <!-- ═══ DEFINIÇÕES ═══ -->
@@ -259,10 +275,11 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
     <div class="wc-card admin-only" id="fcard-vivino" style="display:none">
       <h3>Links do Vivino</h3>
       <p class="wc-note">
-        Um script confere se o link de cada vinho abre o vinho certo, com a nota e as
-        avaliações. Não usa IA e não escreve no catálogo: o que encontra fica em
-        <strong>Alertas</strong> para validares. <strong>Corre só quando o
-        mandas correr</strong>:
+        Um script confere se o link de cada vinho abre o vinho certo, lê a nota e as
+        avaliações do Vivino e o preço na Garrafeira Nacional e na Granvine (no teu
+        computador), e <strong>escreve no catálogo</strong>. Não usa IA. Cada alteração
+        fica em <strong>Alertas › Alterações ao catálogo</strong>, com “Repor”.
+        <strong>Corre só quando o mandas correr</strong>:
       </p>
       <p class="wc-note">
         · <strong>no GitHub</strong> (Actions › “Vivino — verificar links (Serper)” ›

@@ -437,7 +437,7 @@ CREATE OR REPLACE FUNCTION winecatalog.volatil(p_campo text)
 AS $$
   SELECT COALESCE(p_campo, '') IN (
     'vivino_nota', 'vivino_avaliacoes', 'vivino_url',
-    'preco_medio', 'imagem_url'
+    'preco_medio', 'imagem_url', 'precos'
   );
 $$;
 
@@ -579,6 +579,17 @@ AS $$
       WHEN 'garrafeira'          THEN 3
       WHEN 'ws-verificacao'      THEN 3
       WHEN 'catalogo-pesquisa'   THEN 3
+      -- O script dos links (db/vivino.sql, 25/09/2026): lido na PRÓPRIA
+      -- página — do Vivino, da loja — vale o mesmo que uma verificação com
+      -- pesquisa a sério. O que vem de um resultado do Google (motor Serper)
+      -- vale 2: é o excerto, não a página. Uma correção à mão no rótulo
+      -- (4) continua por cima de todos; na nota/preço (3) empata e o
+      -- script, que lê a fonte, atualiza.
+      WHEN 'vivino-pagina'       THEN 3
+      WHEN 'vivino-serper'       THEN 2
+      WHEN 'loja-garrafeira-nacional' THEN 3
+      WHEN 'loja-granvine'       THEN 3
+      WHEN 'lojas-script'        THEN 3
       WHEN 'vinho-info-premium'  THEN 2
       WHEN 'vinho-info-gratis'   THEN 2
       WHEN 'ws-sugestao'         THEN 2

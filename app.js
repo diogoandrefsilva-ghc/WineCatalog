@@ -175,7 +175,7 @@ function itab(tab){
   if(tab==='cfg'){wcCarregarNumeros();if(isAdmin())wcVivinoConfig();}
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
-  if(tab==='alertas'){wcCarregarReportes('aberto');wcVivinoLista('pendente');}
+  if(tab==='alertas'){wcCarregarReportes('aberto');wcVivinoLista('pendente');wcHistorico(null,'hist-lista');}
 }
 function restaurarTab(){
   let tab=null;
@@ -235,7 +235,15 @@ const WC_ORIGENS={
   'ws-verificacao':  {txt:'verificação com pesquisa Google', cls:'og-forte'},
   'ws-sugestao':     {txt:'sugestão da carta (com pesquisa)', cls:'og-media'},
   'vinho-info-premium':{txt:'procura da Garrafeira (grounding)', cls:'og-media'},
-  'vinho-info-gratis': {txt:'procura da Garrafeira (pesquisa + extração)', cls:'og-media'}
+  'vinho-info-gratis': {txt:'procura da Garrafeira (pesquisa + extração)', cls:'og-media'},
+  'catalogo-admin':  {txt:'correção à mão (admin)', cls:'og-forte'},
+  'catalogo-pesquisa':{txt:'pesquisa do catálogo', cls:'og-forte'},
+  /* O script dos links e dos preços (batch/vivino-verificar.mjs) */
+  'vivino-pagina':   {txt:'página do Vivino (script)', cls:'og-forte'},
+  'vivino-serper':   {txt:'Google → Vivino (script Serper)', cls:'og-media'},
+  'loja-garrafeira-nacional':{txt:'Garrafeira Nacional (loja)', cls:'og-forte'},
+  'loja-granvine':   {txt:'Granvine (loja)', cls:'og-forte'},
+  'lojas-script':    {txt:'lojas e Vivino (script)', cls:'og-forte'}
 };
 /* A força entra na LEGENDA, e não é cosmética: `garrafeira` aparece a 3 e
    a 2, e são coisas diferentes. Quem tem a garrafa na mão sabe melhor do
@@ -301,10 +309,24 @@ const WC_PROC_TOTAL=WC_CAMPOS.length+1;
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
    um preço de há oito meses, que é coisa que quem olha quer saber. */
-const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','preco_medio','imagem_url'];
+const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','preco_medio','imagem_url','precos'];
+/* Campos que só o script escreve e que por isso NÃO entram em WC_CAMPOS
+   (que é também a lista do que se pode pedir às pesquisas e ao lote — e
+   nenhuma delas sabe o que é `precos`). Aparecem na ficha com este nome. */
+const WC_ROTULOS_EXTRA={precos:'Preços nas lojas'};
+const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vivino:'Vivino'};
 
 function wcValorHTML(k,v){
   if(v==null)return '—';
+  if(k==='precos'&&typeof v==='object'&&!Array.isArray(v)){
+    /* Pela ordem da prioridade do preço de mercado: GN → Granvine → Vivino. */
+    return ['garrafeira_nacional','granvine','vivino'].filter(l=>v[l]&&v[l].preco!=null).map(l=>{
+      const x=v[l];
+      const t=`${esc(WC_LOJAS_NOMES[l]||l)} ${esc(eurFmt(x.preco))}${x.colheita?` (colheita ${esc(String(x.colheita))})`:''}`;
+      return (x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t)+
+        (x.em?` <span class="wc-note">· ${esc(x.em)}</span>`:'');
+    }).join('<br>')||'—';
+  }
   if(Array.isArray(v))return esc(v.join(', '));
   if(typeof v==='object')return esc(JSON.stringify(v));
   const s=String(v);
@@ -780,6 +802,7 @@ async function wcVerFicha(id){
     if(!v){_wcFicha=null;corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
     _wcFicha=v;
     corpo.innerHTML=wcFichaHTML(v);
+    if(isAdmin())wcHistorico(v.id,'fi-hist');
   }catch(e){
     _wcFicha=null;
     corpo.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
@@ -919,7 +942,7 @@ function wcFichaHTML(v){
 
   /* ── A FICHA ── */
   const conhecidos=WC_CAMPOS.filter(([k])=>k in ficha);
-  const extra=Object.keys(ficha).filter(k=>!WC_CAMPOS.some(([c])=>c===k)).map(k=>[k,k]);
+  const extra=Object.keys(ficha).filter(k=>!WC_CAMPOS.some(([c])=>c===k)).map(k=>[k,WC_ROTULOS_EXTRA[k]||k]);
   const todos=conhecidos.concat(extra);
 
   h+='<div class="msec">Ficha</div>';
@@ -945,6 +968,10 @@ function wcFichaHTML(v){
   }
 
   h+=wcProvenienciaHTML(v);
+
+  /* O histórico campo a campo (db/historico.sql) — só o admin: o "quem"
+     tem emails. Enche-se depois de a ficha estar no ecrã. */
+  if(isAdmin())h+=`<div class="msec">Histórico de alterações</div><div id="fi-hist"><p class="wc-note">A carregar…</p></div>`;
 
   h+=`<div class="msec">Identidade</div>
   <p class="wc-note">
@@ -2824,6 +2851,77 @@ function wcVivinoUsar(i,k){
   const c=cands[k];
   if(!c)return;
   wcVivinoResolver(r.id,'aceite',{vivino_url:c.vivino_url});
+}
+
+/* ══════════════════════════════════════════════
+   HISTÓRICO DE ALTERAÇÕES — o que mudou, de quê para quê, quem e quando
+
+   Desde 25/09/2026 o script do Vivino e das lojas ESCREVE no catálogo (a
+   pedido do dono), e a troca foi esta: tudo o que muda fica registado
+   campo a campo (trigger na `vinhos`, db/historico.sql — seja qual for a
+   porta por onde entrou), e cada linha tem "Repor", que volta a pôr o valor
+   de antes pela `editar`. Na ficha, a história daquele vinho; em Alertas,
+   as últimas do catálogo todo.
+   ══════════════════════════════════════════════ */
+const WC_CAMPO_NOME=Object.assign({nome:'Nome',produtor:'Produtor',ano:'Colheita',_criado:'Criado'},
+  Object.fromEntries(WC_CAMPOS), WC_ROTULOS_EXTRA);
+let _wcHist=[];
+
+async function wcHistorico(vinhoId,alvo){
+  const box=document.getElementById(alvo);
+  if(!box)return;
+  if(!vinhoId)box.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';
+  try{
+    const l=await catRpc('historico',{p_vinho_id:vinhoId||null,p_limite:vinhoId?200:80});
+    _wcHist=_wcHist.filter(x=>!(l||[]).some(y=>y.id===x.id)).concat(l||[]);
+    if(!Array.isArray(l)||!l.length){
+      const t='Ainda não há alterações registadas. O registo começou a 25/09/2026 — o que mudou antes disso só se vê na origem de cada campo.';
+      box.innerHTML=vinhoId?`<p class="wc-note">${t}</p>`:`<div class="wc-card"><p class="wc-note">${t}</p></div>`;
+      return;
+    }
+    const linhas=l.map(a=>wcHistLinhaHTML(a,!vinhoId)).join('');
+    box.innerHTML=vinhoId?`<div class="hist">${linhas}</div>`:`<div class="wc-card"><div class="hist">${linhas}</div></div>`;
+  }catch(e){
+    box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
+  }
+}
+
+function wcHistValor(k,v){
+  if(v==null)return '<em>vazio</em>';
+  return wcValorHTML(k,v);
+}
+
+function wcHistLinhaHTML(a,comVinho){
+  const campo=WC_CAMPO_NOME[a.campo]||a.campo;
+  const identidade=['nome','produtor','ano','_criado'].includes(a.campo);
+  /* "Repor" só faz sentido se o valor de agora ainda é o que esta
+     alteração lá pôs — senão já foi mudado outra vez, e repor apagava essa
+     mudança mais recente sem se dar por isso. */
+  const aindaEste=JSON.stringify(a.agora??null)===JSON.stringify(a.depois??null);
+  return `<div class="hist-l">
+    <div class="hist-cab">
+      ${comVinho?`<a href="#" onclick="wcVerFicha(${Number(a.vinhoId)});return false"><strong>${esc(a.nome||'(vinho)')}</strong>${a.ano?' '+esc(String(a.ano)):''}</a> · `:''}
+      <strong>${esc(campo)}</strong>
+      <span class="wc-note">${esc(dataFmt(a.quando))} · ${esc(a.quem||'?')}</span>
+      ${a.origem?`<span class="og-tag ${wcOrigemCls(a.origem)}">${esc(wcOrigemTxt(a.origem))}</span>`:''}
+    </div>
+    ${a.campo==='_criado'?`<div class="hist-v">vinho criado no catálogo</div>`:
+    `<div class="hist-v"><span class="hist-antes">${wcHistValor(a.campo,a.antes)}</span>
+      <span class="hist-seta">→</span><span class="hist-depois">${wcHistValor(a.campo,a.depois)}</span></div>`}
+    ${!identidade&&aindaEste?`<button class="btn-n hist-repor" onclick="wcReporAlteracao(${Number(a.id)})">Repor o valor de antes</button>`:''}
+  </div>`;
+}
+
+async function wcReporAlteracao(id){
+  const a=_wcHist.find(x=>x.id===id);
+  const campo=a?(WC_CAMPO_NOME[a.campo]||a.campo):'o campo';
+  if(!confirm(`Repor ${campo} ao valor de antes?`+(a&&a.antes==null?' (o campo fica vazio)':'')))return;
+  try{
+    await catRpc('repor_alteracao',{p_id:id});
+    toast('Reposto ✓');
+    if(_wcFicha&&document.getElementById('fi-hist'))await wcRefrescarFicha();
+    if(document.getElementById('t-alertas')?.classList.contains('on'))wcHistorico(null,'hist-lista');
+  }catch(e){toast('Erro: '+e.message,1);}
 }
 
 /* ══════════════════════════════════════════════

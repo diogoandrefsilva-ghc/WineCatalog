@@ -682,3 +682,15 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .lote-prog-l:last-child{border-bottom:none}
 .lote-prog-l span:first-child{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lote-prog-l .wc-note{margin:0;flex-shrink:0;text-align:right}
+
+/* O histórico de alterações (ficha e Alertas) */
+.hist{display:flex;flex-direction:column}
+.hist-l{padding:10px 0;border-bottom:1px solid var(--bo);min-width:0}
+.hist-l:last-child{border-bottom:none}
+.hist-cab{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;font-size:13px}
+.hist-cab a{color:inherit;text-decoration:none}
+.hist-cab .og-tag{font-size:10.5px}
+.hist-v{margin-top:4px;font-size:13px;display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;min-width:0;word-break:break-word}
+.hist-antes{color:var(--mu);text-decoration:line-through;text-decoration-color:rgba(0,0,0,.25)}
+.hist-seta{color:var(--mu)}
+.hist-repor{margin-top:6px;font-size:12px;padding:4px 10px}

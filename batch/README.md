@@ -1,8 +1,15 @@
 # Verificar os links do Vivino
 
 O script `vivino-verificar.mjs` confere os links do Vivino do catálogo, **sem
-IA**, e deixa uma proposta por vinho em **Alertas › Links do Vivino por
-validar** na app. Nada entra no catálogo sem carregares em "Aplicar".
+IA**, lê a nota e as avaliações, e (no teu computador) o **preço na Garrafeira
+Nacional e na Granvine**. **Escreve no catálogo** o que encontra com certeza;
+cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na ficha
+do vinho), com o valor de antes e um botão para o repor. Em **Alertas › Links
+do Vivino por validar** ficam só os casos que pedem uma decisão.
+
+O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vivino.
+Os três ficam guardados na ficha ("Preços nas lojas"), com o link, a colheita
+e a data. Se a loja só tiver outra colheita, aceita-se e fica escrita ao lado.
 
 Tem dois motores:
 

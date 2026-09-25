@@ -349,7 +349,9 @@ BEGIN
         'tipo', v.ficha ->> 'tipo',
         'vivino_url', v.ficha ->> 'vivino_url',
         'vivino_nota', v.ficha -> 'vivino_nota',
-        'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes')
+        'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
+        'preco_medio', v.ficha -> 'preco_medio',
+        'precos', v.ficha -> 'precos')
         ORDER BY array_position(v_ids, v.id))
       FROM winecatalog.vinhos v WHERE v.id = ANY(v_ids)), '[]'));
 END;
@@ -358,8 +360,13 @@ $$;
 -- Uma linha por vinho tratado. Tira o vinho da fila e carimba a execução.
 -- `sem_acao` quando não há nada a decidir: o link está certo e os números
 -- que a página mostra são os que o catálogo já tem.
+-- `p_revisao`: desde 25/09/2026 o script APLICA o que encontrou (pela
+-- `aplicar_fontes`) e grava a verificação como 'aceite' (revista pelo
+-- script); 'sem_acao' para o que não tem nada a decidir. Sem ele, o
+-- comportamento de antes: pendente para o admin.
+DROP FUNCTION IF EXISTS winecatalog.vivino_gravar(bigint, jsonb, text);
 CREATE OR REPLACE FUNCTION winecatalog.vivino_gravar(
-  p_vinho_id bigint, p_res jsonb, p_execucao text DEFAULT NULL
+  p_vinho_id bigint, p_res jsonb, p_execucao text DEFAULT NULL, p_revisao text DEFAULT NULL
 ) RETURNS bigint LANGUAGE plpgsql SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
 AS $$
@@ -387,12 +394,18 @@ BEGIN
   -- Bloqueado ou erro não é uma resposta sobre o vinho: não fica à espera
   -- de decisão, e o vinho volta a entrar numa próxima noite.
   IF p_res ->> 'estado' IN ('bloqueado','erro') THEN v_rev := 'sem_acao'; END IF;
+  IF p_revisao IN ('aceite','sem_acao','pendente') AND p_res ->> 'estado' NOT IN ('bloqueado','erro') THEN
+    v_rev := p_revisao;
+  END IF;
 
   INSERT INTO winecatalog.vivino_verificacoes
-    (vinho_id, execucao, url_antes, estado, nome_pagina, proposta, candidatos, detalhe, revisao)
+    (vinho_id, execucao, url_antes, estado, nome_pagina, proposta, candidatos, detalhe, revisao,
+     revisto_em, revisto_por)
   VALUES
-    (v.id, p_execucao, v.ficha ->> 'vivino_url', p_res ->> 'estado', p_res ->> 'nome_pagina',
-     v_prop, p_res -> 'candidatos', p_res -> 'detalhe', v_rev)
+    (v.id, p_execucao, COALESCE(p_res ->> 'url_antes', v.ficha ->> 'vivino_url'), p_res ->> 'estado',
+     p_res ->> 'nome_pagina', v_prop, p_res -> 'candidatos', p_res -> 'detalhe', v_rev,
+     CASE WHEN v_rev = 'aceite' THEN now() END,
+     CASE WHEN v_rev = 'aceite' THEN 'script' END)
   RETURNING id INTO v_id;
 
   v_fila := COALESCE((SELECT valor::jsonb FROM winecatalog.config WHERE chave = 'vivino_fila'), '[]');
@@ -405,6 +418,81 @@ BEGIN
     ('vivino_fila', v_fila::text), ('vivino_ultima', now()::text)
   ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor;
   RETURN v_id;
+END;
+$$;
+
+
+-- ---------------------------------------------------------------------
+-- APLICAR — o script escreve no catálogo (desde 25/09/2026, a pedido do
+-- dono: "prefiro que atualizes o catálogo", com o histórico campo a campo
+-- em `historico.sql` para ver e repor).
+--
+-- A mesma regra da `juntar`, campo a campo: entra se o campo está vazio ou
+-- se a força desta origem (`forca(origem, campo)`) é igual ou maior do que
+-- a que lá está. Um valor escrito à mão no rótulo (4) nunca é tapado; uma
+-- nota lida na página do Vivino (3) atualiza a que lá estava. Pelo ID e não
+-- pela chave: o script já sabe de que linha se trata.
+--
+-- Diz o que entrou e o que ficou de fora (e porquê) — é o que o script
+-- mostra no fim de cada vinho.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.aplicar_fontes(
+  p_vinho_id bigint, p_campos jsonb, p_origem text, p_quem text,
+  p_fontes jsonb DEFAULT '[]'::jsonb
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v_id      bigint;
+  v_ficha   jsonb;
+  v_origens jsonb;
+  v_fontes  jsonb;
+  v_entrou  jsonb := '[]'::jsonb;
+  v_ficou   jsonb := '[]'::jsonb;
+  k         text;
+  v         jsonb;
+  v_f       integer;
+  v_ant     integer;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  IF winecatalog.forca(p_origem) <= 0 THEN
+    RAISE EXCEPTION 'Origem sem força: %', p_origem;
+  END IF;
+  v_id := COALESCE((SELECT id_para FROM winecatalog.alias WHERE id_de = p_vinho_id), p_vinho_id);
+  SELECT ficha, origens, fontes INTO v_ficha, v_origens, v_fontes
+    FROM winecatalog.vinhos WHERE id = v_id FOR UPDATE;
+  IF v_ficha IS NULL THEN RAISE EXCEPTION 'Vinho % não existe.', p_vinho_id; END IF;
+
+  PERFORM set_config('winecatalog.quem', COALESCE(NULLIF(p_quem, ''), 'script'), true);
+
+  FOR k, v IN SELECT key, value FROM jsonb_each(COALESCE(p_campos, '{}')) LOOP
+    CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$' OR winecatalog.vazio(v);
+    v_f   := winecatalog.forca(p_origem, k);
+    v_ant := COALESCE((v_origens -> k ->> 'f')::integer, 0);
+    IF v_f >= v_ant THEN
+      v_ficha   := v_ficha || jsonb_build_object(k, v);
+      v_origens := v_origens || jsonb_build_object(k, jsonb_build_object('o', p_origem, 'f', v_f, 'em', now()));
+      v_entrou  := v_entrou || to_jsonb(k);
+    ELSE
+      v_ficou := v_ficou || jsonb_build_object('campo', k, 'origem', v_origens -> k ->> 'o', 'forca', v_ant);
+    END IF;
+  END LOOP;
+
+  IF p_fontes IS NOT NULL AND jsonb_typeof(p_fontes) = 'array' AND jsonb_array_length(p_fontes) > 0 THEN
+    SELECT COALESCE(jsonb_agg(f), '[]'::jsonb) INTO v_fontes FROM (
+      SELECT DISTINCT ON (f ->> 'url') f
+        FROM jsonb_array_elements(COALESCE(v_fontes, '[]') || p_fontes) f
+       WHERE COALESCE(f ->> 'url', '') <> ''
+       ORDER BY (f ->> 'url') LIMIT 8) x;
+  END IF;
+
+  UPDATE winecatalog.vinhos
+     SET ficha = v_ficha, origens = v_origens, fontes = COALESCE(v_fontes, fontes),
+         atualizado_em = CASE WHEN jsonb_array_length(v_entrou) > 0 THEN now() ELSE atualizado_em END
+   WHERE id = v_id;
+  RETURN jsonb_build_object('vinho', v_id, 'entrou', v_entrou, 'ficou', v_ficou);
 END;
 $$;
 
@@ -430,9 +518,11 @@ GRANT EXECUTE ON FUNCTION winecatalog.vivino_contar()                      TO au
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_resolver(bigint, text, jsonb) TO authenticated;
 
 REVOKE ALL ON FUNCTION winecatalog.vivino_a_tratar(boolean, integer)       FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION winecatalog.vivino_gravar(bigint, jsonb, text)      FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.vivino_gravar(bigint, jsonb, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.aplicar_fontes(bigint, jsonb, text, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.aplicar_fontes(bigint, jsonb, text, text, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_a_tratar(boolean, integer)    TO service_role;
-GRANT EXECUTE ON FUNCTION winecatalog.vivino_gravar(bigint, jsonb, text)   TO service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_gravar(bigint, jsonb, text, text) TO service_role;
 
 -- Confirmar (deve dar ZERO linhas):
 -- SELECT p.proname, r.rolname FROM pg_proc p

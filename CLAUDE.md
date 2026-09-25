@@ -44,7 +44,7 @@ tudo o que aqui está foi pago com um erro.
 - `db/` — `schema.sql` → `catalogo.sql` → **`curadoria.sql`** →
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
   (o bucket das fotografias) → `vivino.sql` (a verificação dos links do
-  Vivino) (+ `README.md`
+  Vivino e dos preços) → `historico.sql` (o histórico campo a campo) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -540,16 +540,37 @@ O que existe agora, **sem IA**, com DOIS motores no mesmo script:
   depois os verificados há mais tempo; quem tem uma proposta por decidir
   fica de fora.
 
-**O batch NÃO escreve na ficha.** Propõe, e o admin decide em **Alertas ›
-Links do Vivino por validar**: "Aplicar" passa pela `editar` (a mesma porta
-de uma correção à mão, com o antes e o depois no `sync_log`), "Usar este"
-aplica só o LINK de outro resultado (os números dele não foram lidos), e
-"Deixar como está" fecha sem mexer. Não é desconfiança do código: os links
-errados que isto veio apanhar foram escritos por uma máquina com ar de
-verdadeiros, e trocá-los por outros escolhidos por outra máquina, sem
-ninguém olhar, era repetir o erro. Um link certo com os mesmos números
-fecha sozinho (`sem_acao`); `bloqueado`/`erro` não são respostas sobre o
-vinho e ele volta a entrar numa próxima noite.
+**Desde 25/09/2026 o script ESCREVE no catálogo** (a pedido do dono,
+depois de duas corridas a afinar as regras de nome), pela
+`winecatalog.aplicar_fontes`: a mesma regra de força da `juntar`, campo a
+campo, pelo ID. Origens novas na `forca()`: `vivino-pagina` 3 (lido na
+página), `vivino-serper` 2 (o excerto do Google), `loja-garrafeira-nacional`
+3, `loja-granvine` 3, `lojas-script` 3 (o campo `precos`). Uma correção à
+mão no rótulo (4) nunca é tapada. A troca foi o **histórico** (abaixo): tudo
+o que muda fica registado, e repõe-se com um toque.
+Em **Alertas › Links do Vivino por validar** ficam só os casos que pedem uma
+decisão — um link morto sem alternativa (propõe apagá-lo), um link que abre
+outro vinho —, com "Aplicar", "Usar este" (só o link de outro resultado),
+"Retirar o link" e "Deixar como está". O resto fica registado como `aceite`
+(pelo script) ou `sem_acao`.
+
+**As regras de nome, afinadas em duas corridas reais** (nos dois motores):
+a parecença (as palavras distintivas do NOSSO nome no título), a cor, a
+**menção igual dos dois lados** (Reserva ≠ Grande Reserva ≠ nenhuma — o
+"Carm Grande Reserva Branco" casou com o "CARM Reserva Branco") e **não
+mais de uma palavra distintiva a mais** no título ("Quinta do Crasto" ≠
+"Quinta do Crasto Etiqueta Negra"). A parecença ordena antes das palavras a
+mais: faltar o "Syrah" é pior do que sobrar o "Signature".
+
+**O preço** (só no PC — o motor Serper não abre páginas): Garrafeira
+Nacional → Granvine → Vivino, por decisão do dono. `lerLoja` procura na loja
+(`/catalogsearch/result/?q=` — as duas parecem Magento; escrito sem as ver,
+afina-se pelo `detalhe.lojas` de cada verificação), aplica as mesmas regras
+de nome, deixa de fora magnums, caixas e packs, prefere a MESMA colheita e,
+sem ela, a mais recente (aceite, com a colheita ao lado). Os três preços
+ficam em `ficha.precos` (`{garrafeira_nacional|granvine|vivino: {preco, url,
+colheita, nome, em}}`, volátil) e o `preco_medio` fica com o primeiro da
+ordem, com a origem da loja — é o que a ficha mostra.
 
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à
@@ -567,6 +588,25 @@ do dono das apps, para umas dezenas de páginas de cada vez do seu próprio
 catálogo, a partir do seu computador. Se o Vivino recusar (`bloqueado` na
 lista), não se contorna — nada de proxies nem de disfarçar o browser:
 fica o motor Serper, ou a validação à mão.
+
+### Histórico de alterações — *o que mudou, quem e quando* (25/09/2026)
+`db/historico.sql`: um trigger na própria `vinhos` (`registar_alteracoes`)
+escreve em `winecatalog.alteracoes` uma linha por campo que muda —
+`antes`, `depois`, a `origem` que ficou, `quem`, `quando` — e também nome,
+produtor, ano e a criação. No trigger e não em cada função que escreve: são
+seis portas, e a que se esquecesse era um buraco calado.
+**Quem**: a configuração `winecatalog.quem` (o script põe "script no PC
+(Vivino e lojas)"), senão o email da sessão, senão o papel. **Uma escrita
+com origem numa garrafeira fica "uma garrafeira", sem email** — o email
+ligava uma pessoa a um vinho, ou seja, dizia o que ela tem em casa
+(invariante 2).
+Lê-se com `historico(p_vinho_id, p_limite)` (só o admin): na ficha (a
+história daquele vinho, fusões incluídas) e em **Alertas › Alterações ao
+catálogo** (as últimas de todos). **"Repor o valor de antes"**
+(`repor_alteracao`) passa pela `editar` e só aparece enquanto o valor de
+agora ainda é o que aquela alteração pôs — senão apagava uma mudança mais
+recente. A identidade não se repõe daqui (mexe na chave: é o Editar).
+O registo começa a 25/09/2026; o que mudou antes só se vê no `origens`.
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/

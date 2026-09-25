@@ -39,6 +39,9 @@ const EXECUCAO = process.env.EXECUCAO || null;
 const MOTOR = (process.env.MOTOR || "browser").toLowerCase();
 const SERPER_KEY = process.env.SEARCH_API_KEY || "";
 const SERPER_URL = process.env.SEARCH_API_URL || "https://google.serper.dev/search";
+// As lojas só no motor browser (no PC); LOJAS=false para as saltar.
+const LOJAS_LIGADAS = process.env.LOJAS !== "false";
+const QUEM = MOTOR === "serper" ? "script Serper (GitHub Actions)" : "script no PC (Vivino e lojas)";
 
 // Entre páginas: devagar de propósito. São poucas dezenas por noite.
 const PAUSA_MIN = +(process.env.PAUSA_MIN ?? 4000), PAUSA_MAX = +(process.env.PAUSA_MAX ?? 7000);
@@ -158,6 +161,14 @@ async function lerPagina(page) {
       ldNota: prod?.aggregateRating?.ratingValue ?? null,
       ldAval: prod?.aggregateRating?.ratingCount ?? prod?.aggregateRating?.reviewCount ?? null,
       ldTem: ld.length > 0,
+      // O preço, quando a página o publica em dado estruturado (offers).
+      ldPreco: (() => {
+        const o = prod && prod.offers; if (!o) return null;
+        const x = Array.isArray(o) ? o[0] : o;
+        return { preco: x.price ?? x.lowPrice ?? null, moeda: x.priceCurrency || null };
+      })(),
+      metaPreco: meta("product:price:amount") || document.querySelector('[itemprop="price"]')?.getAttribute("content")
+        || document.querySelector("[data-price-amount]")?.getAttribute("data-price-amount") || null,
       texto: (document.body?.innerText || "").slice(0, 4000),
     };
   });
@@ -277,6 +288,7 @@ async function verificar(page, v) {
       det.atual.parecenca = Math.round(p * 100) / 100;
       if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "")) {
         estado = "certo";
+        det._preco = precoDaPagina(a.info, a.final);
         const { nota, aval } = numerosDe(a.info);
         proposta = { vivino_url: urlLimpo(a.info.canonico || a.info.ogUrl || a.final) || urlLimpo(a.final),
                      vivino_nota: nota, vivino_avaliacoes: aval, nome: nomePagina, confianca: det.atual.parecenca };
@@ -311,6 +323,7 @@ async function verificar(page, v) {
         const txt = `${nome || ""} ${b.info.titulo || ""} ${b.final.replace(/[-/]/g, " ")}`;
         const p = parecenca(v, txt);
         if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nome || b.info.titulo || "")) {
+          det._preco = precoDaPagina(b.info, b.final);
           const { nota, aval } = numerosDe(b.info);
           proposta = { vivino_url: urlLimpo(b.info.canonico || b.final) || melhor.vivino_url,
                        vivino_nota: nota, vivino_avaliacoes: aval, nome, confianca: Math.round(p * 100) / 100 };
@@ -323,11 +336,89 @@ async function verificar(page, v) {
     // null). Continua a ser uma proposta — o admin é que decide.
     if (!proposta && estado === "nao_existe") proposta = { vivino_url: null };
   }
-  return { estado, nome_pagina: nomePagina, proposta, candidatos, detalhe: det };
+  return { estado, nome_pagina: nomePagina, proposta, candidatos, detalhe: det, vivino_preco: det._preco || null };
 }
 
 function pausa() {
   return new Promise(r => setTimeout(r, PAUSA_MIN + Math.random() * (PAUSA_MAX - PAUSA_MIN)));
+}
+
+// ── Preço numa página (Vivino ou loja) ───────────────────────────────
+// Só em euros, e só um número que pareça um preço de garrafa (1–2000 €).
+function precoDaPagina(info, url) {
+  if (!info) return null;
+  let preco = null;
+  if (info.ldPreco && (!info.ldPreco.moeda || /EUR/i.test(info.ldPreco.moeda))) preco = numero(info.ldPreco.preco);
+  if (preco == null) preco = numero(info.metaPreco);
+  if (preco == null || preco < 1 || preco > 2000) return null;
+  return { preco: Math.round(preco * 100) / 100, url: String(url || "").split(/[?#]/)[0] };
+}
+
+// ── As lojas: Garrafeira Nacional e Granvine ──────────────────────────
+// A prioridade do preço, decidida pelo dono (25/09/2026): Garrafeira
+// Nacional → Granvine → Vivino. Guardam-se os TRÊS em `precos` (cada um com
+// o link, a colheita e a data), e o `preco_medio` fica com o primeiro que
+// houver, com a origem da loja — é isso que a ficha mostra.
+//
+// As duas lojas parecem Magento (páginas .html, `?p=2`, filtros por id); a
+// procura e a leitura estão escritas para isso SEM as ter visto — a rede de
+// onde isto foi escrito não chegava lá. O 1.º ensaio em casa é que diz se
+// batem; o `detalhe` de cada loja leva o que se leu para se afinar.
+const LOJAS = [
+  { id: "garrafeira_nacional", nome: "Garrafeira Nacional", origem: "loja-garrafeira-nacional",
+    procura: q => `https://www.garrafeiranacional.com/catalogsearch/result/?q=${encodeURIComponent(q)}` },
+  { id: "granvine", nome: "Granvine", origem: "loja-granvine",
+    procura: q => `https://granvine.com/pt/catalogsearch/result/?q=${encodeURIComponent(q)}` },
+];
+const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vivino"];
+// Garrafas que não são "a" garrafa: outro tamanho, ou mais do que uma.
+const NAO_E_GARRAFA = /magnum|jeroboam|\b1[.,]5\s?l\b|\b150\s?cl\b|\b3\s?l\b|\b300\s?cl\b|\b37[.,]5\s?cl\b|\b375\s?ml\b|\b50\s?cl\b|\b500\s?ml\b|\bcaixa\b|\bpack\b|\b\d+\s?x\s?75|\b\d+\s?garrafas\b/i;
+function colheitaDe(t) { const m = String(t || "").match(/\b(19[5-9]\d|20[0-4]\d)\b/); return m ? +m[1] : null; }
+
+async function lerLoja(page, loja, v) {
+  const nome = String(v.nome || "").replace(/\(.*?\)/g, " ").replace(/\b(19|20)\d{2}\b/g, " ").replace(/\s+/g, " ").trim();
+  const semCor = nome.replace(/\b(tinto|branco|ros[ée])\b/gi, " ").replace(/\s+/g, " ").trim();
+  const det = { loja: loja.id, procuras: [] };
+  for (const q of [...new Set([nome, semCor])].filter(Boolean)) {
+    const url = loja.procura(q);
+    const a = await abrir(page, url);
+    if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { ...det, http: a.status } };
+    const itens = await page.evaluate(() => {
+      const vistos = new Map();
+      const els = document.querySelectorAll('a.product-item-link, .product-item a[href], li.product a[href], .product-item-info a[href], .product-card a[href]');
+      for (const el of els) {
+        const href = el.href.split(/[?#]/)[0];
+        if (!href || vistos.has(href) || /catalogsearch|checkout|customer|wishlist|compare/i.test(href)) continue;
+        const cartao = el.closest(".product-item, li.product, .product-item-info, .product-card") || el;
+        const nomeEl = cartao.querySelector("a.product-item-link, .product-item-name, .product-name, h2, h3") || el;
+        const nome = (nomeEl.innerText || el.innerText || "").replace(/\s+/g, " ").trim();
+        if (!nome) continue;
+        vistos.set(href, { href, nome, texto: (cartao.innerText || "").replace(/\s+/g, " ").trim().slice(0, 200),
+          preco: cartao.querySelector("[data-price-amount]")?.getAttribute("data-price-amount") || null });
+      }
+      return [...vistos.values()].slice(0, 15);
+    }).catch(() => []);
+    det.procuras.push({ q, http: a.status, itens: itens.length, titulo: a.info?.titulo || null });
+    const bons = itens.map(it => ({
+      ...it,
+      parecenca: parecenca(v, it.nome), cor_bate: corBate(v, it.nome), nome_bate: bateNome(v, it.nome),
+      colheita: colheitaDe(it.nome), garrafa: !NAO_E_GARRAFA.test(`${it.nome} ${it.texto}`),
+    })).filter(it => it.garrafa && it.cor_bate && it.nome_bate && it.parecenca >= LIMIAR)
+      // A mesma colheita primeiro; senão a mais recente — aceite por decisão
+      // do dono, com a colheita guardada ao lado do preço.
+      .sort((x, y) => (Number(y.colheita === v.ano) - Number(x.colheita === v.ano))
+        || (y.parecenca - x.parecenca) || ((y.colheita || 0) - (x.colheita || 0)));
+    if (!bons.length) continue;
+    const b = bons[0];
+    await pausa();
+    const pg = await abrir(page, b.href);
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
+    const pp = precoDaPagina(pg.info, b.href) || (numero(b.preco) ? { preco: numero(b.preco), url: b.href } : null);
+    det.escolhido = { nome: b.nome, href: b.href, http: pg.status, jsonld: !!pg.info?.ldTem };
+    if (!pp) { det.sem_preco = true; return { detalhe: det }; }
+    return { achado: { preco: pp.preco, url: b.href, colheita: b.colheita, nome: b.nome }, detalhe: det };
+  }
+  return { detalhe: det };
 }
 
 // ── Motor Serper: o Google em vez do Vivino ───────────────────────────
@@ -514,6 +605,7 @@ async function main() {
     page = await ctx.newPage();
   }
   const resumo = {};
+  const lojasBloqueadas = new Set();
   let bloqueios = 0;
   try {
     for (const [i, v] of plano.vinhos.entries()) {
@@ -536,7 +628,78 @@ async function main() {
       console.log(`#${v.id} ${v.nome}${v.ano && !String(v.nome).includes(String(v.ano)) ? " " + v.ano : ""} → ${res.estado}` +
         (res.nome_pagina ? ` · página: "${res.nome_pagina}"` : "") +
         (p ? ` · proposta: ${p.vivino_url ?? "apagar o link"} ${p.vivino_nota ?? ""} ${p.vivino_avaliacoes ?? ""}` : ""));
-      if (!ENSAIO) await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: res, p_execucao: EXECUCAO });
+      // ── As lojas (só no PC: o motor Serper não abre páginas) ──
+      const hoje = new Date().toISOString().slice(0, 10);
+      const precos = { ...(v.precos && typeof v.precos === "object" ? v.precos : {}) };
+      let precosMudaram = false;
+      if (MOTOR === "browser" && LOJAS_LIGADAS && res.estado !== "bloqueado") {
+        res.detalhe = res.detalhe || {};
+        res.detalhe.lojas = [];
+        for (const loja of LOJAS) {
+          if (lojasBloqueadas.has(loja.id)) continue;
+          await pausa();
+          let r;
+          try { r = await lerLoja(page, loja, v); }
+          catch (e) { r = { detalhe: { loja: loja.id, erro: String(e.message || e).slice(0, 200) } }; }
+          res.detalhe.lojas.push(r.detalhe);
+          if (r.bloqueado) { lojasBloqueadas.add(loja.id); console.log(`   ${loja.nome}: recusou as páginas — salto-a no resto da corrida.`); continue; }
+          if (r.achado) {
+            precos[loja.id] = { ...r.achado, em: hoje };
+            precosMudaram = true;
+            console.log(`   ${loja.nome}: ${r.achado.preco.toFixed(2)} €${r.achado.colheita ? ` (colheita ${r.achado.colheita})` : ""} — "${r.achado.nome}"`);
+          } else {
+            console.log(`   ${loja.nome}: ${r.detalhe?.sem_preco ? "encontrou o vinho mas não leu o preço" : "não encontrou"}`);
+          }
+        }
+      }
+      if (res.vivino_preco) {
+        precos.vivino = { ...res.vivino_preco, em: hoje };
+        precosMudaram = true;
+        console.log(`   Vivino: ${res.vivino_preco.preco.toFixed(2)} €`);
+      }
+      const escolha = PRIORIDADE_PRECO.find(k => precos[k] && numero(precos[k].preco) != null);
+
+      if (!ENSAIO) try {
+        // Desde 25/09/2026 o script ESCREVE (a pedido do dono), pela
+        // `aplicar_fontes` — mesma regra de força da `juntar`, e cada campo
+        // que muda fica no histórico, com "Repor" na ficha.
+        const origemVivino = MOTOR === "serper" ? "vivino-serper" : "vivino-pagina";
+        let aplicado = false;
+        if (res.proposta && res.proposta.vivino_url) {
+          const campos = { vivino_url: res.proposta.vivino_url };
+          if (res.proposta.vivino_nota != null) campos.vivino_nota = res.proposta.vivino_nota;
+          if (res.proposta.vivino_avaliacoes != null) campos.vivino_avaliacoes = res.proposta.vivino_avaliacoes;
+          const r = await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: campos, p_origem: origemVivino,
+            p_quem: QUEM, p_fontes: [{ url: res.proposta.vivino_url, titulo: "Vivino" }] });
+          aplicado = true;
+          console.log(`   → catálogo: ${r.entrou.length ? r.entrou.join(", ") : "nada mudou"}` +
+            (r.ficou.length ? ` · ficou (mais forte): ${r.ficou.map(f => f.campo).join(", ")}` : ""));
+        }
+        if (precosMudaram) {
+          await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: { precos }, p_origem: "lojas-script", p_quem: QUEM });
+        }
+        if (escolha) {
+          const loja = LOJAS.find(l => l.id === escolha);
+          const r = await rpc("aplicar_fontes", { p_vinho_id: v.id, p_campos: { preco_medio: precos[escolha].preco },
+            p_origem: loja ? loja.origem : origemVivino, p_quem: QUEM,
+            p_fontes: [{ url: precos[escolha].url, titulo: loja ? loja.nome : "Vivino" }] });
+          console.log(`   → preço de mercado: ${Number(precos[escolha].preco).toFixed(2)} € (${loja ? loja.nome : "Vivino"})` +
+            (r.ficou.length ? " — NÃO entrou: o que lá está é mais forte" : ""));
+        }
+        // A verificação fica registada; só o que PEDE uma decisão (apagar um
+        // link morto, um link que abre outro vinho sem alternativa) fica à
+        // espera em Alertas.
+        const revisao = aplicado ? "aceite"
+          : (res.proposta && res.proposta.vivino_url === null) || res.estado === "errado" ? "pendente"
+          : "sem_acao";
+        await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: { ...res, url_antes: v.vivino_url || null },
+          p_execucao: EXECUCAO, p_revisao: revisao });
+      } catch (e) {
+        // Um vinho que não se consegue gravar (fundido entretanto, a rede)
+        // não pode parar os outros.
+        console.log(`   ✗ não gravou: ${String(e.message || e).slice(0, 200)}`);
+        resumo.erros_a_gravar = (resumo.erros_a_gravar || 0) + 1;
+      }
       bloqueios = res.estado === "bloqueado" ? bloqueios + 1 : 0;
       if (bloqueios >= MAX_BLOQUEIOS) { console.log("O Vivino está a recusar as páginas — paro aqui."); break; }
     }
@@ -546,7 +709,7 @@ async function main() {
   console.log("Resumo:", JSON.stringify(resumo));
 }
 
-export { tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
