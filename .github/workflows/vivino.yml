@@ -1,20 +1,23 @@
-# Verificação dos links do Vivino — ver batch/vivino-verificar.mjs e
-# db/vivino.sql. Acorda TODAS as noites e pergunta à base de dados se hoje
-# é dia (a frequência e o nº de vinhos escolhem-se na app, em Definições).
-# À mão: separador Actions → "Vivino — verificar links" → Run workflow.
-name: Vivino — verificar links
+# Verificação dos links do Vivino pelo Google (Serper) — ver
+# batch/vivino-verificar.mjs e db/vivino.sql. SÓ À MÃO, de propósito: cada
+# vinho gasta uma pesquisa do limite do Serper. Actions → "Vivino — verificar
+# links (Serper)" → Run workflow. Trata a fila primeiro (os vinhos pedidos na
+# ficha com "🍷 Verificar no Vivino") e depois os nunca verificados.
+#
+# O motor que abre as páginas do Vivino (MOTOR=browser) NÃO corre aqui: o
+# Vivino recusa-o a partir dos servidores do GitHub (403, 25/09/2026). Corre
+# no computador do admin — ver batch/README.md.
+name: Vivino — verificar links (Serper)
 
 on:
-  schedule:
-    - cron: "17 3 * * *"   # 03:17 UTC, todas as noites
   workflow_dispatch:
     inputs:
       limite:
-        description: "Quantos vinhos (vazio = o das Definições)"
+        description: "Quantos vinhos (= pesquisas Serper gastas). Vazio = o das Definições"
         required: false
         default: ""
       ensaio:
-        description: "Ensaio: lê as páginas mas não grava nada"
+        description: "Ensaio: pesquisa mas não grava nada"
         type: boolean
         default: false
 
@@ -25,7 +28,7 @@ concurrency:
 jobs:
   verificar:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: batch
@@ -34,16 +37,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Instalar o Playwright (Chromium)
-        run: |
-          npm install --no-save --no-package-lock playwright@1.56.1
-          npx playwright install --with-deps chromium
       - name: Verificar
         run: node vivino-verificar.mjs
         env:
+          MOTOR: serper
           SUPABASE_URL: https://gjweqwfbnkgnibhajldc.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          MANUAL: ${{ github.event_name == 'workflow_dispatch' }}
+          SEARCH_API_KEY: ${{ secrets.SEARCH_API_KEY }}
+          MANUAL: "true"
           LIMITE: ${{ inputs.limite }}
           ENSAIO: ${{ inputs.ensaio }}
           EXECUCAO: ${{ github.run_id }}

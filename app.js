@@ -912,7 +912,7 @@ function wcFichaHTML(v){
     h+=`<div class="macoes">
       <button class="btn-prim auto" onclick="wcAbrirProcurar()">🔎 Procurar informação</button>
       <button class="btn-n" onclick="wcAbrirEditar()">✏️ Editar</button>
-      <button class="btn-n" onclick="wcVivinoPedir(${Number(v.id)})" title="Na próxima noite, o script abre o Vivino deste vinho">🍷 Verificar no Vivino</button>
+      <button class="btn-n" onclick="wcVivinoPedir(${Number(v.id)})" title="Põe este vinho na fila da próxima verificação dos links do Vivino">🍷 Verificar no Vivino</button>
     </div>`;
   }
   h+=`<div id="proc-caixa"></div>`;
@@ -2671,34 +2671,35 @@ let _wcVivLista=[];
 const WC_VIV_ESTADO={
   certo:['certo','o link abre este vinho'],
   errado:['outro vinho','o link abre OUTRO vinho'],
+  diferente:['outro link','o Google aponta para outro link (o atual não foi aberto)'],
   nao_existe:['não abre','o link não abre (não existe ou não é de um vinho)'],
+  nao_encontrado:['não encontrado','a procura não encontrou este vinho no Vivino'],
   sem_link:['sem link','o catálogo não tinha link'],
   bloqueado:['bloqueado','o Vivino recusou a página ao script'],
   erro:['erro','o script falhou neste vinho']
 };
-const WC_VIV_FREQ={desligado:'desligado',diario:'todos os dias',dia_sim_dia_nao:'dia sim, dia não',semanal:'uma vez por semana'};
 
 async function wcVivinoConfig(){
   const out=document.getElementById('viv-estado');
   if(!out)return;
   try{
     const c=await catRpc('vivino_config',{});
-    document.getElementById('viv-freq').value=c.frequencia||'desligado';
     document.getElementById('viv-lote').value=c.lote||10;
     const ult=c.ultima?dataFmt(c.ultima):'nunca';
     out.innerHTML=`Última execução: <strong>${esc(ult)}</strong> · verificados: ${nFmt(c.verificados)} de ${nFmt(c.total)}`+
-      (c.fila?` · <strong>${nFmt(c.fila)}</strong> pedido(s) na fila para a próxima noite`:'')+
+      (c.fila?` · <strong>${nFmt(c.fila)}</strong> pedido(s) na fila`:'')+
       (c.pendentes?` · <strong>${nFmt(c.pendentes)}</strong> por validar em Alertas`:'');
   }catch(e){out.innerHTML=`<span class="erro">${esc(e.message)}</span>`;}
 }
 
+/* Só o lote: a frequência fica 'desligado' enquanto não houver cron (corre
+   à mão — o Serper tem limite). A coluna continua na BD para esse dia. */
 async function wcVivinoGuardar(){
-  const freq=document.getElementById('viv-freq').value;
   const lote=parseInt(String(document.getElementById('viv-lote').value||'').replace(/\D/g,''),10);
   if(!(lote>=1&&lote<=30)){toast('Vinhos de cada vez: de 1 a 30',1);return;}
   try{
-    await catRpc('vivino_definir',{p_frequencia:freq,p_lote:lote});
-    toast(freq==='desligado'?'Desligado ✓':`Guardado ✓ — ${WC_VIV_FREQ[freq]}, ${lote} de cada vez`);
+    await catRpc('vivino_definir',{p_frequencia:'desligado',p_lote:lote});
+    toast(`Guardado ✓ — ${lote} de cada vez`);
     wcVivinoConfig();
   }catch(e){toast('Erro: '+e.message,1);}
 }
@@ -2706,7 +2707,7 @@ async function wcVivinoGuardar(){
 async function wcVivinoPedir(id){
   try{
     const r=await catRpc('vivino_pedir',{p_ids:[id]});
-    toast(`Na fila ✓ — corre na próxima noite (${r.fila} na fila)`);
+    toast(`Na fila ✓ — entra na próxima verificação (${r.fila} na fila)`);
   }catch(e){toast('Erro: '+e.message,1);}
 }
 
@@ -2721,7 +2722,7 @@ async function wcVivinoLista(revisao){
     if(!_wcVivLista.length){
       box.innerHTML=`<div class="wc-card"><p class="wc-note">${
         _wcVivRev==='pendente'?'Nada por validar.':'O script ainda não verificou nenhum vinho.'
-      } A frequência e o número de vinhos escolhem-se em Definições › Links do Vivino.</p></div>`;
+} Como correr a verificação: Definições › Links do Vivino.</p></div>`;
       return;
     }
     box.innerHTML=_wcVivLista.map(wcVivinoHTML).join('');

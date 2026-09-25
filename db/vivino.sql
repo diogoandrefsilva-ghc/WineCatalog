@@ -10,11 +10,12 @@
 -- Não é o Vivino a mudar links (o número depois de `/w/` é estável): é o
 -- que as pesquisas de memória escreveram, com ar de verdadeiro.
 --
--- O QUE FAZ. Um script (`batch/vivino-verificar.mjs`, corrido pelo GitHub
--- Actions à noite) abre a página de cada vinho num browser a sério, lê o
--- nome, a nota e o nº de avaliações, e confere o nome com o do catálogo.
--- Se o link não abre ou é de outro vinho, procura no próprio Vivino.
--- **Sem IA e sem Serper**: é código a ler sempre o mesmo sítio da página.
+-- O QUE FAZ. Um script (`batch/vivino-verificar.mjs`), SEM IA, com dois
+-- motores: `browser` abre a página de cada vinho num Chromium a sério e
+-- confere o nome (corre no computador do admin — o Vivino recusa-o a partir
+-- dos servidores do GitHub, 403 a 25/09/2026); `serper` não toca no Vivino
+-- e lê o link, a nota e as avaliações de uma pesquisa Google
+-- `site:vivino.com` (corre no GitHub Actions, à mão).
 --
 -- O QUE NÃO FAZ: escrever no catálogo. Cada vinho tratado deixa uma linha
 -- em `vivino_verificacoes` com o que encontrou e o que PROPÕE; quem
@@ -22,11 +23,10 @@
 -- `editar` (força do `catalogo-admin`, com o antes e o depois no
 -- `sync_log`). Um nome mal lido nunca chega sozinho a uma ficha.
 --
--- QUANTO E QUANDO. Definições › "Links do Vivino": frequência (desligado ·
--- todos os dias · dia sim, dia não · uma vez por semana) e quantos vinhos
--- de cada vez. O Actions acorda TODAS as noites e pergunta à
--- `vivino_a_tratar` se hoje é dia — a frequência vive aqui, não no cron,
--- porque o cron está num ficheiro do repo e a app não lhe chega.
+-- QUANTO E QUANDO. Definições › "Links do Vivino": quantos vinhos de cada
+-- vez. Desde 25/09/2026 corre SÓ À MÃO (o workflow não tem horário, a
+-- pedido do dono: o Serper tem limite). A frequência continua a existir
+-- aqui e na `vivino_a_tratar` para o dia em que voltar a haver um cron.
 --
 -- Vinhos pedidos à mão (`vivino_pedir`, a "fila") correm na noite seguinte
 -- mesmo que a frequência diga que não é dia: foram pedidos por alguém.
@@ -41,9 +41,11 @@ CREATE TABLE IF NOT EXISTS winecatalog.vivino_verificacoes (
   verificado_em timestamptz NOT NULL DEFAULT now(),
   execucao      text,          -- o run do GitHub Actions, para se ir ao log
   url_antes     text,          -- o link que o catálogo tinha nesse momento
-  -- certo       a página abriu e o nome bate com o vinho
-  -- errado      a página abriu e é de OUTRO vinho
-  -- nao_existe  "página não encontrada", ou o Vivino mandou para outro lado
+  -- certo       a página (ou o Google) confirma que o link é deste vinho
+  -- errado      a página abriu e é de OUTRO vinho                 (browser)
+  -- diferente   o Google aponta para outro link; o atual não foi aberto (serper)
+  -- nao_existe  "página não encontrada", ou um link que não pode abrir
+  -- nao_encontrado  a procura não achou o vinho                   (serper)
   -- sem_link    o catálogo não tinha link
   -- bloqueado   o Vivino recusou abrir a página ao script
   -- erro        outra coisa correu mal (ver `detalhe`)
@@ -63,7 +65,7 @@ CREATE TABLE IF NOT EXISTS winecatalog.vivino_verificacoes (
   revisto_por   text,
   CONSTRAINT vivino_verificacoes_pkey PRIMARY KEY (id),
   CONSTRAINT vivino_verificacoes_estado_chk
-    CHECK (estado IN ('certo','errado','nao_existe','sem_link','bloqueado','erro')),
+    CHECK (estado IN ('certo','errado','diferente','nao_existe','nao_encontrado','sem_link','bloqueado','erro')),
   CONSTRAINT vivino_verificacoes_revisao_chk
     CHECK (revisao IN ('pendente','aceite','recusado','sem_acao'))
 );
@@ -72,6 +74,10 @@ CREATE INDEX IF NOT EXISTS vivino_verificacoes_vinho_idx
 CREATE INDEX IF NOT EXISTS vivino_verificacoes_revisao_idx
   ON winecatalog.vivino_verificacoes (revisao, verificado_em DESC);
 ALTER TABLE winecatalog.vivino_verificacoes ENABLE ROW LEVEL SECURITY;
+-- Os estados do motor Serper (25/09/2026) numa base onde a tabela já existia.
+ALTER TABLE winecatalog.vivino_verificacoes DROP CONSTRAINT IF EXISTS vivino_verificacoes_estado_chk;
+ALTER TABLE winecatalog.vivino_verificacoes ADD CONSTRAINT vivino_verificacoes_estado_chk
+  CHECK (estado IN ('certo','errado','diferente','nao_existe','nao_encontrado','sem_link','bloqueado','erro'));
 
 -- As definições vivem na `config` que já existe (chave → texto).
 INSERT INTO winecatalog.config (chave, valor) VALUES

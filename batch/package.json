@@ -1,0 +1,12 @@
+{
+  "name": "winecatalog-batch",
+  "private": true,
+  "description": "Verificação dos links do Vivino — ver README.md. O site não usa isto.",
+  "type": "module",
+  "scripts": {
+    "vivino": "node --env-file=.env vivino-verificar.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

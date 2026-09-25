@@ -1,27 +1,33 @@
 // =====================================================================
-// Verificação dos links do Vivino — o batch da noite (GitHub Actions)
+// Verificação dos links do Vivino — SEM IA. Dois motores, o mesmo resultado
+// (uma PROPOSTA em `winecatalog.vivino_verificacoes`, que o admin aceita ou
+// não em Alertas — este script nunca escreve na ficha de um vinho):
 //
-// SEM IA E SEM SERPER. Abre cada página num Chromium a sério (Playwright),
-// lê o que lá está escrito e compara com o catálogo por regras de código.
-// Não escreve na ficha de vinho nenhum: deixa uma PROPOSTA em
-// `winecatalog.vivino_verificacoes`, e é o admin que a aceita no separador
-// Alertas (ver db/vivino.sql e o CLAUDE.md, "Links do Vivino").
+//   MOTOR=browser (o de omissão; para correr NO TEU COMPUTADOR — ver
+//   batch/README.md). Abre cada página num Chromium a sério (Playwright):
+//     1. o link que o catálogo tem. 404, ou o Vivino a mandar para fora de
+//        uma página de vinho → `nao_existe`. Abriu → lê o nome, a nota e o
+//        nº de avaliações e confere o nome (e a cor) com o do catálogo:
+//        bate → `certo`; não bate → `errado`;
+//     2. se não ficou `certo`, procura no próprio Vivino (`/search/wines`)
+//        e abre o melhor resultado para ler os números.
+//   A 25/09/2026 o Vivino recusou este motor a partir do GitHub Actions
+//   (HTTP 403 da proteção deles para servidores) — daí correr em casa.
 //
-// Por vinho:
-//   1. abre o link que o catálogo tem. 404, ou o Vivino a mandar para fora
-//      de uma página de vinho → `nao_existe`. Abriu → lê o nome, a nota e o
-//      nº de avaliações, e confere o nome (e a cor) com o do catálogo:
-//      bate → `certo`; não bate → `errado`;
-//   2. se não ficou `certo` (ou não havia link), procura no próprio Vivino
-//      (`/search/wines?q=…`), dá nota a cada resultado pelo nome e abre o
-//      melhor para ler os números. É isso que vai na proposta.
+//   MOTOR=serper (o do GitHub Actions). Não toca no Vivino: UMA pesquisa
+//   Google por vinho (`"nome" produtor site:vivino.com`, pelo Serper) e lê
+//   dos resultados o link, a nota e as avaliações que o Google mostra. O
+//   link atual confere-se pelo NÚMERO do vinho: se o melhor resultado é o
+//   mesmo número → `certo`; outro → `diferente` (o Google aponta para outro
+//   link — o atual não foi aberto, por isso não se diz "errado"); nada que
+//   bata → `nao_encontrado`. Gasta do limite do Serper: uma por vinho.
 //
-// Variáveis: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (secret do repo),
-// MANUAL=true (corrida à mão: não pergunta se hoje é dia), LIMITE (nº de
-// vinhos, vazio = o das Definições), ENSAIO=true (não grava nada),
-// EXECUCAO (o id do run, para se ir do Alerta ao log).
+// Variáveis: SUPABASE_SERVICE_ROLE_KEY (obrigatória), SEARCH_API_KEY (só
+// no motor serper — a chave do serper.dev), MOTOR, MANUAL=true (não
+// pergunta se hoje é dia), LIMITE (nº de vinhos; vazio = o das
+// Definições), ENSAIO=true (não grava nada), EXECUCAO (o id do run).
 // =====================================================================
-import { chromium } from "playwright";
+import { pathToFileURL } from "node:url";
 
 const SB_URL = process.env.SUPABASE_URL || "https://gjweqwfbnkgnibhajldc.supabase.co";
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -29,6 +35,9 @@ const MANUAL = process.env.MANUAL === "true";
 const ENSAIO = process.env.ENSAIO === "true";
 const LIMITE = parseInt(process.env.LIMITE || "", 10) || null;
 const EXECUCAO = process.env.EXECUCAO || null;
+const MOTOR = (process.env.MOTOR || "browser").toLowerCase();
+const SERPER_KEY = process.env.SEARCH_API_KEY || "";
+const SERPER_URL = process.env.SEARCH_API_URL || "https://google.serper.dev/search";
 
 // Entre páginas: devagar de propósito. São poucas dezenas por noite.
 const PAUSA_MIN = +(process.env.PAUSA_MIN ?? 4000), PAUSA_MAX = +(process.env.PAUSA_MAX ?? 7000);
@@ -301,28 +310,134 @@ function pausa() {
   return new Promise(r => setTimeout(r, PAUSA_MIN + Math.random() * (PAUSA_MAX - PAUSA_MIN)));
 }
 
+// ── Motor Serper: o Google em vez do Vivino ───────────────────────────
+// A nota e as avaliações vêm do que o Google mostra do resultado: as
+// estrelas (`rating`/`ratingCount` do Serper) quando as há, senão o excerto
+// ("Classificação: 4,1 · 1234 avaliações" / "Rating: 4.1 - 1,234 votes").
+// O que não se lê fica de fora da proposta — nunca um palpite.
+function numerosDoResultado(r) {
+  let nota = numero(r.rating), aval = inteiro(r.ratingCount);
+  const t = `${r.snippet || ""} ${(r.attributes && JSON.stringify(r.attributes)) || ""}`;
+  if (nota == null) {
+    const m = t.match(/(?:rating|classifica\w*|avalia\w*|nota)\s*[:\-–]?\s*([1-5][.,]\d)/i);
+    if (m) nota = numero(m[1]);
+  }
+  // "3,9 · 1 570 avaliações": a nota solta, logo antes da contagem.
+  if (nota == null) {
+    const m = t.match(/(?:^|[^\d])([1-5][.,]\d)\s*[·\-–(|]\s*\d[\d.,\s\u00a0\u202f]*\s*(?:votes|ratings|avalia|classifica|notas)/i);
+    if (m) nota = numero(m[1]);
+  }
+  if (aval == null) {
+    const m = t.match(/([\d][\d.,\s\u00a0\u202f]*)\s*(votes|ratings|avalia[çc][õo]es|classifica[çc][õo]es|notas)/i);
+    if (m) aval = inteiro(m[1]);
+  }
+  if (nota != null && (nota < 1 || nota > 5)) nota = null;
+  return { nota, aval };
+}
+
+async function serper(q) {
+  const r = await fetch(SERPER_URL, {
+    method: "POST",
+    headers: { "X-API-KEY": SERPER_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ q, gl: "pt", hl: "pt-pt", num: 10 }),
+  });
+  const tx = await r.text();
+  if (!r.ok) {
+    const e = new Error(`Serper HTTP ${r.status}: ${tx.slice(0, 200)}`);
+    e.fatal = r.status === 401 || r.status === 403 || r.status === 429;
+    throw e;
+  }
+  return JSON.parse(tx);
+}
+
+async function verificarSerper(v) {
+  const nome = String(v.nome || "").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+  const prod = v.produtor && !norm(nome).includes(norm(v.produtor))
+    ? String(v.produtor).replace(/\(.*?\)/g, " ").trim() : "";
+  const q = `"${nome}"${prod ? " " + prod : ""} site:vivino.com`;
+  const det = { motor: "serper", consulta: q };
+  const j = await serper(q);
+  const resultados = (j.organic || []).filter(r => idDoVinho(r.link) && urlLimpo(r.link));
+  det.resultados = resultados.length;
+
+  const candidatos = resultados.map(r => {
+    const txt = `${r.title || ""} ${r.link.replace(/[-/]/g, " ")}`;
+    const { nota, aval } = numerosDoResultado(r);
+    return {
+      vivino_url: urlLimpo(r.link), texto: r.title || r.link,
+      parecenca: Math.round(parecenca(v, txt) * 100) / 100, cor_bate: corBate(v, txt),
+      nota, avaliacoes: aval,
+    };
+  }).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.parecenca - x.parecenca));
+
+  const atualId = idDoVinho(v.vivino_url);
+  const atualValido = !!(v.vivino_url && pareceVivino(v.vivino_url) && !/\s/.test(v.vivino_url) && atualId);
+  const bons = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
+  // Entre resultados igualmente bons, o do link atual primeiro: não se
+  // propõe trocar um link por outro que o Google considera equivalente.
+  const melhor = bons.find(c => idDoVinho(c.vivino_url) === atualId && c.parecenca === bons[0]?.parecenca) || bons[0];
+
+  let estado, proposta = null;
+  if (melhor) {
+    proposta = { vivino_url: melhor.vivino_url, nome: melhor.texto, confianca: melhor.parecenca };
+    if (melhor.nota != null) proposta.vivino_nota = melhor.nota;
+    if (melhor.avaliacoes != null) proposta.vivino_avaliacoes = melhor.avaliacoes;
+    if (atualValido && idDoVinho(melhor.vivino_url) === atualId) estado = "certo";
+    else estado = v.vivino_url ? "diferente" : "sem_link";
+  } else if (v.vivino_url && !atualValido && !/\/wines\/\d+/.test(v.vivino_url)) {
+    // Um link num formato que o Vivino não usa (sem /w/<nº>, /Wines/…,
+    // texto lá dentro) não abre nunca; sem alternativa, propõe-se apagá-lo.
+    // Um /wines/<nº> fica de fora: é o número de uma colheita e PODE abrir —
+    // sem o abrir, não se propõe apagar nada.
+    estado = "nao_existe"; proposta = { vivino_url: null };
+  } else {
+    estado = "nao_encontrado";
+  }
+  // O nome que o Google mostra para o link ATUAL, quando ele aparece.
+  const doAtual = atualId && resultados.find(r => idDoVinho(r.link) === atualId);
+  return { estado, nome_pagina: doAtual ? doAtual.title : null, proposta,
+           candidatos: candidatos.slice(0, 5), detalhe: det };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────
 async function main() {
-  if (!SB_KEY) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY (secret do repo).");
+  if (!SB_KEY) throw new Error("Falta SUPABASE_SERVICE_ROLE_KEY.");
+  if (MOTOR === "serper" && !SERPER_KEY) throw new Error("Falta SEARCH_API_KEY (a chave do Serper).");
+  if (!["serper", "browser"].includes(MOTOR)) throw new Error(`MOTOR desconhecido: ${MOTOR}`);
   const plano = await rpc("vivino_a_tratar", { p_manual: MANUAL, p_limite: LIMITE });
   if (!plano?.correr) { console.log(`Hoje não: ${plano?.motivo}`); return; }
-  console.log(`A tratar ${plano.vinhos.length} vinho(s) — ${plano.motivo}${ENSAIO ? " (ENSAIO, não grava)" : ""}`);
+  console.log(`A tratar ${plano.vinhos.length} vinho(s) — ${plano.motivo} · motor ${MOTOR}${ENSAIO ? " (ENSAIO, não grava)" : ""}`);
 
-  const browser = await chromium.launch({ headless: true });
-  const ctx = await browser.newContext({
-    locale: "pt-PT",
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 900 },
-  });
-  const page = await ctx.newPage();
+  // O Playwright só se carrega no motor que o usa: no Actions (Serper) nem
+  // sequer está instalado.
+  let browser = null, page = null;
+  if (MOTOR === "browser") {
+    const { chromium } = await import("playwright");
+    browser = await chromium.launch({ headless: true });
+    const ctx = await browser.newContext({
+      locale: "pt-PT",
+      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+      viewport: { width: 1280, height: 900 },
+    });
+    page = await ctx.newPage();
+  }
   const resumo = {};
   let bloqueios = 0;
   try {
     for (const [i, v] of plano.vinhos.entries()) {
-      if (i > 0) await pausa();
+      if (i > 0) await (MOTOR === "serper" ? new Promise(r => setTimeout(r, 700)) : pausa());
       let res;
-      try { res = await verificar(page, v); }
-      catch (e) { res = { estado: "erro", detalhe: { erro: String(e.message || e).slice(0, 300) } }; }
+      try { res = MOTOR === "serper" ? await verificarSerper(v) : await verificar(page, v); }
+      catch (e) {
+        res = { estado: "erro", detalhe: { motor: MOTOR, erro: String(e.message || e).slice(0, 300) } };
+        if (e.fatal) {
+          console.log(`#${v.id} ${v.nome} → erro: ${e.message}`);
+          console.log("O Serper recusou (chave, ou limite gasto) — paro aqui.");
+          if (!ENSAIO) await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: res, p_execucao: EXECUCAO });
+          break;
+        }
+      }
+      if (res.detalhe && !res.detalhe.motor) res.detalhe.motor = MOTOR;
       resumo[res.estado] = (resumo[res.estado] || 0) + 1;
       const p = res.proposta;
       console.log(`#${v.id} ${v.nome}${v.ano ? " " + v.ano : ""} → ${res.estado}` +
@@ -330,17 +445,19 @@ async function main() {
         (p ? ` · proposta: ${p.vivino_url ?? "apagar o link"} ${p.vivino_nota ?? ""} ${p.vivino_avaliacoes ?? ""}` : ""));
       if (!ENSAIO) await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: res, p_execucao: EXECUCAO });
       bloqueios = res.estado === "bloqueado" ? bloqueios + 1 : 0;
-      if (bloqueios >= MAX_BLOQUEIOS) { console.log("O Vivino está a recusar as páginas — paro por hoje."); break; }
+      if (bloqueios >= MAX_BLOQUEIOS) { console.log("O Vivino está a recusar as páginas — paro aqui."); break; }
     }
   } finally {
-    await browser.close();
+    if (browser) await browser.close();
   }
   console.log("Resumo:", JSON.stringify(resumo));
 }
 
-export { parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar };
+export { parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+         verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(e => { console.error(e); process.exit(1); });
+// `pathToFileURL` e não "file://" à mão: no Windows o caminho é C:\…
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(e => { console.error(e.message || e); process.exit(1); });
 }

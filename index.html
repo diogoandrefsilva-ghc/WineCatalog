@@ -183,9 +183,9 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
     <div class="wc-card">
       <h3>Links do Vivino por validar</h3>
       <p class="wc-note">
-        À noite, um script abre a página do Vivino de cada vinho e confere o nome
-        com o do catálogo — <strong>sem IA</strong>. Se o link não abre ou é de outro
-        vinho, procura no próprio Vivino. <strong>Nada entra no catálogo sem
+        Um script confere o link de cada vinho — <strong>sem IA</strong> — pelo Google
+        (no GitHub) ou abrindo a página do Vivino (no teu computador), e propõe o link,
+        a nota e as avaliações certos. <strong>Nada entra no catálogo sem
         carregares em “Aplicar”.</strong>
       </p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -253,25 +253,24 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
 
-    <!-- ═══ LINKS DO VIVINO (admin) — a frequência e o tamanho do lote do
-         batch da noite. O GitHub Actions acorda todas as noites e pergunta à
-         `vivino_a_tratar` se hoje é dia: é por isso que isto se escolhe aqui
-         e não no ficheiro do cron. ═══ -->
+    <!-- ═══ LINKS DO VIVINO (admin) — o tamanho do lote. Corre só à mão
+         (sem cron, desde 25/09/2026: o Serper tem limite); a frequência
+         continua na BD para o dia em que voltar a haver um horário. ═══ -->
     <div class="wc-card admin-only" id="fcard-vivino" style="display:none">
       <h3>Links do Vivino</h3>
       <p class="wc-note">
-        Um script abre, à noite, a página do Vivino de alguns vinhos e confere se o
-        link abre o vinho certo, com a nota e as avaliações de lá. Não usa IA nem
-        Serper, e não escreve no catálogo: o que encontra fica em
-        <strong>Alertas</strong> para validares.
+        Um script confere se o link de cada vinho abre o vinho certo, com a nota e as
+        avaliações. Não usa IA e não escreve no catálogo: o que encontra fica em
+        <strong>Alertas</strong> para validares. <strong>Corre só quando o
+        mandas correr</strong>:
       </p>
-      <label>Quando corre</label>
-      <select id="viv-freq">
-        <option value="desligado">Desligado</option>
-        <option value="diario">Todos os dias</option>
-        <option value="dia_sim_dia_nao">Dia sim, dia não</option>
-        <option value="semanal">Uma vez por semana</option>
-      </select>
+      <p class="wc-note">
+        · <strong>no GitHub</strong> (Actions › “Vivino — verificar links (Serper)” ›
+        Run workflow) — pelo Google, uma pesquisa Serper por vinho;<br>
+        · <strong>no teu computador</strong> (<code>npm run vivino</code> na pasta
+        <code>batch</code>, ver o README de lá) — abre as páginas do Vivino.
+      </p>
+      <p class="wc-note">Trata primeiro os vinhos pedidos na ficha (“🍷 Verificar no Vivino”) e depois os que nunca foram verificados.</p>
       <label>Vinhos de cada vez</label>
       <input type="text" inputmode="numeric" id="viv-lote" placeholder="10">
       <button class="btn-prim" onclick="wcVivinoGuardar()">Guardar</button>

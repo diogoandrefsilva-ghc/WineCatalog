@@ -564,8 +564,8 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 /* Os links do Vivino verificados à noite (Alertas). Verde só o "certo";
    o resto pede atenção, e o "bloqueado"/"erro" não é sobre o vinho. */
 .rep-est.viv-certo{background:#eef7f1;color:var(--vd);border-color:#cfe3d8}
-.rep-est.viv-errado,.rep-est.viv-nao_existe{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
-.rep-est.viv-sem_link{background:#fdf6e8;color:#8a6a1f;border-color:#f0e0b8}
+.rep-est.viv-errado,.rep-est.viv-nao_existe,.rep-est.viv-diferente{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
+.rep-est.viv-sem_link,.rep-est.viv-nao_encontrado{background:#fdf6e8;color:#8a6a1f;border-color:#f0e0b8}
 .rep-vals b.viv-url{font-size:12px;font-weight:500}
 .rep-vals b.viv-url a{word-break:break-all}
 .viv-sub{display:block;font-size:11px;color:var(--mu);margin-top:3px}
