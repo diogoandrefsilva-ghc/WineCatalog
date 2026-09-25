@@ -231,13 +231,32 @@ async function procurar(page, v) {
     }
     return [...vistos.values()].slice(0, 10);
   }).catch(() => []);
-  const cands = links.map(l => ({
-    vivino_url: urlLimpo(l.href) || l.href,
-    texto: l.texto,
-    parecenca: Math.round(parecenca(v, `${l.texto} ${l.href.replace(/[-/]/g, " ")}`) * 100) / 100,
-    cor_bate: corBate(v, `${l.texto} ${l.href.replace(/[-/]/g, " ")}`),
-  })).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.parecenca - x.parecenca));
+  const cands = links.map(l => {
+    // O NOME no link ("…/quintinha-da-francisca-grande-reserva-tinto/w/…")
+    // é o que se compara palavra a palavra: o texto do cartão traz região,
+    // preço e "avaliações", e contava tudo isso como palavras a mais.
+    const slug = (String(l.href).match(/\/([a-z0-9-]+)\/w\/\d+/i) || [])[1] || "";
+    const nomeLink = slug.replace(/-/g, " ");
+    return {
+      vivino_url: urlLimpo(l.href) || l.href,
+      texto: l.texto,
+      parecenca: Math.round(parecenca(v, `${l.texto} ${nomeLink}`) * 100) / 100,
+      cor_bate: corBate(v, `${l.texto} ${nomeLink}`),
+      nome_bate: bateNome(v, nomeLink || l.texto),
+      a_mais: aMais(v, nomeLink || l.texto),
+    };
+  }).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
+    || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
   return { url, candidatos: cands.slice(0, 5), detalhe: detalheDe(a) };
+}
+
+// As mesmas duas regras do motor Serper, aqui também: a MENÇÃO igual dos
+// dois lados, e não mais de uma palavra distintiva a mais no nome da página.
+// No 1.º ensaio em casa, "Quintinha da Francisca" casou com "…Grande
+// Reserva Tinto" — o motor browser só olhava para a parecença.
+function bateNome(v, nome) {
+  const t = tituloLimpo(nome);
+  return mencaoBate(v, t) && aMais(v, t).length <= MAX_A_MAIS;
 }
 
 // ── Um vinho ──────────────────────────────────────────────────────────
@@ -256,7 +275,7 @@ async function verificar(page, v) {
       const txt = `${nomePagina || ""} ${a.info.titulo || ""} ${a.final.replace(/[-/]/g, " ")}`;
       const p = parecenca(v, txt);
       det.atual.parecenca = Math.round(p * 100) / 100;
-      if (p >= LIMIAR && corBate(v, txt)) {
+      if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "")) {
         estado = "certo";
         const { nota, aval } = numerosDe(a.info);
         proposta = { vivino_url: urlLimpo(a.info.canonico || a.info.ogUrl || a.final) || urlLimpo(a.final),
@@ -281,7 +300,7 @@ async function verificar(page, v) {
     det.procura = { url: r.url, ...r.detalhe };
     if (r.bloqueado) return { estado: "bloqueado", nome_pagina: nomePagina, detalhe: det };
     candidatos = r.candidatos;
-    const melhor = candidatos.find(c => c.cor_bate && c.parecenca >= LIMIAR);
+    const melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
     if (melhor) {
       await pausa();
       const b = await abrir(page, melhor.vivino_url);
@@ -291,7 +310,7 @@ async function verificar(page, v) {
         const nome = nomeDe(b.info);
         const txt = `${nome || ""} ${b.info.titulo || ""} ${b.final.replace(/[-/]/g, " ")}`;
         const p = parecenca(v, txt);
-        if (p >= LIMIAR && corBate(v, txt)) {
+        if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nome || b.info.titulo || "")) {
           const { nota, aval } = numerosDe(b.info);
           proposta = { vivino_url: urlLimpo(b.info.canonico || b.final) || melhor.vivino_url,
                        vivino_nota: nota, vivino_avaliacoes: aval, nome, confianca: Math.round(p * 100) / 100 };
@@ -514,7 +533,7 @@ async function main() {
       resumo[res.estado] = (resumo[res.estado] || 0) + 1;
       if (res.detalhe?.pesquisas) resumo.pesquisas_serper = (resumo.pesquisas_serper || 0) + res.detalhe.pesquisas;
       const p = res.proposta;
-      console.log(`#${v.id} ${v.nome}${v.ano ? " " + v.ano : ""} → ${res.estado}` +
+      console.log(`#${v.id} ${v.nome}${v.ano && !String(v.nome).includes(String(v.ano)) ? " " + v.ano : ""} → ${res.estado}` +
         (res.nome_pagina ? ` · página: "${res.nome_pagina}"` : "") +
         (p ? ` · proposta: ${p.vivino_url ?? "apagar o link"} ${p.vivino_nota ?? ""} ${p.vivino_avaliacoes ?? ""}` : ""));
       if (!ENSAIO) await rpc("vivino_gravar", { p_vinho_id: v.id, p_res: res, p_execucao: EXECUCAO });
