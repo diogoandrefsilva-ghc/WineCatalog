@@ -29,7 +29,12 @@ function correr(modo, opcoes) {
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
   delete env.APLICAR;
   if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
-  else {
+  else if (modo === "novo") {
+    // Vinho novo: sempre SIMULAÇÃO — só nasce no catálogo ao gravá-la.
+    env.NOVO = JSON.stringify(opcoes.vinhos);
+    env.ENSAIO = "true";
+    env.LOJAS = opcoes.lojas === false ? "false" : "true";
+  } else {
     env.ENSAIO = modo === "simular" ? "true" : "false";
     env.LIMITE = String(Math.max(1, Math.min(50, Number(opcoes.limite) || 10)));
     env.LOJAS = opcoes.lojas === false ? "false" : "true";
@@ -92,6 +97,18 @@ const servidor = http.createServer(async (req, res) => {
       correr(b.modo, b);
       return json(res, 200, { ok: true });
     }
+    if (req.method === "POST" && url.pathname === "/novo") {
+      const b = await lerCorpo(req);
+      const CORES = ["Tinto", "Branco", "Rosé", "Espumante", "Licoroso", "Frisante"];
+      const vinhos = (Array.isArray(b.vinhos) ? b.vinhos : []).slice(0, 20).map(x => ({
+        nome: String(x.nome || "").trim().slice(0, 150), produtor: String(x.produtor || "").trim().slice(0, 150),
+        ano: /^\d{4}$/.test(String(x.ano || "")) ? +x.ano : null, tipo: CORES.includes(x.tipo) ? x.tipo : null,
+      })).filter(x => x.nome);
+      if (!vinhos.length) return json(res, 400, { erro: "Escreve pelo menos um nome." });
+      if (vinhos.some(x => !x.tipo)) return json(res, 400, { erro: "Escolhe a cor de cada vinho — é ela que separa o tinto do branco com o mesmo nome." });
+      correr("novo", { vinhos, lojas: b.lojas });
+      return json(res, 200, { ok: true });
+    }
     if (req.method === "POST" && url.pathname === "/gravar") {
       // As caixas desmarcadas passam a "aplicar": false no próprio ficheiro —
       // fica escrito o que se decidiu — e o script grava o resto.
@@ -140,7 +157,8 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
 .linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-label{font-size:13px}input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+label{font-size:13px}#novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
+input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
 button{font:600 13px system-ui;border-radius:9px;padding:8px 14px;border:1px solid var(--bo);background:#fff;cursor:pointer}
 button.prim{background:var(--bd);border-color:var(--bd);color:#fff}button.prim:hover{background:var(--bd2)}
@@ -160,12 +178,18 @@ a{color:var(--bd)}
 <div class="card"><h2>Correr</h2>
   <div class="linha">
     <label>Vinhos: <input type="number" id="limite" min="1" max="50" value="10"></label>
-    <label><input type="checkbox" id="lojas" checked> preços na Garrafeira Nacional e Granvine</label>
+    <label><input type="checkbox" id="lojas" checked> preços nas lojas (Garrafeira Nacional, Granvine, Vinha.pt)</label>
     <button class="prim" onclick="correr('simular')">Simular</button>
     <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>
   </div>
   <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").
   Trata primeiro os vinhos pedidos na ficha ("🍷 Verificar no Vivino") e depois os que nunca foram verificados.</p>
+</div>
+<div class="card"><h2>Vinho novo</h2>
+  <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th></th></tr></table>
+  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
+    <button class="prim" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
 </div>
 <div class="card"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div><pre id="log"></pre></div>
 <div class="card"><h2>Simulações</h2>
@@ -191,11 +215,11 @@ async function seguir(){
   const log=document.getElementById("log");
   if(r.linhas.length){log.textContent+=r.linhas.join("\\n")+"\\n";log.scrollTop=log.scrollHeight;}
   visto=r.total;
-  const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação"};
+  const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação",novo:"Vinho novo (simulação)"};
   document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+" a correr…"
     :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
-  document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer/))b.disabled=r.fim==null;});
-  if(r.fim!=null){clearInterval(timer);timer=null;if(r.modo!=="enriquecer")listarSims(r.modo==="simular");}
+  document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer|Procurar/))b.disabled=r.fim==null;});
+  if(r.fim!=null){clearInterval(timer);timer=null;if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
 }
 async function listarSims(abrirPrimeira){
   const l=await fetch("/simulacoes").then(r=>r.json());const s=document.getElementById("sims");
@@ -205,6 +229,7 @@ async function listarSims(abrirPrimeira){
 }
 function valor(c,x){
   if(x==null)return"<i>vazio</i>";
+  if(Array.isArray(x))return esc(x.join(", "));
   if(typeof x==="object")return Object.entries(x).map(([k,o])=>esc(k.replace("_"," "))+" "+(o&&o.url?'<a href="'+esc(o.url)+'" target="_blank">'+esc(o.preco)+" €</a>":esc(o&&o.preco))+(o&&o.colheita?" ("+esc(o.colheita)+")":"")).join("<br>");
   const t=String(x);return /^https?:/.test(t)?'<a href="'+esc(t)+'" target="_blank">'+esc(t.replace(/^https?:\\/\\/(www\\.)?/,""))+'</a>':esc(t)+(c==="preco_medio"?" €":"");
 }
@@ -214,7 +239,7 @@ async function abrirSim(){
   sim=await fetch("/simulacao?nome="+encodeURIComponent(n)).then(r=>r.json());simNome=n;
   const rows=[];
   (sim.vinhos||[]).forEach((v,i)=>{
-    rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">#'+esc(v.id)+" "+esc(v.nome)+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">— nada a mudar; só regista a verificação</span>':"")+'</td></tr>');
+    rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">'+(v.id?"#"+esc(v.id):'<span class="tag">novo</span>')+" "+esc(v.nome)+(v.produtor&&!v.id?' <span class="nota">· '+esc(v.produtor)+'</span>':"")+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">'+(v.id?"— nada a mudar; só regista a verificação":"— não se encontrou nada: é criado só com o que escreveste")+'</span>':"")+'</td></tr>');
     (v.alteracoes||[]).forEach((a,j)=>rows.push('<tr class="alt'+(a.aplicar===false?' off':'')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(a.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td><span class="antes">'+valor(a.campo,a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+'</td><td class="nota">'+esc(a.origem)+'</td></tr>'));
   });
   t.innerHTML=rows.length?'<table><tr><th></th><th>Campo</th><th>Antes → depois</th><th>Origem</th></tr>'+rows.join("")+'</table>':'<p class="nota">Simulação vazia.</p>';
@@ -234,5 +259,24 @@ async function gravar(){
   if(!confirm("Gravar "+n+" vinho(s) desta simulação no catálogo?"))return;
   try{await post("/gravar",{nome:simNome,escolhas});comecar();}catch(e){alert(e.message);}
 }
+const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
+function novaLinha(){
+  const tr=document.createElement("tr");
+  tr.innerHTML='<td><input class="n-nome" placeholder="ex.: Quinta do Crasto Reserva Vinhas Velhas"></td><td><input class="n-prod"></td>'+
+    '<td style="width:80px"><input class="n-ano" inputmode="numeric" maxlength="4"></td>'+
+    '<td style="width:130px"><select class="n-cor"><option value="">— cor —</option>'+CORES.map(c=>"<option>"+c+"</option>").join("")+'</select></td>'+
+    '<td style="width:30px"><button title="Tirar" onclick="this.closest(\\'tr\\').remove()">✕</button></td>';
+  document.getElementById("novos").appendChild(tr);
+}
+async function procurarNovos(){
+  const vinhos=[...document.querySelectorAll("#novos tr")].slice(1).map(tr=>({
+    nome:tr.querySelector(".n-nome").value.trim(),produtor:tr.querySelector(".n-prod").value.trim(),
+    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value})).filter(x=>x.nome);
+  if(!vinhos.length)return alert("Escreve pelo menos um nome.");
+  if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
+  if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
+  try{await post("/novo",{vinhos,lojas:document.getElementById("lojas").checked});comecar();}catch(e){alert(e.message);}
+}
+novaLinha();
 listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
 </script></body></html>`;

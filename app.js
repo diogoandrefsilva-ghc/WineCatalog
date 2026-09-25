@@ -243,7 +243,11 @@ const WC_ORIGENS={
   'vivino-serper':   {txt:'Google → Vivino (script Serper)', cls:'og-media'},
   'loja-garrafeira-nacional':{txt:'Garrafeira Nacional (loja)', cls:'og-forte'},
   'loja-granvine':   {txt:'Granvine (loja)', cls:'og-forte'},
-  'lojas-script':    {txt:'lojas e Vivino (script)', cls:'og-forte'}
+  'loja-vinha':      {txt:'Vinha.pt (loja)', cls:'og-forte'},
+  'lojas-script':    {txt:'lojas e Vivino (script)', cls:'og-forte'},
+  /* Um valor posto de volta à mão depois de um erro, sem se saber de onde
+     tinha vindo: força 0, a próxima fonte a sério passa-lhe por cima. */
+  'reposto':         {txt:'reposto à mão (origem perdida)', cls:'og-fraca'}
 };
 /* A força entra na LEGENDA, e não é cosmética: `garrafeira` aparece a 3 e
    a 2, e são coisas diferentes. Quem tem a garrafa na mão sabe melhor do
@@ -314,13 +318,13 @@ const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','preco_medio',
    (que é também a lista do que se pode pedir às pesquisas e ao lote — e
    nenhuma delas sabe o que é `precos`). Aparecem na ficha com este nome. */
 const WC_ROTULOS_EXTRA={precos:'Preços nas lojas'};
-const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vivino:'Vivino'};
+const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vinha:'Vinha.pt',vivino:'Vivino'};
 
 function wcValorHTML(k,v){
   if(v==null)return '—';
   if(k==='precos'&&typeof v==='object'&&!Array.isArray(v)){
-    /* Pela ordem da prioridade do preço de mercado: GN → Granvine → Vivino. */
-    return ['garrafeira_nacional','granvine','vivino'].filter(l=>v[l]&&v[l].preco!=null).map(l=>{
+    /* Pela ordem da prioridade do preço de mercado: GN → Granvine → Vinha → Vivino. */
+    return ['garrafeira_nacional','granvine','vinha','vivino'].filter(l=>v[l]&&v[l].preco!=null).map(l=>{
       const x=v[l];
       const t=`${esc(WC_LOJAS_NOMES[l]||l)} ${esc(eurFmt(x.preco))}${x.colheita?` (colheita ${esc(String(x.colheita))})`:''}`;
       return (x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t)+

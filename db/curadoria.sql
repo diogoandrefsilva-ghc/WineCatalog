@@ -346,7 +346,9 @@ DECLARE
   v_origens jsonb := '{}'::jsonb;
   k text; v jsonb; v_f integer;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  -- O batch do PC (service_role) também cria — pela `vivino_novo`, o
+  -- "Vinho novo" do painel do vinhos.bat, que é o admin ao teclado.
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode criar uma linha.';
   END IF;
   IF v_nome = '' THEN

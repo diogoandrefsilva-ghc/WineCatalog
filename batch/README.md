@@ -2,12 +2,14 @@
 
 O script `vivino-verificar.mjs` confere os links do Vivino do catálogo, **sem
 IA**, lê a nota e as avaliações, e (no teu computador) o **preço na Garrafeira
-Nacional e na Granvine**. **Escreve no catálogo** o que encontra com certeza;
+Nacional, na Granvine e na Vinha.pt** — e o que as páginas dizem do vinho
+(castas, região, teor, estágio, harmonização, notas de prova), só para os
+campos que o catálogo ainda tem **vazios**. **Escreve no catálogo** o que encontra com certeza;
 cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na ficha
 do vinho), com o valor de antes e um botão para o repor. Em **Alertas › Links
 do Vivino por validar** ficam só os casos que pedem uma decisão.
 
-O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vivino.
+O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vinha.pt → Vivino.
 Os três ficam guardados na ficha ("Preços nas lojas"), com o link, a colheita
 e a data. Se a loja só tiver outra colheita, aceita-se e fica escrita ao lado.
 
@@ -60,6 +62,10 @@ No painel:
   - **Simular** — lê tudo e não grava nada. Guarda uma simulação em
     `batch/simulacoes/` (fica só no teu computador);
   - **Enriquecer** — grava logo no catálogo.
+- **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou
+  mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
+  script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
+  só é criado quando a gravares. Se já existir, enriquece o que lá está.
 - **Registo** — uma linha por vinho, enquanto corre.
 - **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
   depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e

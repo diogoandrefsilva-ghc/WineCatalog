@@ -563,14 +563,54 @@ mais de uma palavra distintiva a mais** no título ("Quinta do Crasto" ≠
 mais: faltar o "Syrah" é pior do que sobrar o "Signature".
 
 **O preço** (só no PC — o motor Serper não abre páginas): Garrafeira
-Nacional → Granvine → Vivino, por decisão do dono. `lerLoja` procura na loja
-(`/catalogsearch/result/?q=` — as duas parecem Magento; escrito sem as ver,
-afina-se pelo `detalhe.lojas` de cada verificação), aplica as mesmas regras
-de nome, deixa de fora magnums, caixas e packs, prefere a MESMA colheita e,
-sem ela, a mais recente (aceite, com a colheita ao lado). Os três preços
-ficam em `ficha.precos` (`{garrafeira_nacional|granvine|vivino: {preco, url,
-colheita, nome, em}}`, volátil) e o `preco_medio` fica com o primeiro da
-ordem, com a origem da loja — é o que a ficha mostra.
+Nacional → Granvine → **Vinha.pt** → Vivino, por decisão do dono. `lerLoja`
+procura na loja, aplica as mesmas regras de nome, deixa de fora magnums,
+caixas e packs, prefere a MESMA colheita e, sem ela, a mais recente
+(aceite, com a colheita ao lado). Os preços ficam em `ficha.precos`
+(`{garrafeira_nacional|granvine|vinha|vivino: {preco, url, colheita, nome,
+em}}`, volátil) e o `preco_medio` fica com o primeiro da ordem, com a origem
+da loja (`loja-garrafeira-nacional`/`loja-granvine`/`loja-vinha`, força 3).
+GN e Granvine são Magento (`/catalogsearch/result/?q=`, confirmado na 1.ª
+corrida). A **Vinha.pt foi escrita sem a ver**: tenta os endereços de
+procura das plataformas comuns (PrestaShop, Shopify, WooCommerce, Magento) e
+o formulário da página inicial, e o `como` do `detalhe.lojas` diz qual
+resultou — fixa-se depois. Os produtos lêem-se pelos seletores das
+plataformas e, sem nenhum, pelos links da loja com uma palavra distintiva do
+nosso nome (`produtosDaPagina`).
+
+**O que a 1.ª corrida com lojas ensinou (25/09/2026):**
+- **A casta no nome é identidade** (`castasBatem`): o "Casa Ermelinda
+  Freitas Syrah Reserva" casou na Granvine com o "…Carménère Reserva" —
+  faltava uma palavra e sobrava outra, e cada regra deixava passar uma.
+  Cada casta que o nosso nome diz tem de estar no título (ao contrário não:
+  o "Casa de Saima Garrafeira" é o "…Garrafeira Baga" da loja). O preço
+  errado foi reposto à mão (origem `reposto`, força 0).
+- **O Vivino abre-se na colheita** (`comAno`, `?year=<ano>`): nota e
+  avaliações são voláteis (invariante 6). Sem ano, o Carm deu 8664
+  avaliações (o vinho todo). O link gravado continua sem ano.
+- **O preço do Vivino só em EUR dito na página, e entre metade e o dobro
+  do das lojas**: o link sueco do Casa de Saima deu 8,49 € para uma garrafa
+  de 60 €. Um preço do Vivino já gravado que falhe isto sai do `precos`.
+- `vivino_gravar` guardava o link NOVO em `url_antes` quando antes não
+  havia nenhum (o COALESCE); `url_antes: null` agora quer dizer "não havia".
+
+**A ficha que as páginas dizem** (`fichaDosPares`): castas, região,
+sub-região, país, teor, estágio, harmonização, notas de prova — dos pares
+"rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista
+de comidas do Vivino e da descrição do produto nas lojas. **Só entram em
+campos VAZIOS**: o que alguém (ou uma pesquisa) já escreveu não é tapado por
+uma página. Cada campo vem da primeira fonte que o tem (lojas pela ordem do
+preço, depois o Vivino). A cor nunca: é o admin que a diz.
+
+**Vinho novo pelo painel** (substitui o Excel que chegou a ser planeado):
+nome, produtor, ano e COR (obrigatória, como em todas as apps antes de
+procurar). É sempre simulação: `vinhosNovos` pergunta à `vivino_achar` (a
+MESMA `achar` da `criar`) se já existe — se sim, enriquece essa linha; se
+não, o plano vai sem id e com `novo`, e a linha só nasce ao gravar, pela
+`vivino_novo` → `criar` (que passou a aceitar a `service_role`; a cor entra
+como `catalogo-admin`, é o admin a dizê-la). Só no catálogo, nunca numa
+garrafeira: a Garrafeira já pergunta ao catálogo antes de gastar IA, por
+isso um vinho enriquecido aqui chega lá de graça quando alguém o juntar.
 
 **No PC corre-se pelo `vinhos.bat` → `painel.mjs`** (25/09/2026, a pedido
 do dono): `git pull`, e um painel local (`127.0.0.1:8787`, sem

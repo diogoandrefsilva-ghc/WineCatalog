@@ -275,6 +275,24 @@ $$;
 -- DO LADO DO BATCH (service_role — o GitHub Actions)
 -- =====================================================================
 
+-- Um vinho como o script o recebe. A ficha vai inteira: o script só
+-- preenche os campos VAZIOS dela (castas, região, harmonização…) e tem de
+-- saber quais são. Uma função só, para a fila e para o "Vinho novo".
+CREATE OR REPLACE FUNCTION winecatalog.vivino_linha(v winecatalog.vinhos)
+  RETURNS jsonb LANGUAGE sql STABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT jsonb_build_object(
+    'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
+    'tipo', v.ficha ->> 'tipo',
+    'vivino_url', v.ficha ->> 'vivino_url',
+    'vivino_nota', v.ficha -> 'vivino_nota',
+    'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
+    'preco_medio', v.ficha -> 'preco_medio',
+    'precos', v.ficha -> 'precos',
+    'ficha', v.ficha);
+$$;
+
 -- Hoje é dia? E, se for, que vinhos? Primeiro os da fila (pedidos à mão),
 -- depois os que nunca foram vistos, depois os vistos há mais tempo. Quem
 -- ainda tem uma verificação por decidir fica de fora — voltar a verificá-lo
@@ -344,15 +362,7 @@ BEGIN
   RETURN jsonb_build_object('correr', COALESCE(array_length(v_ids, 1), 0) > 0,
     'motivo', CASE WHEN p_manual THEN 'manual' WHEN v_dia THEN v_freq ELSE 'fila' END,
     'vinhos', COALESCE((
-      SELECT jsonb_agg(jsonb_build_object(
-        'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
-        'tipo', v.ficha ->> 'tipo',
-        'vivino_url', v.ficha ->> 'vivino_url',
-        'vivino_nota', v.ficha -> 'vivino_nota',
-        'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
-        'preco_medio', v.ficha -> 'preco_medio',
-        'precos', v.ficha -> 'precos')
-        ORDER BY array_position(v_ids, v.id))
+      SELECT jsonb_agg(winecatalog.vivino_linha(v) ORDER BY array_position(v_ids, v.id))
       FROM winecatalog.vinhos v WHERE v.id = ANY(v_ids)), '[]'));
 END;
 $$;
@@ -402,7 +412,11 @@ BEGIN
     (vinho_id, execucao, url_antes, estado, nome_pagina, proposta, candidatos, detalhe, revisao,
      revisto_em, revisto_por)
   VALUES
-    (v.id, p_execucao, COALESCE(p_res ->> 'url_antes', v.ficha ->> 'vivino_url'), p_res ->> 'estado',
+    -- `url_antes` a null quer dizer "não havia link": o script grava o
+    -- vinho ANTES de registar a verificação, e o COALESCE punha aqui o link
+    -- novo como se fosse o de antes.
+    (v.id, p_execucao, CASE WHEN p_res ? 'url_antes' THEN p_res ->> 'url_antes' ELSE v.ficha ->> 'vivino_url' END,
+     p_res ->> 'estado',
      p_res ->> 'nome_pagina', v_prop, p_res -> 'candidatos', p_res -> 'detalhe', v_rev,
      CASE WHEN v_rev = 'aceite' THEN now() END,
      CASE WHEN v_rev = 'aceite' THEN 'script' END)
@@ -469,6 +483,10 @@ BEGIN
 
   FOR k, v IN SELECT key, value FROM jsonb_each(COALESCE(p_campos, '{}')) LOOP
     CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$' OR winecatalog.vazio(v);
+    -- A mesma normalização da `juntar`/`criar`: "DOURO" não entra assim.
+    IF k = 'regiao' AND jsonb_typeof(v) = 'string' THEN
+      v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
+    END IF;
     v_f   := winecatalog.forca(p_origem, k);
     v_ant := COALESCE((v_origens -> k ->> 'f')::integer, 0);
     IF v_f >= v_ant THEN
@@ -493,6 +511,55 @@ BEGIN
          atualizado_em = CASE WHEN jsonb_array_length(v_entrou) > 0 THEN now() ELSE atualizado_em END
    WHERE id = v_id;
   RETURN jsonb_build_object('vinho', v_id, 'entrou', v_entrou, 'ficou', v_ficou);
+END;
+$$;
+
+
+-- ---------------------------------------------------------------------
+-- VINHO NOVO pelo painel do vinhos.bat (25/09/2026). O admin escreve nome,
+-- produtor, ano e cor; o script procura no Vivino e nas lojas e só DEPOIS de
+-- o admin rever a simulação é que a linha nasce.
+-- `vivino_achar`: já existe? (a MESMA `achar` do `juntar`/`criar`, às duas
+-- chaves). `vivino_novo`: cria pela `criar` — que recusa um duplicado —, ou
+-- devolve a que já existe se entretanto alguém a criou.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.vivino_achar(p_nome text, p_produtor text, p_ano integer)
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE v_id bigint; v winecatalog.vinhos;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  v_id := winecatalog.achar(btrim(COALESCE(p_nome, '')), COALESCE(p_produtor, ''), p_ano, true);
+  IF v_id IS NULL THEN RETURN NULL; END IF;
+  v_id := COALESCE((SELECT id_para FROM winecatalog.alias WHERE id_de = v_id), v_id);
+  SELECT * INTO v FROM winecatalog.vinhos WHERE id = v_id;
+  RETURN winecatalog.vivino_linha(v);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION winecatalog.vivino_novo(
+  p_nome text, p_produtor text, p_ano integer, p_tipo text, p_quem text
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE v_ja jsonb; v_r jsonb;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  v_ja := winecatalog.vivino_achar(p_nome, p_produtor, p_ano);
+  IF v_ja IS NOT NULL THEN
+    RETURN jsonb_build_object('id', v_ja -> 'id', 'existia', true);
+  END IF;
+  PERFORM set_config('winecatalog.quem', COALESCE(NULLIF(p_quem, ''), 'script'), true);
+  -- A cor foi o admin que a escolheu no painel: entra como uma correção à
+  -- mão (a `criar` dá-lhe a força de `catalogo-admin`).
+  v_r := winecatalog.criar(p_nome, COALESCE(p_produtor, ''), p_ano,
+           CASE WHEN COALESCE(p_tipo, '') <> '' THEN jsonb_build_object('tipo', p_tipo) ELSE '{}'::jsonb END);
+  RETURN jsonb_build_object('id', v_r -> 'id', 'existia', false);
 END;
 $$;
 
@@ -523,6 +590,12 @@ REVOKE ALL ON FUNCTION winecatalog.aplicar_fontes(bigint, jsonb, text, text, jso
 GRANT EXECUTE ON FUNCTION winecatalog.aplicar_fontes(bigint, jsonb, text, text, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_a_tratar(boolean, integer)    TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_gravar(bigint, jsonb, text, text) TO service_role;
+REVOKE ALL ON FUNCTION winecatalog.vivino_linha(winecatalog.vinhos)          FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.vivino_achar(text, text, integer)         FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_linha(winecatalog.vinhos)       TO service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_achar(text, text, integer)      TO service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) TO service_role;
 
 -- Confirmar (deve dar ZERO linhas):
 -- SELECT p.proname, r.rolname FROM pg_proc p
