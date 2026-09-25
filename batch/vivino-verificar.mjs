@@ -176,8 +176,12 @@ async function lerPagina(page) {
       if (m) pares.push([limpa(m[1]), limpa(m[2])]);
     }
     // No Vivino, a harmonização é uma lista de comidas com link.
+    // (o 1.º link da secção é "vinhos por harmonizações com comida" — navegação.)
     const comidas = [...new Set([...document.querySelectorAll('a[href*="food"], [class*="foodPairing"] a, [class*="FoodPairing"] a')]
-      .map(a => limpa(a.innerText)).filter(t => t && t.length <= 40))].slice(0, 8);
+      .map(a => limpa(a.innerText)).filter(t => t && t.length <= 40 && !/vinho|wine|harmoniza|pairing/i.test(t)))].slice(0, 8);
+    // A fotografia da garrafa: a do produto no JSON-LD, senão a do og:image.
+    const imgLd = (() => { const i = prod && prod.image; const x = Array.isArray(i) ? i[0] : i;
+      return typeof x === "string" ? x : (x && (x.url || x.contentUrl)) || null; })();
     const h1 = document.querySelector("h1")?.innerText || null;
     return {
       titulo: document.title || null,
@@ -196,7 +200,8 @@ async function lerPagina(page) {
         const ps = Array.isArray(x.priceSpecification) ? x.priceSpecification[0] : x.priceSpecification;
         return { preco: x.price ?? x.lowPrice ?? ps?.price ?? null, moeda: x.priceCurrency || ps?.priceCurrency || null };
       })(),
-      ldDescricao: typeof prod?.description === "string" ? limpa(prod.description).slice(0, 1500) : null,
+      ldDescricao: typeof prod?.description === "string" ? limpa(prod.description.replace(/<[^>]+>/g, " ")).slice(0, 1500) : null,
+      imagem: imgLd || meta("og:image") || null,
       pares: pares.filter(([a, b]) => a && b && a.length <= 60).slice(0, 80),
       comidas,
       // O preço À VISTA, para as lojas sem dado estruturado (só se usa nelas).
@@ -425,18 +430,65 @@ const ROTULOS = [
   ["castas", /^(castas?|casta\(s\)|uvas?|variedades?|grapes?|grape varieties|varietal)\b/],
   ["sub_regiao", /^sub-?regi/],
   ["regiao", /^(regi[aã]o|region|denomina[cç][aã]o|appellation|origem)\b/],
-  ["teor", /^(teor|grau|[aá]lcool|alcohol|alc\.|volume alco)/],
-  ["estagio_texto", /^(est[aá]gio|envelhecimento|aging|ageing|matura[cç][aã]o)/],
+  ["teor", /^(teor|grau|gradua|[aá]lcool|alcohol|alc\.|volume alco)/],
+  ["estagio_texto", /^(est[aá]gio|envelhecimento|amadurecimento|aging|ageing|matura[cç][aã]o)/],
   ["harmonizacao", /^(harmoniza|food pairing|acompanha|sugest[aã]o de harmoniza|gastronomia)/],
-  ["notas_prova", /^(notas? de prova|nota de prova|tasting notes?|prova)\b/],
+  // As notas de prova vêm muitas vezes aos bocados — Cor, Aroma, Sabor (a
+  // Vinha.pt), "Nota de prova - Aroma" (a Granvine) — e juntam-se.
+  ["prova_parte", /^(nota de prova\s*-\s*)?(cor|aroma|nariz|sabor|boca|paladar|final)\b/],
+  ["notas_prova", /^(notas? de prova|tasting notes?|prova)\b/],
   ["pais", /^(pa[ií]s|country)\b/],
-  ["produtor", /^(produtor|winery|producer|adega)\b/],
+  ["produtor", /^(produtor|winery|producer|adega|marca)\b/],
 ];
+// A região que o catálogo usa, de um texto de página. O Vivino escreve a
+// hierarquia em inglês, do largo para o estreito ("Portugal / Northern
+// Portugal / Duriense", "Portugal / Alentejano / Alentejo"), e na 1.ª corrida
+// de vinhos novos a região ficou "Northern Portugal" e "Central Portugal".
+// Aceitam-se só regiões portuguesas conhecidas, a primeira que aparecer.
+const REGIOES = [
+  ["Vinho Verde", /\b(vinho verde|minho)\b/], ["Trás-os-Montes", /\btras os montes|transmontano\b/],
+  ["Douro", /\b(douro|duriense|porto)\b/], ["Távora-Varosa", /\btavora\b/], ["Dão", /\bdao\b/],
+  ["Bairrada", /\bbairrada\b/], ["Beira Interior", /\bbeira interior\b/], ["Beiras", /\bbeiras?\b|terras do dao/],
+  ["Lisboa", /\blisboa|estremadura|colares|bucelas\b/], ["Tejo", /\btejo|ribatejo\b/],
+  ["Península de Setúbal", /\bsetubal|palmela\b/], ["Alentejo", /\balentej/], ["Algarve", /\balgarve\b/],
+  ["Madeira", /\bmadeira\b/], ["Açores", /\bacores|azores\b/],
+];
+function regiaoDe(t) {
+  // A parte mais específica primeiro: "… / Terras do Dão / Dão".
+  for (const parte of String(t).split(/\s*[\/,›>|·]\s*/).reverse()) {
+    const n = norm(parte);
+    const r = REGIOES.find(([, re]) => re.test(n));
+    if (r) return r[0];
+  }
+  return null;
+}
+// A fotografia: http(s), com ar de imagem, e não o logótipo da loja. No
+// Vivino, só as do `images.vivino.com` (as garrafas recortadas que a app já
+// mostrava quando a IA as trazia).
+function imagemDe(u, { vivino = false } = {}) {
+  if (!u) return null;
+  let url = String(u).trim();
+  if (url.startsWith("//")) url = "https:" + url;
+  if (!/^https?:\/\//i.test(url) || /logo|placeholder|no[-_]?image|default|banner|share/i.test(url)) return null;
+  if (vivino && !/images\.vivino\.com/i.test(url)) return null;
+  return url;
+}
 function fichaDosPares(info, { vivino = false } = {}) {
-  const f = {};
+  const f = {}, prova = [];
   for (const [r, val] of info?.pares || []) {
-    const rot = norm(r).replace(/ /g, " ");
+    // Na Granvine cada célula é já "Rótulo: valor" — e uma linha de tabela
+    // com duas células dava o PAR ("País: Portugal", "Região: Douro"): o
+    // país ficava "Região: Douro". Um rótulo com ":" ou um valor que é
+    // outro "Rótulo: valor" não é um par; as linhas soltas apanham-nos.
+    if (/:/.test(r) || /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ .\/-]{1,35}:\s/.test(String(val))) continue;
+    const rot = norm(r);
     const campo = (ROTULOS.find(([, re]) => re.test(r.toLowerCase()) || re.test(rot)) || [])[0];
+    if (campo === "prova_parte") {
+      const t = String(val).trim();
+      const nomeParte = r.replace(/^nota de prova\s*-\s*/i, "").trim();
+      if (t && t.length <= 600 && !prova.some(x => x.startsWith(nomeParte + ":"))) prova.push(`${nomeParte}: ${t}`);
+      continue;
+    }
     if (!campo || f[campo] != null) continue;
     const t = String(val).trim();
     if (!t || t.length > (campo === "notas_prova" ? 1500 : 400)) continue;
@@ -452,24 +504,29 @@ function fichaDosPares(info, { vivino = false } = {}) {
       const n = numero((t.match(/(\d{1,2}(?:[.,]\d{1,2})?)\s*%?/) || [])[1]);
       if (n != null && n >= 5 && n <= 25) f.teor = n;
     } else if (campo === "regiao") {
-      // "Portugal / Douro / Cima Corgo" (o Vivino), "Douro, Portugal".
-      const partes = t.split(/\s*[\/,›>|·]\s*/).filter(x => x && !/^portugal$/i.test(x));
-      if (partes[0]) f.regiao = partes[0];
-      if (partes[1] && f.sub_regiao == null) f.sub_regiao = partes[1];
+      const r = regiaoDe(t);
+      if (r) f.regiao = r;
     } else if (campo === "notas_prova") {
       if (t.length >= 30) f.notas_prova = t;
     } else {
       f[campo] = t;
     }
   }
+  if (f.notas_prova == null && prova.length) f.notas_prova = prova.join(" · ");
+  if (f.estagio_texto && f.estagio_meses == null) {
+    const m = f.estagio_texto.match(/(\d{1,2})\s*meses/i);
+    if (m && +m[1] >= 1 && +m[1] <= 120) f.estagio_meses = +m[1];
+  }
   if (vivino && f.harmonizacao == null && info?.comidas?.length) f.harmonizacao = info.comidas.join(", ");
+  const img = imagemDe(info?.imagem, { vivino });
+  if (img) f.imagem_url = img;
   // A descrição do produto numa LOJA costuma ser a nota de prova; a do
   // Vivino é genérica ("um tinto do Douro…") e fica de fora.
   if (!vivino && f.notas_prova == null && info?.ldDescricao && info.ldDescricao.length >= 80) f.notas_prova = info.ldDescricao;
   return f;
 }
 // Os campos que a página pode encher, pela ordem da ficha.
-const CAMPOS_PAGINA = ["castas", "regiao", "sub_regiao", "pais", "teor", "estagio_texto", "harmonizacao", "notas_prova"];
+const CAMPOS_PAGINA = ["imagem_url", "castas", "regiao", "sub_regiao", "pais", "teor", "estagio_meses", "estagio_texto", "harmonizacao", "notas_prova"];
 
 // O Vivino abre-se na COLHEITA do catálogo (`?year=`): a nota e as
 // avaliações são da colheita (campos voláteis — invariante 6). Na 1.ª
@@ -508,22 +565,18 @@ function precoDaPagina(info, url, { vivino = false } = {}) {
 //
 // Nada disto foi escrito a ver as lojas (a rede de onde foi escrito não lá
 // chega). A GN e a Granvine confirmaram-se na 1.ª corrida em casa (Magento,
-// `/catalogsearch/result/?q=`). A Vinha.pt não: tenta-se cada endereço de
-// procura das plataformas comuns e, se nenhum der produtos, o formulário de
-// procura da própria página inicial; o que resultou fica no `detalhe` de
-// cada verificação (`como`), para se fixar depois.
+// `/catalogsearch/result/?q=`); a Vinha.pt na 2.ª (WooCommerce, `?s=…&
+// post_type=product` — os outros endereços davam 404). Uma loja nova pode
+// levar vários endereços em `procuras` e uma `casa` para o formulário de
+// procura da página inicial; o que resultou fica no `detalhe` (`como`).
 const LOJAS = [
   { id: "garrafeira_nacional", nome: "Garrafeira Nacional", origem: "loja-garrafeira-nacional",
     procuras: [q => `https://www.garrafeiranacional.com/catalogsearch/result/?q=${encodeURIComponent(q)}`] },
   { id: "granvine", nome: "Granvine", origem: "loja-granvine",
     procuras: [q => `https://granvine.com/pt/catalogsearch/result/?q=${encodeURIComponent(q)}`] },
   { id: "vinha", nome: "Vinha.pt", origem: "loja-vinha", casa: "https://www.vinha.pt/",
-    procuras: [
-      q => `https://www.vinha.pt/pesquisa?controller=search&s=${encodeURIComponent(q)}`,
-      q => `https://www.vinha.pt/search?q=${encodeURIComponent(q)}`,
-      q => `https://www.vinha.pt/?s=${encodeURIComponent(q)}&post_type=product`,
-      q => `https://www.vinha.pt/catalogsearch/result/?q=${encodeURIComponent(q)}`,
-    ] },
+    // WooCommerce: confirmado na 1.ª corrida (as outras davam 404).
+    procuras: [q => `https://www.vinha.pt/?s=${encodeURIComponent(q)}&post_type=product`] },
 ];
 const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "vivino"];
 // Garrafas que não são "a" garrafa: outro tamanho, ou mais do que uma.
@@ -598,7 +651,10 @@ async function lerLoja(page, loja, v) {
       const a = await abrir(page, url);
       if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { ...det, http: a.status } };
       const r = await produtosDaPagina(page, chaves);
-      det.procuras.push({ q, url, http: a.status, itens: r.itens.length, como: r.como });
+      // Os primeiros nomes que a loja mostrou: é o que diz porque é que
+      // nenhum passou nas regras de nome (a Carvalhas teve 4 e nenhum).
+      det.procuras.push({ q, url, http: a.status, itens: r.itens.length, como: r.como,
+        nomes: r.itens.slice(0, 6).map(it => it.nome) });
       if (r.itens.length) { itens = r.itens; como = r.como; PROCURA_BOA[loja.id] = k; break; }
       if (ordem.length > 1) await pausa();
     }
@@ -986,7 +1042,10 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   // não lhe passa por cima. Cada campo vem da primeira fonte que o tem.
   for (const campo of CAMPOS_PAGINA) {
     if (!vazio(atual[campo])) continue;
-    const f = fichas.find(x => !vazio(x.ficha[campo]));
+    // A fotografia prefere o Vivino (a garrafa recortada, igual em todos);
+    // o resto vem pela ordem das lojas.
+    const ordem = campo === "imagem_url" ? [...fichas].sort((a, b) => /^vivino/.test(b.origem) - /^vivino/.test(a.origem)) : fichas;
+    const f = ordem.find(x => !vazio(x.ficha[campo]));
     if (!f) continue;
     junta(campo, null, f.ficha[campo], f.origem);
     if (f.fonte?.url && !(fontes[f.origem] || []).some(x => x.url === f.fonte.url))
@@ -1085,7 +1144,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

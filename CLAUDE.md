@@ -594,8 +594,31 @@ nosso nome (`produtosDaPagina`).
 - `vivino_gravar` guardava o link NOVO em `url_antes` quando antes não
   havia nenhum (o COALESCE); `url_antes: null` agora quer dizer "não havia".
 
-**A ficha que as páginas dizem** (`fichaDosPares`): castas, região,
-sub-região, país, teor, estágio, harmonização, notas de prova — dos pares
+**O que a 1.ª corrida de vinhos novos ensinou (25/09/2026)** — e os
+valores errados que deixou foram corrigidos à mão (no histórico):
+- **Na Granvine cada célula já é "Rótulo: valor"**, e uma linha de tabela
+  com duas células virava o par ("País: Portugal", "Região: Douro"): o país
+  ficou "Região: Douro" e a região "Graduação alcoolica: 14" (partida na
+  vírgula de "14,5%"). Um rótulo com ":" ou um valor que é outro "Rótulo:
+  valor" não é um par — as linhas soltas do texto é que os apanham.
+- **O Vivino escreve a região em inglês, do largo para o estreito**
+  ("Portugal / Northern Portugal / Duriense"): ficaram "Northern Portugal",
+  "Central Portugal", "Vinho de Portugal". A região agora só entra se for
+  uma região portuguesa conhecida (`regiaoDe`, a parte mais específica
+  primeiro, "Duriense" → Douro); a sub-região deixou de vir daí.
+- **O 1.º link da harmonização do Vivino é navegação** ("vinhos por
+  harmonizações com comida") e ia para o texto. As notas de prova aos
+  bocados (Cor/Aroma/Sabor na Vinha.pt, "Nota de prova - Aroma" na
+  Granvine) juntam-se; a descrição do produto perde o HTML.
+- **A fotografia** (`imagem_url`, só se vazio) vem do Vivino primeiro — a
+  garrafa recortada de `images.vivino.com`, a mesma que a IA trazia — e
+  senão da loja (JSON-LD `image` ou `og:image`, sem logótipos).
+  `estagio_meses` sai do "12 meses" do estágio.
+- Cada procura numa loja guarda os primeiros `nomes` que a loja mostrou —
+  é o que diz porque é que nenhum passou (a Quinta das Carvalhas teve 4).
+
+**A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
+região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista
 de comidas do Vivino e da descrição do produto nas lojas. **Só entram em
 campos VAZIOS**: o que alguém (ou uma pesquisa) já escreveu não é tapado por

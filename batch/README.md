@@ -3,7 +3,7 @@
 O script `vivino-verificar.mjs` confere os links do Vivino do catálogo, **sem
 IA**, lê a nota e as avaliações, e (no teu computador) o **preço na Garrafeira
 Nacional, na Granvine e na Vinha.pt** — e o que as páginas dizem do vinho
-(castas, região, teor, estágio, harmonização, notas de prova), só para os
+(fotografia, castas, região, teor, estágio, harmonização, notas de prova), só para os
 campos que o catálogo ainda tem **vazios**. **Escreve no catálogo** o que encontra com certeza;
 cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na ficha
 do vinho), com o valor de antes e um botão para o repor. Em **Alertas › Links
