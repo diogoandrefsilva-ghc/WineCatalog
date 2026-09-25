@@ -85,8 +85,14 @@ function norm(s) {
   return String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
+// "Aragonês"/"Aragonez" e "Shiraz"/"Syrah" são a mesma palavra: a GN
+// escreve "Invisível Aragonês" e o catálogo "Invisível Aragonez", e a
+// parecença dava 1 em 3. "75cl" é o tamanho da garrafa, não o nome (a
+// Vinha.pt escreve-o em todos os produtos).
+const SINONIMOS = { aragones: "aragonez", shiraz: "syrah" };
 function palavras(s) {
-  return norm(s).split(" ").filter(t => t.length >= 2 && !/^\d+$/.test(t));
+  return norm(s).split(" ").filter(t => t.length >= 2 && !/^\d+$/.test(t) && !/^\d+(cl|ml|l|lt)$/.test(t))
+    .map(t => SINONIMOS[t] || t);
 }
 function distintivas(s) { return palavras(s).filter(t => !GENERICAS.has(t)); }
 
@@ -97,9 +103,20 @@ function parecenca(vinho, texto) {
   const alvo = new Set(palavras(texto));
   // Um nome feito só de palavras genéricas ("Grande Reserva") compara-se
   // com o que tem — é pouco, e por isso o limiar faz o resto.
-  const nome = distintivas(vinho.nome).length ? distintivas(vinho.nome) : palavras(vinho.nome);
+  let nome = distintivas(vinho.nome).length ? distintivas(vinho.nome) : palavras(vinho.nome);
   const prod = distintivas(vinho.produtor);
   if (!nome.length) return 0;
+  // O produtor dentro do NOSSO nome ("Ervideira Invisível Aragonez") não é
+  // exigido quando o resto identifica o vinho sozinho — a loja escreve
+  // "Invisível Aragonês". O resto tem de ter uma palavra que não seja casta:
+  // "Casa Ermelinda Freitas Syrah" sem o produtor era o Syrah de qualquer um.
+  const semProd = nome.filter(t => !prod.includes(t));
+  const casta = t => CASTAS.some(c => c.split(" ").includes(t));
+  if (prod.length && semProd.length < nome.length && semProd.some(t => !casta(t))) {
+    const nSem = semProd.filter(t => alvo.has(t)).length / semProd.length;
+    const nTodo = nome.filter(t => alvo.has(t)).length / nome.length;
+    if (nSem > nTodo) nome = semProd;
+  }
   const n = nome.filter(t => alvo.has(t)).length / nome.length;
   const p = prod.length ? prod.filter(t => alvo.has(t)).length / prod.length : 0;
   return Math.min(1, n * 0.85 + p * 0.15);
@@ -225,7 +242,8 @@ async function lerPagina(page) {
 function numerosDe(info) {
   let nota = numero(info.ldNota), aval = inteiro(info.ldAval);
   if (nota == null || aval == null) {
-    const m = info.texto.match(/\b([1-5][.,]\d)\b[\s\S]{0,60}?([\d][\d.,\s]*)\s*(avalia|classifica|ratings?|notes|bewertung)/i);
+    // Milhares só em grupos de TRÊS: "[\d.,\s]*" colava números vizinhos.
+    const m = info.texto.match(/\b([1-5][.,]\d)\b[\s\S]{0,60}?(?<![\d.,])(\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+|\d+)\s*(avalia|classifica|ratings?|notes|bewertung)/i);
     if (m) {
       if (nota == null) nota = numero(m[1]);
       if (aval == null) aval = inteiro(m[2]);
@@ -340,6 +358,14 @@ function castasDe(t) {
   return [...CASTAS].sort((a, b) => b.length - a.length).filter(c => n.includes(` ${c} `))
     .map(c => ({ shiraz: "syrah", aragones: "aragonez", "tinta cao": "tinto cao", garnacha: "grenache" }[c] || c));
 }
+// Dois candidatos que só diferem na CASTA, e o nosso nome não diz qual:
+// "Casa Santar Vinha dos Amores" é o Alfrocheiro, o Touriga Nacional ou o
+// Encruzado? Não se escolhe à sorte — fica por decidir (`ambiguo`).
+function ambiguoPorCasta(v, nomes) {
+  if (castasDe(v.nome).length) return false;
+  const grupos = new Set(nomes.map(n => castasDe(n).sort().join("+")).filter(Boolean));
+  return grupos.size > 1;
+}
 function castasBatem(v, titulo) {
   const deles = new Set(castasDe(titulo));
   return castasDe(v.nome).every(c => deles.has(c));
@@ -388,7 +414,12 @@ async function verificar(page, v) {
     det.procura = { url: r.url, ...r.detalhe };
     if (r.bloqueado) return { estado: "bloqueado", nome_pagina: nomePagina, detalhe: det };
     candidatos = r.candidatos;
-    const melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
+    let melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
+    const parecidos = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
+    if (melhor && ambiguoPorCasta(v, parecidos.map(c => c.vivino_url.replace(/.*\/([^/]+)\/w\/.*/, "$1").replace(/-/g, " ")))) {
+      det.ambiguo = parecidos.map(c => c.vivino_url);
+      melhor = null;
+    }
     if (melhor) {
       await pausa();
       const b = await abrir(page, comAno(melhor.vivino_url, v.ano));
@@ -492,7 +523,8 @@ function fichaDosPares(info, { vivino = false } = {}) {
       continue;
     }
     if (!campo || f[campo] != null) continue;
-    const t = String(val).trim();
+    // "…muito rara) Ano da colheita: 2017": o rótulo seguinte colado ao fim.
+    const t = String(val).split(/\s(?=[A-ZÀ-Ý][A-Za-zÀ-ÿ ]{2,30}:\s)/)[0].trim();
     if (!t || t.length > (campo === "notas_prova" ? 1500 : 400)) continue;
     if (campo === "castas") {
       const l = t.split(/\s*(?:,|;|\/|\be\b|&|\+|·)\s*/i).map(x => x.replace(/\s*\(?\d+\s*%\)?/g, "").trim())
@@ -615,6 +647,8 @@ async function produtosDaPagina(page, chaves) {
     if (!vistos.size && chaves.length) {
       como = "links";
       for (const el of document.querySelectorAll("main a[href], #content a[href], body a[href]")) {
+        // "Termos e Condições", "App para iOS": o rodapé e o menu não são produtos.
+        if (el.closest("header, footer, nav, [class*=footer], [class*=menu], [id*=footer]")) continue;
         const t = n(el.innerText);
         if (t.length < 5 || t.length > 150) continue;
         if (chaves.some(k => t.includes(k))) add(el, el.closest(cartoes) || el.parentElement || el);
@@ -679,6 +713,12 @@ async function lerLoja(page, loja, v) {
       .sort((x, y) => (Number(y.colheita === v.ano) - Number(x.colheita === v.ano))
         || (y.parecenca - x.parecenca) || ((y.colheita || 0) - (x.colheita || 0)));
     if (!bons.length) continue;
+    // Os que só falham pela casta a mais também contam para a ambiguidade.
+    const quaseTodos = itens.filter(it => parecenca(v, it.nome) >= LIMIAR && corBate(v, it.nome) && mencaoBate(v, tituloLimpo(it.nome)));
+    if (ambiguoPorCasta(v, quaseTodos.map(it => it.nome))) {
+      det.ambiguo = quaseTodos.slice(0, 6).map(it => it.nome);
+      return { detalhe: det };
+    }
     const b = bons[0];
     await pausa();
     const pg = await abrir(page, b.href);
@@ -1033,7 +1073,11 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
     aplicado = true;
     junta("vivino_url", v.vivino_url, res.proposta.vivino_url, origemVivino);
     junta("vivino_nota", v.vivino_nota, res.proposta.vivino_nota, origemVivino);
-    junta("vivino_avaliacoes", v.vivino_avaliacoes, res.proposta.vivino_avaliacoes, origemVivino);
+    // Um salto de 5× (e de mais de mil) não é gente a avaliar de ontem para
+    // hoje: é outro número da página (o Casa Santar ficou com 43974).
+    const antes = Number(v.vivino_avaliacoes), depois = Number(res.proposta.vivino_avaliacoes);
+    if (!(antes > 0 && depois > antes * 5 && depois - antes > 1000))
+      junta("vivino_avaliacoes", v.vivino_avaliacoes, res.proposta.vivino_avaliacoes, origemVivino);
     fontes[origemVivino] = [{ url: res.proposta.vivino_url, titulo: "Vivino" }];
   }
   if (precosMudaram) junta("precos", v.precos, precos, "lojas-script");
@@ -1150,7 +1194,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

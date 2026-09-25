@@ -43,12 +43,18 @@ CREATE OR REPLACE FUNCTION winecatalog.quem_escreve(p_origem text)
   RETURNS text LANGUAGE sql STABLE
   SET search_path TO 'winecatalog', 'public'
 AS $$
+  -- Um email só aparece se for o do ADMIN do catálogo. Qualquer outra
+  -- sessão com email que escreva aqui é a de alguém a gravar na SUA
+  -- garrafeira (o trigger de lá chama a `juntar`) — e o nome, o produtor e
+  -- o ano não levam origem, por isso a 1.ª regra não os apanhava: a
+  -- 25/09/2026 ficou um email ao lado de um produtor (invariante 2).
   SELECT CASE
     WHEN COALESCE(p_origem, '') IN ('garrafeira', 'garrafeira-bruto') THEN 'uma garrafeira'
-    ELSE COALESCE(NULLIF(current_setting('winecatalog.quem', true), ''),
-                  auth.email(),
-                  CASE WHEN auth.role() = 'service_role' THEN 'Edge Function (service_role)' END,
-                  current_user)
+    WHEN NULLIF(current_setting('winecatalog.quem', true), '') IS NOT NULL THEN current_setting('winecatalog.quem', true)
+    WHEN auth.email() IS NOT NULL AND winecatalog.sou_admin() THEN auth.email()
+    WHEN auth.email() IS NOT NULL THEN 'uma garrafeira'
+    WHEN auth.role() = 'service_role' THEN 'Edge Function (service_role)'
+    ELSE current_user
   END;
 $$;
 
