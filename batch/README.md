@@ -83,6 +83,12 @@ catálogo** na app, com "Repor".
 
 Notas:
 
+- **`SEARCH_API_KEY` no `.env` (opcional)** — a chave do serper.dev (a mesma
+  do secret do GitHub). Com ela, quando a procura do Vivino não encontra o
+  vinho, o script faz **uma** pesquisa Google por esse vinho (gasta uma do
+  limite do Serper). Foi assim que a "Quinta das Carvalhas Touriga Nacional"
+  escapou: o Vivino só devolvia o "Quinta dos Carvalhais".
+
 - Uma simulação antiga ainda se pode gravar: o catálogo só aceita cada campo
   se a força da origem chegar (a mesma regra de sempre).
 - Se aparecer **bloqueado**, o Vivino também recusa a partir de tua casa.

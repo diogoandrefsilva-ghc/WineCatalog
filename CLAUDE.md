@@ -652,6 +652,22 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   "Ervideira"); um valor com o rótulo seguinte colado ("… Ano da colheita:
   2017") corta-se; os links de rodapé/menu não contam como produtos.
 
+**Depois da 3.ª corrida (o dono tratou à mão os três casos):**
+- **A procura do Vivino passou a mandar para o `/explore`**, mais pobre: a
+  "Quinta das Carvalhas Touriga Nacional" deu só o "Quinta dos Carvalhais"
+  (outro vinho, do Dão — recusado, e bem). Sem nada que passe, o motor
+  browser faz UMA pesquisa Google pelo Serper, se a `SEARCH_API_KEY`
+  estiver no `batch/.env` (opcional).
+- **A ambiguidade por casta resolve-se pela ficha**: se o nome não diz a
+  casta mas as `castas` do catálogo dizem (o dono pôs Touriga Nacional no
+  "Casa Santar Vinha dos Amores"), escolhe-se o candidato com essa casta, e
+  as palavras dela não contam como "a mais" (`desambiguarPorCasta`,
+  `aMaisSemAsNossasCastas`).
+- A "Procurar informação" (IA) do dono deixou links do Vivino nos formatos
+  que ele não usa (`/wines/1267597`, `/Wines/quinta-das-carvalhas-…`) —
+  exatamente o que o script existe para corrigir; os dois vinhos foram para
+  a fila.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista

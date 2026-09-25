@@ -366,6 +366,21 @@ function ambiguoPorCasta(v, nomes) {
   const grupos = new Set(nomes.map(n => castasDe(n).sort().join("+")).filter(Boolean));
   return grupos.size > 1;
 }
+// …a não ser que o catálogo já saiba a casta deste vinho (a ficha, não o
+// nome): o "Casa Santar Vinha dos Amores" tem Touriga Nacional nas castas,
+// e é esse o que se escolhe. Devolve os candidatos que ficam, ou null.
+function desambiguarPorCasta(v, cands, nomeDe) {
+  const minhas = new Set(castasDe((Array.isArray(v.ficha?.castas) ? v.ficha.castas : []).join(" , ")));
+  if (!minhas.size) return null;
+  const ok = cands.filter(c => { const cs = castasDe(nomeDe(c)); return cs.length && cs.every(x => minhas.has(x)); });
+  const grupos = new Set(ok.map(c => castasDe(nomeDe(c)).sort().join("+")));
+  return ok.length && grupos.size === 1 ? ok : null;
+}
+// As palavras a mais que são castas da nossa ficha não contam como a mais.
+function aMaisSemAsNossasCastas(v, t) {
+  const nossas = new Set(castasDe((Array.isArray(v.ficha?.castas) ? v.ficha.castas : []).join(" , ")).flatMap(c => c.split(" ")));
+  return aMais(v, t).filter(w => !nossas.has(w));
+}
 function castasBatem(v, titulo) {
   const deles = new Set(castasDe(titulo));
   return castasDe(v.nome).every(c => deles.has(c));
@@ -414,11 +429,35 @@ async function verificar(page, v) {
     det.procura = { url: r.url, ...r.detalhe };
     if (r.bloqueado) return { estado: "bloqueado", nome_pagina: nomePagina, detalhe: det };
     candidatos = r.candidatos;
+    // A procura do Vivino passou a mandar para o /explore, que é mais pobre:
+    // a "Quinta das Carvalhas Touriga Nacional" deu só o "Quinta dos
+    // Carvalhais" (25/09/2026). Sem nada que passe, UMA pesquisa Google pelo
+    // Serper, se a chave estiver no .env — gasta uma do limite, só aqui.
+    if (!candidatos.some(c => c.cor_bate && c.parecenca >= LIMIAR) && SERPER_KEY) {
+      try {
+        const q = [String(v.nome || "").replace(/\(.*?\)/g, " "), v.produtor && !norm(v.nome).includes(norm(v.produtor)) ? v.produtor : "", "site:vivino.com"]
+          .join(" ").replace(/\s+/g, " ").trim();
+        const j = await serper(q);
+        const vistos = new Set(candidatos.map(c => idDoVinho(c.vivino_url)));
+        const novos = (j.organic || []).filter(r => idDoVinho(r.link) && urlLimpo(r.link) && !vistos.has(idDoVinho(r.link)))
+          .map(r => { const nomeLink = (String(urlLimpo(r.link)).match(/\/([a-z0-9-]+)\/w\/\d+/i) || [])[1]?.replace(/-/g, " ") || "";
+            const t = `${tituloLimpo(r.title)} ${nomeLink}`;
+            vistos.add(idDoVinho(r.link));
+            return { vivino_url: urlLimpo(r.link), texto: tituloLimpo(r.title), parecenca: Math.round(parecenca(v, t) * 100) / 100,
+                     cor_bate: corBate(v, t), nome_bate: bateNome(v, nomeLink || r.title), a_mais: aMais(v, nomeLink || r.title), serper: true }; });
+        det.procura.serper = { q, resultados: novos.length };
+        candidatos = candidatos.concat(novos).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
+          || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
+      } catch (e) { det.procura.serper = { erro: String(e.message || e).slice(0, 200) }; }
+    }
     let melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
     const parecidos = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
-    if (melhor && ambiguoPorCasta(v, parecidos.map(c => c.vivino_url.replace(/.*\/([^/]+)\/w\/.*/, "$1").replace(/-/g, " ")))) {
-      det.ambiguo = parecidos.map(c => c.vivino_url);
-      melhor = null;
+    const nomeDoLink = c => c.vivino_url.replace(/.*\/([^/]+)\/w\/.*/, "$1").replace(/-/g, " ");
+    if (!melhor || ambiguoPorCasta(v, parecidos.map(nomeDoLink))) {
+      const r = desambiguarPorCasta(v, parecidos, nomeDoLink);
+      melhor = r ? r.find(c => aMaisSemAsNossasCastas(v, nomeDoLink(c)).length <= MAX_A_MAIS) || null : null;
+      if (melhor) det.desambiguado = "pela casta da ficha";
+      else if (ambiguoPorCasta(v, parecidos.map(nomeDoLink))) det.ambiguo = parecidos.map(c => c.vivino_url);
     }
     if (melhor) {
       await pausa();
@@ -429,7 +468,10 @@ async function verificar(page, v) {
         const nome = nomeDe(b.info);
         const txt = `${nome || ""} ${b.info.titulo || ""} ${b.final.replace(/[-/]/g, " ")}`;
         const p = parecenca(v, txt);
-        if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nome || b.info.titulo || "")) {
+        const nomeOk = det.desambiguado
+          ? mencaoBate(v, tituloLimpo(nome || "")) && aMaisSemAsNossasCastas(v, tituloLimpo(nome || b.info.titulo || "")).length <= MAX_A_MAIS
+          : bateNome(v, nome || b.info.titulo || "");
+        if (p >= LIMIAR && corBate(v, txt) && nomeOk) {
           det._preco = precoDaPagina(b.info, b.final, { vivino: true });
           det._ficha = fichaDosPares(b.info, { vivino: true });
           const { nota, aval } = numerosDe(b.info);
@@ -712,14 +754,19 @@ async function lerLoja(page, loja, v) {
       // do dono, com a colheita guardada ao lado do preço.
       .sort((x, y) => (Number(y.colheita === v.ano) - Number(x.colheita === v.ano))
         || (y.parecenca - x.parecenca) || ((y.colheita || 0) - (x.colheita || 0)));
-    if (!bons.length) continue;
     // Os que só falham pela casta a mais também contam para a ambiguidade.
     const quaseTodos = itens.filter(it => parecenca(v, it.nome) >= LIMIAR && corBate(v, it.nome) && mencaoBate(v, tituloLimpo(it.nome)));
-    if (ambiguoPorCasta(v, quaseTodos.map(it => it.nome))) {
-      det.ambiguo = quaseTodos.slice(0, 6).map(it => it.nome);
-      return { detalhe: det };
+    if (!bons.length && !desambiguarPorCasta(v, quaseTodos, it => it.nome)) continue;
+    let b = bons[0];
+    if (!b || ambiguoPorCasta(v, quaseTodos.map(it => it.nome))) {
+      const r = desambiguarPorCasta(v, quaseTodos, it => it.nome);
+      const escolhido = r && r.filter(it => aMaisSemAsNossasCastas(v, tituloLimpo(it.nome)).length <= MAX_A_MAIS
+        && !NAO_E_GARRAFA.test(`${it.nome} ${it.texto}`))
+        .sort((x, y) => (Number(colheitaDe(y.nome) === v.ano) - Number(colheitaDe(x.nome) === v.ano)) || ((colheitaDe(y.nome) || 0) - (colheitaDe(x.nome) || 0)))[0];
+      if (!escolhido) { det.ambiguo = quaseTodos.slice(0, 6).map(it => it.nome); return { detalhe: det }; }
+      det.desambiguado = "pela casta da ficha";
+      b = { ...escolhido, colheita: colheitaDe(escolhido.nome) };
     }
-    const b = bons[0];
     await pausa();
     const pg = await abrir(page, b.href);
     if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
@@ -1194,7 +1241,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
