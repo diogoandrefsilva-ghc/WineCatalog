@@ -20,7 +20,8 @@
 //   link atual confere-se pelo NÚMERO do vinho: se o melhor resultado é o
 //   mesmo número → `certo`; outro → `diferente` (o Google aponta para outro
 //   link — o atual não foi aberto, por isso não se diz "errado"); nada que
-//   bata → `nao_encontrado`. Gasta do limite do Serper: uma por vinho.
+//   bata → `nao_encontrado`. Gasta do limite do Serper: uma por vinho, e
+//   uma segunda (sem o produtor) só quando a primeira não chega.
 //
 // Variáveis: SUPABASE_SERVICE_ROLE_KEY (obrigatória), SEARCH_API_KEY (só
 // no motor serper — a chave do serper.dev), MOTOR, MANUAL=true (não
@@ -328,7 +329,9 @@ function numerosDoResultado(r) {
     if (m) nota = numero(m[1]);
   }
   if (aval == null) {
-    const m = t.match(/([\d][\d.,\s\u00a0\u202f]*)\s*(votes|ratings|avalia[çc][õo]es|classifica[çc][õo]es|notas)/i);
+    // Separadores de milhares só entre grupos de TRÊS dígitos: "2017 4249
+    // avaliações" (o ano e a contagem lado a lado) deu 20174249 na 1.ª corrida.
+    const m = t.match(/(?<![\d.,])(\d{1,3}(?:[.,\u00a0\u202f ]\d{3})+|\d+)\s*(votes|ratings|avalia[çc][õo]es|classifica[çc][õo]es|notas)/i);
     if (m) aval = inteiro(m[1]);
   }
   if (nota != null && (nota < 1 || nota > 5)) nota = null;
@@ -350,32 +353,77 @@ async function serper(q) {
   return JSON.parse(tx);
 }
 
+// O título que o Google mostra de uma página do Vivino, sem o que é do
+// site ("| Vivino Español", "- Vivino") nem a colheita à frente.
+function tituloLimpo(t) {
+  return String(t || "").replace(/\s*[|\-–]\s*Vivino.*$/i, "").replace(/^\s*(?:\d{4}|N\.?V\.?)\s+/i, "")
+    .replace(/\s*(?:\.\.\.|…)\s*$/, "").trim();
+}
+// Palavras DISTINTIVAS do título que não estão no nome nem no produtor do
+// catálogo. É a outra metade da `parecenca`: esta diz se o nome do
+// catálogo está no título; aquela diz se o título é de um vinho MAIOR.
+// Na 1.ª corrida, "Quinta do Crasto" casou com "Quinta do Crasto Etiqueta
+// Negra", "Quinta Nova" com "…Carmo TN Touriga Nacional" e "Post" com
+// "Post Reserve Cabernet Sauvignon" — todos a 100% de parecença.
+function aMais(v, titulo) {
+  const nossas = new Set([...palavras(v.nome), ...palavras(v.produtor)]);
+  return distintivas(titulo).filter(t => !nossas.has(t));
+}
+const MAX_A_MAIS = 1;
+
 async function verificarSerper(v) {
   const nome = String(v.nome || "").replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
   const prod = v.produtor && !norm(nome).includes(norm(v.produtor))
     ? String(v.produtor).replace(/\(.*?\)/g, " ").trim() : "";
-  const q = `"${nome}"${prod ? " " + prod : ""} site:vivino.com`;
-  const det = { motor: "serper", consulta: q };
-  const j = await serper(q);
-  const resultados = (j.organic || []).filter(r => idDoVinho(r.link) && urlLimpo(r.link));
-  det.resultados = resultados.length;
-
-  const candidatos = resultados.map(r => {
-    const txt = `${r.title || ""} ${r.link.replace(/[-/]/g, " ")}`;
-    const { nota, aval } = numerosDoResultado(r);
-    return {
-      vivino_url: urlLimpo(r.link), texto: r.title || r.link,
-      parecenca: Math.round(parecenca(v, txt) * 100) / 100, cor_bate: corBate(v, txt),
-      nota, avaliacoes: aval,
-    };
-  }).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.parecenca - x.parecenca));
+  // Sem aspas: o Vivino escreve os nomes à sua maneira ("Tapada do Chaves
+  // Reserva Tinto" para o nosso "…Tinto Reserva") e a frase exata não os
+  // achava. Com o produtor primeiro; sem ele, só se a primeira não bastar —
+  // o Vivino nem sempre o põe no título ("Rui Roboredo Madeira" deu zero).
+  const consultas = [`${nome}${prod ? " " + prod : ""} site:vivino.com`];
+  if (prod) consultas.push(`${nome} site:vivino.com`);
+  const det = { motor: "serper", consultas: [] };
 
   const atualId = idDoVinho(v.vivino_url);
   const atualValido = !!(v.vivino_url && pareceVivino(v.vivino_url) && !/\s/.test(v.vivino_url) && atualId);
-  const bons = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
+  let resultados = [], candidatos = [], bons = [];
+  for (const q of consultas) {
+    const j = await serper(q);
+    const rs = (j.organic || []).filter(r => idDoVinho(r.link) && urlLimpo(r.link));
+    det.consultas.push({ q, resultados: rs.length });
+    resultados = resultados.concat(rs);
+    // Um candidato por NÚMERO de vinho — o mesmo vinho vem várias vezes, uma
+    // por língua do Vivino — com os números juntos de todas as versões.
+    const porId = new Map();
+    for (const r of resultados) {
+      const id = idDoVinho(r.link);
+      const tit = tituloLimpo(r.title);
+      const txt = `${tit} ${r.link.replace(/[-/]/g, " ")}`;
+      const { nota, aval } = numerosDoResultado(r);
+      const c = porId.get(id) || { vivino_url: urlLimpo(r.link), texto: tit || r.link, notas: [], avals: [],
+        parecenca: 0, cor_bate: false, a_mais: null };
+      const p = Math.round(parecenca(v, txt) * 100) / 100;
+      if (p > c.parecenca || c.a_mais == null) {
+        c.parecenca = Math.max(c.parecenca, p); c.cor_bate = corBate(v, txt);
+        const am = aMais(v, tit);
+        if (c.a_mais == null || am.length < c.a_mais.length) { c.a_mais = am; c.texto = tit || c.texto; }
+      }
+      if (nota != null) c.notas.push(nota);
+      if (aval != null) c.avals.push(aval);
+      porId.set(id, c);
+    }
+    const moda = xs => xs.length ? [...xs].sort((a, b) => xs.filter(x => x === b).length - xs.filter(x => x === a).length)[0] : null;
+    candidatos = [...porId.values()].map(c => ({
+      vivino_url: c.vivino_url, texto: c.texto, parecenca: c.parecenca, cor_bate: c.cor_bate,
+      a_mais: c.a_mais || [], nota: moda(c.notas), avaliacoes: moda(c.avals),
+    })).sort((x, y) => (y.cor_bate - x.cor_bate) || (x.a_mais.length - y.a_mais.length) || (y.parecenca - x.parecenca));
+    bons = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR && c.a_mais.length <= MAX_A_MAIS);
+    if (bons.length) break;
+  }
+
   // Entre resultados igualmente bons, o do link atual primeiro: não se
   // propõe trocar um link por outro que o Google considera equivalente.
-  const melhor = bons.find(c => idDoVinho(c.vivino_url) === atualId && c.parecenca === bons[0]?.parecenca) || bons[0];
+  const melhor = bons.find(c => idDoVinho(c.vivino_url) === atualId
+    && c.a_mais.length === bons[0].a_mais.length && c.parecenca === bons[0].parecenca) || bons[0];
 
   let estado, proposta = null;
   if (melhor) {
@@ -393,9 +441,10 @@ async function verificarSerper(v) {
   } else {
     estado = "nao_encontrado";
   }
+  det.pesquisas = det.consultas.length;
   // O nome que o Google mostra para o link ATUAL, quando ele aparece.
   const doAtual = atualId && resultados.find(r => idDoVinho(r.link) === atualId);
-  return { estado, nome_pagina: doAtual ? doAtual.title : null, proposta,
+  return { estado, nome_pagina: doAtual ? tituloLimpo(doAtual.title) : null, proposta,
            candidatos: candidatos.slice(0, 5), detalhe: det };
 }
 
@@ -439,6 +488,7 @@ async function main() {
       }
       if (res.detalhe && !res.detalhe.motor) res.detalhe.motor = MOTOR;
       resumo[res.estado] = (resumo[res.estado] || 0) + 1;
+      if (res.detalhe?.pesquisas) resumo.pesquisas_serper = (resumo.pesquisas_serper || 0) + res.detalhe.pesquisas;
       const p = res.proposta;
       console.log(`#${v.id} ${v.nome}${v.ano ? " " + v.ano : ""} → ${res.estado}` +
         (res.nome_pagina ? ` · página: "${res.nome_pagina}"` : "") +
@@ -453,7 +503,7 @@ async function main() {
   console.log("Resumo:", JSON.stringify(resumo));
 }
 
-export { parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { tituloLimpo, aMais, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
