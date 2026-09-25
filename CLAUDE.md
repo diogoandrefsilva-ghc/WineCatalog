@@ -728,6 +728,19 @@ O link proposto é sempre o do VINHO (`https://www.vivino.com/<nome>/w/<nº>`),
 sem país, língua, `?year=` nem `?srsltid=` do Google — é o que não muda e
 abre em qualquer sítio.
 
+**E à entrada também (25/09/2026): um link fora deste formato já não
+entra.** O script corrigia os links partidos, mas as pesquisas continuavam
+a escrevê-los: a Edge Function só exigia o domínio `vivino.com`, e um
+modelo a responder de memória inventa `/Wines/<nome>` com a nota certa ao
+lado. Agora a `vivinoLink` (a mesma regra do `urlLimpo` do script) está nas
+quatro apps que pesquisam — `catalogo-info`, `vinho-info` (+ a pesquisa
+manual no `app.js` da Garrafeira), `verificar-vinhos`/`sugerir-vinho`,
+`prendas-vinho` — e o que não for `/<nome>/w/<nº>` fica vazio. E um link do
+Vivino colado em **"Sites de confiança"** deixou de ser cortado ao domínio
+(era, no browser e na função): passa inteiro, vai no prompt e **ganha** ao
+que o modelo escreveu, porque quem o colou abriu-o. **Mexer nesta regra é
+mexer nas quatro.**
+
 **Os termos do Vivino proíbem a recolha automática** — decisão consciente
 do dono das apps, para umas dezenas de páginas de cada vez do seu próprio
 catálogo, a partir do seu computador. Se o Vivino recusar (`bloqueado` na
