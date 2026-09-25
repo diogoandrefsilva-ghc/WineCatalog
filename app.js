@@ -2784,6 +2784,7 @@ function wcVivinoHTML(r,i){
     <div class="rep-acoes">
       ${pend&&p?`<button class="btn-prim auto" onclick="wcVivinoResolver(${r.id},'aceite')">${apagar?'Apagar o link':'Aplicar'}</button>`:''}
       ${pend?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'recusado')">Deixar como está</button>`:''}
+      ${a.vivino_url&&!(pend&&apagar)?`<button class="btn-n" onclick="wcVivinoRetirar(${r.id})">Retirar o link</button>`:''}
       ${!pend&&r.revisao!=='sem_acao'?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'pendente')">Reabrir</button>`:''}
       <a class="btn-n" href="${esc(pesq)}" target="_blank" rel="noopener">Procurar no Vivino ↗</a>
       ${r.vinhoId?`<button class="btn-n" onclick="wcVerFicha(${Number(r.vinhoId)})">Abrir a ficha</button>`:''}
@@ -2798,6 +2799,16 @@ async function wcVivinoResolver(id,decisao,campos){
     wcVivinoLista(_wcVivRev);
     wcContarAlertas();
   }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* Retirar o link que está no catálogo, haja proposta ou não — para o link
+   que não abre e a procura não achou nada melhor. Mesma porta de sempre (a
+   `editar`, com um `vivino_url` a null, que APAGA o campo), e a verificação
+   fica "aceite". Apagar não fixa nada: uma garrafeira que tenha o mesmo
+   link escrito pode voltar a trazê-lo — ver "Editar" no CLAUDE.md. */
+function wcVivinoRetirar(id){
+  if(!confirm('Retirar o link do Vivino deste vinho? A nota e as avaliações ficam como estão.'))return;
+  wcVivinoResolver(id,'aceite',{vivino_url:null});
 }
 
 /* Escolher um dos outros resultados: só o LINK entra — a nota e as
