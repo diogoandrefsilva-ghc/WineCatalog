@@ -551,6 +551,13 @@ ninguém olhar, era repetir o erro. Um link certo com os mesmos números
 fecha sozinho (`sem_acao`); `bloqueado`/`erro` não são respostas sobre o
 vinho e ele volta a entrar numa próxima noite.
 
+**Um vinho fundido depois de verificado perde a proposta.** Ela foi
+procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à
+espera o link de um "Post Reserve Cabernet Sauvignon" americano, e
+"Aplicar" punha-o no Post Scriptum. A `vivino_resolver` recusa-o, a lista e
+a contagem já não mostram essas propostas, e a fila salta os fundidos —
+verifica-se outra vez o vinho que ficou.
+
 O link proposto é sempre o do VINHO (`https://www.vivino.com/<nome>/w/<nº>`),
 sem país, língua, `?year=` nem `?srsltid=` do Google — é o que não muda e
 abre em qualquer sítio.

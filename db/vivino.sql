@@ -107,7 +107,8 @@ BEGIN
     'lote',       COALESCE((SELECT valor FROM winecatalog.config WHERE chave = 'vivino_lote')::int, 10),
     'ultima',     (SELECT valor FROM winecatalog.config WHERE chave = 'vivino_ultima'),
     'fila',       jsonb_array_length(v_fila),
-    'pendentes',  (SELECT count(*) FROM winecatalog.vivino_verificacoes WHERE revisao = 'pendente'),
+    'pendentes',  (SELECT count(*) FROM winecatalog.vivino_verificacoes x WHERE x.revisao = 'pendente'
+                    AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = x.vinho_id)),
     'verificados',(SELECT count(DISTINCT vinho_id) FROM winecatalog.vivino_verificacoes),
     'total',      (SELECT count(*) FROM winecatalog.vinhos v
                     WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id))
@@ -190,8 +191,13 @@ BEGIN
         'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes'))
       ORDER BY x.verificado_em DESC, x.id DESC)
     FROM (
-      SELECT * FROM winecatalog.vivino_verificacoes
-       WHERE p_revisao = 'todos' OR revisao = p_revisao
+      -- Uma proposta por decidir de um vinho que entretanto foi FUNDIDO
+      -- noutro já não é pergunta nenhuma: era para o nome antigo. Não
+      -- aparece nos pendentes (a `vivino_resolver` também a recusa).
+      SELECT * FROM winecatalog.vivino_verificacoes x0
+       WHERE p_revisao = 'todos'
+          OR (x0.revisao = p_revisao AND NOT (p_revisao = 'pendente' AND EXISTS (
+                SELECT 1 FROM winecatalog.alias a WHERE a.id_de = x0.vinho_id)))
        ORDER BY verificado_em DESC, id DESC
        LIMIT 200
     ) x
@@ -206,7 +212,8 @@ CREATE OR REPLACE FUNCTION winecatalog.vivino_contar()
 AS $$
 BEGIN
   IF NOT winecatalog.sou_admin() THEN RETURN 0; END IF;
-  RETURN (SELECT count(*) FROM winecatalog.vivino_verificacoes WHERE revisao = 'pendente');
+  RETURN (SELECT count(*) FROM winecatalog.vivino_verificacoes x WHERE x.revisao = 'pendente'
+            AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = x.vinho_id));
 END;
 $$;
 
@@ -242,9 +249,16 @@ BEGIN
     IF v_campos = '{}'::jsonb THEN
       RAISE EXCEPTION 'Não há nada para aplicar nesta verificação.';
     END IF;
-    -- Um vinho fundido entretanto responde pelo que ficou.
-    v_alvo := COALESCE((SELECT id_para FROM winecatalog.alias WHERE id_de = r.vinho_id), r.vinho_id);
-    v_res := winecatalog.editar(v_alvo, v_campos);
+    -- Um vinho fundido DEPOIS de verificado: a proposta foi procurada pelo
+    -- nome antigo, e aplicá-la ao vinho que ficou era pôr-lhe o link de
+    -- outro (25/09/2026: o "Post" fundido no "Post Scriptum" tinha à espera
+    -- o link de um "Post Reserve Cabernet Sauvignon" americano). Verifica-se
+    -- outra vez o que ficou.
+    SELECT id_para INTO v_alvo FROM winecatalog.alias WHERE id_de = r.vinho_id;
+    IF v_alvo IS NOT NULL THEN
+      RAISE EXCEPTION 'Este vinho foi fundido noutro (#%) depois de verificado — a proposta era para o nome antigo. Põe o que ficou na fila ("Verificar no Vivino").', v_alvo;
+    END IF;
+    v_res := winecatalog.editar(r.vinho_id, v_campos);
   END IF;
 
   UPDATE winecatalog.vivino_verificacoes
@@ -306,6 +320,7 @@ BEGIN
     SELECT value::bigint i, ordinality ord
       FROM jsonb_array_elements_text(v_fila) WITH ORDINALITY
      WHERE EXISTS (SELECT 1 FROM winecatalog.vinhos v WHERE v.id = value::bigint)
+       AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = value::bigint)
      LIMIT v_lote
   ) f;
 
