@@ -584,6 +584,15 @@ BEGIN
       'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
       'tipo', v.ficha ->> 'tipo', 'regiao', v.ficha ->> 'regiao',
       'imagem', v.ficha ? 'imagem_url', 'preco', v.ficha ? 'preco_medio', 'vivino', v.ficha ? 'vivino_url',
+      -- O formato do link: 'ok' (/<nome>/w/<nº>, limpo), 'por_limpar' (tem o
+      -- número do vinho mas também país/língua/?year= — funciona, e o script
+      -- arruma-o quando passa), 'invalido' (sem /w/<nº>: /wines/<nº> é UMA
+      -- colheita, /Wines/<nome> não existe — o que as pesquisas de memória
+      -- inventam). A mesma regra do `urlLimpo` do script.
+      'link', CASE WHEN COALESCE(v.ficha ->> 'vivino_url', '') = '' THEN NULL
+                   WHEN v.ficha ->> 'vivino_url' ~ '^https://www\.vivino\.com/[a-z0-9-]+/w/[0-9]+$' THEN 'ok'
+                   WHEN v.ficha ->> 'vivino_url' ~ '^https?://([a-z]+\.)?vivino\.com/.*/w/[0-9]+' THEN 'por_limpar'
+                   ELSE 'invalido' END,
       'campos', (SELECT count(*) FROM jsonb_object_keys(v.ficha)),
       'visto', (SELECT max(x.verificado_em) FROM winecatalog.vivino_verificacoes x WHERE x.vinho_id = v.id))
       ORDER BY lower(v.nome), v.ano NULLS FIRST)

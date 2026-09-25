@@ -208,7 +208,8 @@ a{color:var(--bd)}
   <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
     <label><input type="checkbox" id="cat-semimg" onchange="pintarCatalogo()"> sem fotografia</label>
     <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
-    <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label></div>
+    <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label>
+    <label title="Sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe"><input type="checkbox" id="cat-link" onchange="pintarCatalogo()"> link do Vivino suspeito</label></div>
   <div id="cat-lista" style="max-height:380px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
   <div class="linha" style="margin-top:10px"><span id="cat-n" class="nota">0 escolhidos</span>
     <button onclick="catMarcarVisiveis()">Marcar os que se veem</button><button onclick="catLimpar()">Limpar</button>
@@ -241,15 +242,15 @@ async function carregarCatalogo(){
 const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
 function catVisiveis(){
   const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
-  const si=document.getElementById("cat-semimg").checked,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked;
+  const si=document.getElementById("cat-semimg").checked,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
   return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
-    return q.every(p=>t.includes(p))&&(!si||!v.imagem)&&(!sp||!v.preco)&&(!nv||!v.visto);});
+    return q.every(p=>t.includes(p))&&(!si||!v.imagem)&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
 }
 function pintarCatalogo(){
   const l=catVisiveis();
   const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
     '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
-    '<td class="ic">'+(v.imagem?"📷":"<span title=\'sem fotografia\'>—</span>")+' '+(v.preco?"€":"")+' '+(v.vivino?"V":"")+'</td>'+
+    '<td class="ic">'+(v.imagem?"📷":"<span title=\'sem fotografia\'>—</span>")+' '+(v.preco?"€":"")+' '+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
     '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
   document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':''):'<p class="nota" style="padding:10px">Nenhum vinho com estes filtros.</p>';
   catContar();

@@ -715,7 +715,12 @@ visto; sem os fundidos) e os vinhos marcados (até 50) correm com
 `IDS=1,2,3` em vez da fila (`vivino_estes`, pela ordem marcada; um id
 fundido responde pelo vinho que ficou). As duas só aceitam a
 `service_role`: o painel lê a chave do `batch/.env` (`process.loadEnvFile`)
-e o pedido `/catalogo` também exige o código do painel.
+e o pedido `/catalogo` também exige o código do painel. Os filtros: sem fotografia, sem preço, nunca verificados e **link do
+Vivino suspeito** — o `link` da `vivino_catalogo` é `ok` (`/<nome>/w/<nº>`),
+`por_limpar` (tem o número, mas com país/língua/`?year=`: funciona, e o
+script arruma-o quando passa) ou `invalido` (sem `/w/<nº>` — `/wines/<nº>`
+é uma colheita, `/Wines/<nome>` não existe). Só o `invalido` conta como
+suspeito: eram 24 a 25/09/2026 (e 79 por limpar).
 
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à
