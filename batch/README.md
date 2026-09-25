@@ -70,6 +70,11 @@ No painel:
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
   só é criado quando a gravares. Se já existir, enriquece o que lá está.
+- **Só o Vivino**: desliga "também as lojas" no cartão Correr — vale para
+  Simular/Enriquecer, para os escolhidos no catálogo e para o vinho novo. O
+  script confirma o link (abre, é o vinho certo), lê a nota e as avaliações
+  e, se preciso, procura o link certo; não abre as lojas. Poupa uns 30–60 s
+  por vinho.
 - **Registo** — uma linha por vinho, enquanto corre.
 - **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
   depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e

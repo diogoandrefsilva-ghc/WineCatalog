@@ -196,7 +196,7 @@ a{color:var(--bd)}
 <div class="card"><h2>Correr</h2>
   <div class="linha">
     <label>Vinhos: <input type="number" id="limite" min="1" max="50" value="10"></label>
-    <label><input type="checkbox" id="lojas" checked> preços nas lojas (Garrafeira Nacional, Granvine, Vinha.pt)</label>
+    <label title="Desligado: só o Vivino — link, nota, avaliações (e o que a página do Vivino diz). Muito mais rápido."><input type="checkbox" id="lojas" checked> também as lojas (preço na Garrafeira Nacional, Granvine, Vinha.pt) — desliga para ver <b>só o Vivino</b>, mais rápido</label>
     <button class="prim" onclick="correr('simular')">Simular</button>
     <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>
   </div>
