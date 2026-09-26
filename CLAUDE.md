@@ -893,8 +893,11 @@ catálogo estiver **confirmado**: origem `vivino-pagina`/`catalogo-admin`, ou
 uma verificação aceite do motor browser com o mesmo número. Um link do
 catálogo que só veio de uma garrafeira não vale mais do que o de outra: esses
 ficam em **"Por confirmar"**, com um botão que os marca em "Escolher no
-catálogo" para se verificarem primeiro no Vivino. O link vai sempre na forma
-do vinho. "Corrigir os marcados" volta a correr as regras (o que mudou
+catálogo" para se verificarem primeiro no Vivino — ou, se o admin abrir os
+dois links e o do catálogo for o certo, o visto **"usar o do catálogo"**
+(desligado por omissão) leva-o no "Corrigir os marcados" (`p_forcar`): o
+visto é a confirmação que faltava, e o registo diz `confirmado_por: admin`.
+O link vai sempre na forma do vinho. "Corrigir os marcados" volta a correr as regras (o que mudou
 entretanto não se aplica) e cada troca fica no `garrafeira.sync_log`
 (origem `winecatalog-batch`). A 1.ª comparação deu 11 a corrigir — o
 `/wines/<nº>` e o `/Wines/<nome>` das pesquisas de memória, três Sobroso sem

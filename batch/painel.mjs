@@ -120,9 +120,14 @@ const servidor = http.createServer(async (req, res) => {
       // ele, só os ids escolhidos — e a função volta a conferir as regras.
       const b = await lerCorpo(req);
       const aplicar = b.aplicar === true;
-      const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500) : null;
-      if (aplicar && !ids?.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
-      return sbRpc(res, "garrafeira", "links_vivino_rever", { p_ids: aplicar ? ids : null, p_aplicar: aplicar });
+      const inteiros = a => Array.isArray(a) ? a.map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500) : [];
+      // `forcar`: os "Por confirmar" que o admin abriu e aceitou — o visto é
+      // a confirmação. Vão também em `p_ids`, que é o que a função percorre.
+      const forcar = inteiros(b.forcar);
+      const ids = [...new Set([...inteiros(b.ids), ...forcar])];
+      if (aplicar && !ids.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
+      return sbRpc(res, "garrafeira", "links_vivino_rever",
+        { p_ids: aplicar ? ids : null, p_aplicar: aplicar, p_forcar: aplicar && forcar.length ? forcar : null });
     }
     if (req.method === "POST" && url.pathname === "/fichas") {
       // A ficha das garrafeiras × catálogo: sem `aplicar` é só a lista; com
@@ -424,25 +429,29 @@ function garrPintar(){
   const L=GARR.linhas||[],P=GARR.por_confirmar||[],C=GARR.contagens||{};
   const ficam=Object.entries(GARR_CONTA).filter(([k])=>C[k]).map(([k,t])=>C[k]+" "+t).join(" · ");
   let h=L.length?'<table><tr><th></th><th>Vinho</th><th>Garrafeira</th><th>Agora → catálogo</th></tr>'+L.map(x=>
-    '<tr><td><input type="checkbox" class="garr-c" data-id="'+x.vinho_id+'" checked></td>'+
+    '<tr><td><input type="checkbox" class="garr-c" data-id="'+x.vinho_id+'" checked onchange="garrBotao()"></td>'+
     '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="tag">'+esc(GARR_CASO[x.caso]||x.caso)+'</span></td>'+
     '<td>'+esc(x.garrafeira)+'<br><span class="nota">'+esc(x.dono)+'</span></td>'+
     '<td><span class="antes">'+lnk(x.antes)+'</span><br>→ '+lnk(x.depois)+'<br><span class="nota">catálogo #'+x.catalogo_id+' · '+esc(x.catalogo_origem||"")+'</span></td></tr>').join("")+'</table>'
     :'<p class="nota">Nada a corrigir.</p>';
-  if(P.length)h+='<p class="nota" style="margin-top:12px"><b>Por confirmar</b> — o link da garrafeira parece errado, mas o do catálogo ainda não foi confirmado, por isso não se mexe. Verifica primeiro estes vinhos do catálogo no Vivino:</p><table>'+P.map(x=>
-    '<tr><td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>catálogo #'+x.catalogo_id+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
+  if(P.length)h+='<p class="nota" style="margin-top:12px"><b>Por confirmar</b> — o link da garrafeira parece errado, mas o do catálogo ainda não foi confirmado. Abre os dois: se o do catálogo for o certo, marca <b>usar o do catálogo</b> e vai com «Corrigir os marcados». Na dúvida, verifica primeiro o vinho do catálogo no Vivino:</p><table>'+P.map(x=>
+    '<tr><td>'+(x.catalogo_url?'<label class="nota" style="white-space:nowrap"><input type="checkbox" class="garr-f" data-id="'+x.vinho_id+'" onchange="garrBotao()"> usar o do catálogo</label>':'')+'</td>'+
+    '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+' · '+esc(x.dono)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>→ catálogo #'+x.catalogo_id+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
     '</table><button style="margin-top:6px" onclick="garrParaCatalogo()">Marcar estes em "Escolher no catálogo"</button>';
   if(ficam)h+='<p class="nota">Ficam como estão: '+esc(ficam)+'.</p>';
   document.getElementById("garr-lista").innerHTML=h;
   document.getElementById("garr-n").textContent=L.length+" a corrigir"+(P.length?" · "+P.length+" por confirmar":"");
-  document.getElementById("btn-garr").disabled=!L.length;
+  garrBotao();
 }
+function garrBotao(){document.getElementById("btn-garr").disabled=!document.querySelectorAll(".garr-c:checked,.garr-f:checked").length;}
 function garrParaCatalogo(){for(const x of GARR.por_confirmar||[]){if(ESC.size>=50)break;ESC.add(x.catalogo_id);}pintarCatalogo();alert("Marcados em «Escolher no catálogo». Corre-os com «Só o Vivino» e volta aqui.");}
 async function garrCorrigir(){
   const ids=[...document.querySelectorAll(".garr-c:checked")].map(c=>+c.dataset.id);
-  if(!ids.length)return alert("Marca pelo menos um vinho.");
-  if(!confirm("Trocar o link do Vivino de "+ids.length+" vinho(s) nas garrafeiras pelo do catálogo?"))return;
-  try{const r=await post("/garrafeiras",{ids,aplicar:true});alert(r.aplicados+" corrigido(s). Fica registado na Garrafeira (sync_log).");await garrProcurar();}
+  const forcar=[...document.querySelectorAll(".garr-f:checked")].map(c=>+c.dataset.id);
+  const n=ids.length+forcar.length;
+  if(!n)return alert("Marca pelo menos um vinho.");
+  if(!confirm("Trocar o link do Vivino de "+n+" vinho(s) nas garrafeiras pelo do catálogo?"+(forcar.length?" ("+forcar.length+" por confirmar, confirmados por ti.)":"")))return;
+  try{const r=await post("/garrafeiras",{ids,forcar,aplicar:true});alert(r.aplicados+" corrigido(s). Fica registado na Garrafeira (sync_log).");await garrProcurar();}
   catch(e){alert(e.message);}
 }
 let FICH=null;

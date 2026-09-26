@@ -82,9 +82,10 @@ No painel:
   escrito por ti); um link para uma colheita do mesmo vinho fica como está.
   Desmarca o que não queres e **Corrigir os marcados** grava (fica no
   registo da Garrafeira). Os **Por confirmar** — o da garrafeira parece
-  errado mas o do catálogo ainda não foi confirmado — passam num clique
-  para "Escolher no catálogo": corre-os com **Só o Vivino** e volta a
-  procurar.
+  errado mas o do catálogo ainda não foi confirmado — ou os confirmas tu
+  (abre os dois links; se o do catálogo for o certo, marca **usar o do
+  catálogo** e vai com **Corrigir os marcados**), ou passam num clique para
+  "Escolher no catálogo": corre-os com **Só o Vivino** e volta a procurar.
 - **Fichas das garrafeiras × catálogo** — o mesmo para o resto da ficha
   (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova,
   harmonização, resumo), **só da mesma colheita**: o que está vazio na
