@@ -323,7 +323,10 @@ function candidatosDe(v, links) {
 }
 const ordenarCandidatos = cs => cs.sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
   || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
-const algumServe = cs => cs.some(c => c.cor_bate && c.parecenca >= LIMIAR);
+// A caixa só chega quando algum candidato passa TODAS as regras do nome —
+// não só a parecença: na 4.ª corrida o "Duorum" parou no "Duorum Reserva
+// Vinhas Velhas" (a menção não bate) e o /explore nem chegou a ser visto.
+const algumServe = cs => cs.some(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
 
 // A caixa de procura do Vivino, como uma pessoa: escrever o nome e ler as
 // sugestões que aparecem por baixo. A 25/09/2026 o dono encontrou ali, à
@@ -353,8 +356,11 @@ async function procurarNaCaixa(page, v, q) {
   let links = [];
   for (let t = 0; t < 12 && !links.length; t++) {           // até ~6 s
     await page.waitForTimeout(500);
-    links = await linksDeVinhos(page, antes);
+    links = (await linksDeVinhos(page, antes)).filter(l => !/classifica|ratings|€|adicionar/i.test(l.texto));
   }
+  // Os cartões da página inicial (com nota, "classificações" e preço) vão
+  // aparecendo enquanto se escreve e não são sugestões da caixa.
+  links = links.filter(l => !/classifica|ratings|€|adicionar/i.test(l.texto));
   det.sugestoes = links.length;
   det.nomes = links.slice(0, 6).map(l => l.texto.slice(0, 80));
   // Sem sugestões, o Enter leva à página de resultados — que também se lê.
@@ -422,8 +428,12 @@ function castasDe(t) {
 // Dois candidatos que só diferem na CASTA, e o nosso nome não diz qual:
 // "Casa Santar Vinha dos Amores" é o Alfrocheiro, o Touriga Nacional ou o
 // Encruzado? Não se escolhe à sorte — fica por decidir (`ambiguo`).
-function ambiguoPorCasta(v, nomes) {
+function ambiguoPorCasta(v, nomes, escolhido) {
   if (castasDe(v.nome).length) return false;
+  // Um nome sem casta casa com o vinho sem casta: o "Monte da Peceguina" é
+  // o "…Monte da Peceguina Tinto", não o "Antão Vaz da Peceguina" nem o
+  // "Cabernet Sauvignon da Peceguina" (4.ª corrida).
+  if (escolhido != null && !castasDe(escolhido).length) return false;
   const grupos = new Set(nomes.map(n => castasDe(n).sort().join("+")).filter(Boolean));
   return grupos.size > 1;
 }
@@ -474,6 +484,7 @@ async function verificar(page, v) {
         // que o catálogo tem só porque a página o escondeu.
         if (nota == null) delete proposta.vivino_nota;
         if (aval == null) delete proposta.vivino_avaliacoes;
+        semOutraColheita(v, proposta, det, nomePagina, a.final);
       } else {
         estado = "errado";
       }
@@ -513,11 +524,11 @@ async function verificar(page, v) {
     let melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
     const parecidos = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
     const nomeDoLink = c => c.vivino_url.replace(/.*\/([^/]+)\/w\/.*/, "$1").replace(/-/g, " ");
-    if (!melhor || ambiguoPorCasta(v, parecidos.map(nomeDoLink))) {
+    if (!melhor || ambiguoPorCasta(v, parecidos.map(nomeDoLink), nomeDoLink(melhor))) {
       const r = desambiguarPorCasta(v, parecidos, nomeDoLink);
       melhor = r ? r.find(c => aMaisSemAsNossasCastas(v, nomeDoLink(c)).length <= MAX_A_MAIS) || null : null;
       if (melhor) det.desambiguado = "pela casta da ficha";
-      else if (ambiguoPorCasta(v, parecidos.map(nomeDoLink))) det.ambiguo = parecidos.map(c => c.vivino_url);
+      else if (ambiguoPorCasta(v, parecidos.map(nomeDoLink), melhor ? nomeDoLink(melhor) : null)) det.ambiguo = parecidos.map(c => c.vivino_url);
     }
     if (melhor) {
       await pausa();
@@ -539,6 +550,7 @@ async function verificar(page, v) {
                        vivino_nota: nota, vivino_avaliacoes: aval, nome, confianca: Math.round(p * 100) / 100 };
           if (nota == null) delete proposta.vivino_nota;
           if (aval == null) delete proposta.vivino_avaliacoes;
+          semOutraColheita(v, proposta, det, nome, b.final);
         }
       }
     }
@@ -668,6 +680,22 @@ const CAMPOS_PAGINA = ["imagem_url", "castas", "regiao", "sub_regiao", "pais", "
 // avaliações são da colheita (campos voláteis — invariante 6). Na 1.ª
 // corrida, o Carm sem `?year=` deu 8664 avaliações (o vinho todo) e a Leda
 // com `?year=2019` deu 1936 (só aquela). O link GRAVADO continua sem ano.
+// …mas o `?year=` é um PEDIDO: sem aquela colheita no Vivino, a página
+// mostra outra. Na 4.ª corrida o Grous Moon Harvested 2022 abriu o de 2023,
+// e as 175 avaliações e o preço de 2023 foram parar à linha de 2022. A
+// colheita que a página MOSTRA (no nome, senão no endereço final) tem de ser
+// a nossa; se for outra, fica o link e caem a nota, as avaliações e o preço.
+function colheitaMostrada(nome, final) {
+  return colheitaDe(nome) ?? (Number((String(final || "").match(/[?&]year=(\d{4})/) || [])[1]) || null);
+}
+function semOutraColheita(v, proposta, det, nome, final) {
+  const mostrada = colheitaMostrada(nome, final);
+  if (!v.ano || !mostrada || mostrada === Number(v.ano)) return;
+  delete proposta.vivino_nota;
+  delete proposta.vivino_avaliacoes;
+  det._preco = null;
+  det.outra_colheita = mostrada;
+}
 function comAno(url, ano) {
   const limpo = urlLimpo(url);
   if (!limpo) return url;
@@ -818,7 +846,7 @@ async function lerLoja(page, loja, v) {
     const quaseTodos = itens.filter(it => parecenca(v, it.nome) >= LIMIAR && corBate(v, it.nome) && mencaoBate(v, tituloLimpo(it.nome)));
     if (!bons.length && !desambiguarPorCasta(v, quaseTodos, it => it.nome)) continue;
     let b = bons[0];
-    if (!b || ambiguoPorCasta(v, quaseTodos.map(it => it.nome))) {
+    if (!b || ambiguoPorCasta(v, quaseTodos.map(it => it.nome), b ? b.nome : null)) {
       const r = desambiguarPorCasta(v, quaseTodos, it => it.nome);
       const escolhido = r && r.filter(it => aMaisSemAsNossasCastas(v, tituloLimpo(it.nome)).length <= MAX_A_MAIS
         && !NAO_E_GARRAFA.test(`${it.nome} ${it.texto}`))
@@ -898,7 +926,16 @@ function tituloLimpo(t) {
 // "Post Reserve Cabernet Sauvignon" — todos a 100% de parecença.
 function aMais(v, titulo) {
   const nossas = new Set([...palavras(v.nome), ...palavras(v.produtor)]);
-  return distintivas(titulo).filter(t => !nossas.has(t));
+  let extra = distintivas(titulo).filter(t => !nossas.has(t));
+  // Sem produtor no catálogo, o que vem ANTES do nosso nome no título é a
+  // adega (o Vivino escreve sempre "Adega Vinho"): o "Sidónio de Sousa
+  // Garrafeira" é o "Dulcinea Santos Ferreira Sidónio de Sousa Garrafeira".
+  // O que vem DEPOIS continua a contar ("Quinta do Crasto Etiqueta Negra").
+  if (!norm(v.produtor)) {
+    const ts = palavras(titulo), i = ts.findIndex(t => nossas.has(t));
+    if (i > 0) { const antes = new Set(ts.slice(0, i)); extra = extra.filter(t => !antes.has(t)); }
+  }
+  return extra;
 }
 const MAX_A_MAIS = 1;
 
@@ -1105,6 +1142,18 @@ async function main() {
           delete precos.vivino;
           precosMudaram = true;
         }
+      } else if (precos.vivino && res.vivino_preco && numero(v.preco_medio) > 0) {
+        // Sem loja nenhuma (só o Vivino, ou nenhuma o tinha), a mesma regra
+        // contra o preço médio que o catálogo já tem: na 4.ª corrida o
+        // "Grande Piano Grande Reserva" passou de 32,20 € a 9,75 €. Não se
+        // sabe qual dos dois está mal — fica o que estava, e diz-se.
+        const r = numero(precos.vivino.preco) / numero(v.preco_medio);
+        if (!(r >= 0.5 && r <= 2)) {
+          console.log(`   Vivino: ${precos.vivino.preco} € posto de lado — longe de mais do preço médio do catálogo (${v.preco_medio} €)`);
+          res.detalhe = { ...(res.detalhe || {}), preco_de_lado: { vivino: precos.vivino.preco, catalogo: numero(v.preco_medio) } };
+          if (v.precos?.vivino) precos.vivino = v.precos.vivino; else delete precos.vivino;
+          precosMudaram = JSON.stringify(precos) !== JSON.stringify(v.precos || {});
+        }
       }
       if (res.ficha && Object.keys(res.ficha).length)
         fichas.push({ origem: MOTOR === "serper" ? "vivino-serper" : "vivino-pagina", ficha: res.ficha,
@@ -1301,7 +1350,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

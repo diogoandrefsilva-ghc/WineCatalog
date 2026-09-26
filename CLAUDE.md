@@ -674,6 +674,34 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   exatamente o que o script existe para corrigir; os dois vinhos foram para
   a fila.
 
+**O que a 4.ª corrida ensinou (24 links suspeitos, só o Vivino, 26/09/2026):**
+- **A caixa de procura funciona**: achou à primeira a Quinta das Carvalhas,
+  o Casa Santar (pela casta da ficha), o Leo d'Honor, o Diálogo, o Ponte
+  Mouchão, o Reserva do Comendador. 18 dos 24 ficaram com o link certo.
+- **O `?year=` é um pedido, não uma garantia**: o Grous Moon Harvested 2022
+  abriu o de 2023, e as avaliações e o preço de 2023 foram para a linha de
+  2022. A colheita que a página MOSTRA (`colheitaMostrada`: o nome, senão o
+  `year=` do endereço final) tem de ser a nossa; se não for, fica o link e
+  caem a nota, as avaliações e o preço (`semOutraColheita`).
+- **Só o Vivino = nenhum preço de loja para conferir o dele**: o "Grande
+  Piano Grande Reserva" passou de 32,20 € a 9,75 €. Sem loja, o preço do
+  Vivino confere-se com o `preco_medio` que o catálogo já tem (metade a
+  dobro); fora disso fica o que estava e o registo diz `preco_de_lado`.
+  Os dois valores foram repostos à mão (origem `reposto`).
+- **Um nome sem casta casa com o vinho sem casta**: o "Monte da Peceguina"
+  ficou por decidir entre o "…Peceguina Tinto", o "Antão Vaz da Peceguina"
+  e o "Cabernet Sauvignon da Peceguina". A ambiguidade por casta só vale
+  quando o candidato escolhido TEM uma casta no nome.
+- **A caixa só chega quando um candidato passa TODAS as regras** do nome
+  (`algumServe`), não só a parecença: o "Duorum" parou no "Duorum Reserva
+  Vinhas Velhas" e o `/explore` nem foi visto. Os cartões da página
+  inicial ("… 4,1 (133 classificações) 10,44 € Adicionar") não contam como
+  sugestões.
+- **Sem produtor no catálogo, o que vem antes do nosso nome é a adega**
+  (`aMais`): o "Sidónio de Sousa Garrafeira" é o "Dulcinea Santos Ferreira
+  Sidónio de Sousa Garrafeira" do Vivino. O que vem depois continua a
+  contar.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista
