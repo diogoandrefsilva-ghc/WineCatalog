@@ -514,7 +514,10 @@ $$;
 -- Chamada em CADA sítio por onde uma região pode entrar no catálogo —
 -- `juntar` (garrafeira/pesquisa) e `editar`/`criar` (admin, em
 -- curadoria.sql) — para a mesma inconsistência não voltar a entrar por
--- outra porta.
+-- outra porta. E pelo trigger `vinhos_normalizar_regiao` da Garrafeira
+-- (`db/migracao-regiao.sql` de lá, migração 21): mexer aqui mexe na região
+-- das garrafeiras também. Devolve NULL para uma região vazia — o trigger de
+-- lá guarda `''`, que a coluna de lá é NOT NULL.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.normalizar_regiao(p_regiao text)
   RETURNS text LANGUAGE plpgsql IMMUTABLE

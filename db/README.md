@@ -32,7 +32,13 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 7. db/vivino.sql           (a verificação dos links do Vivino — depois do curadoria.sql)
 8. db/historico.sql        (o histórico campo a campo, com "Repor" — depois do curadoria.sql)
 9. db/amigos.sql           (as marcas dos amigos na WineSelection — precisa dos schemas `garrafeira` e `anniversarygifts`)
+10. db/nomes.sql           (os nomes sem CAPS LOCK — depois do catalogo.sql e do historico.sql)
 ```
+
+O `nomes.sql` é a regra de maiúsculas dos nomes e produtores
+(`nome_proprio`) e o trigger que a aplica a cada escrita na `vinhos`. A
+Garrafeira usa a MESMA função no trigger dela — `db/migracao-nomes.sql`
+(migração 20) do repo Garrafeira, que corre a seguir a este.
 
 O `vivino.sql` precisa de um passo fora do Supabase: o secret
 `SUPABASE_SERVICE_ROLE_KEY` no repo do GitHub (Settings › Secrets and
@@ -126,6 +132,11 @@ O que se espera:
   faixas (`<15`/`15-30`/`30-60`/`60+`) vivem ali e não no browser: são o
   que a `listar` conta E o que ela filtra, e duas listas destas divergem
   no dia em que alguém mexe numa só.
+- **`false` nos três** (`authenticated`, `anon`, `service_role`) em
+  `nome_proprio`, `nome_palavra` e `vinhos_nomes` — só os triggers as
+  chamam, como SECURITY DEFINER. A `nome_proprio` usa a `generico`, que não
+  é de quem tem login: dada a uma sessão, falhava lá dentro, e o trigger
+  (que engole o erro) deixava o nome em maiúsculas sem dizer nada.
 - **`true` nos dois** em `tokens`, `chave`, `chave_base`, `base_nome`,
   `chave_nome`, `achar`, `forca`, `volatil`, `num`. **Não é esquecimento**:
   são puras sobre os argumentos, a única que lê a tabela (`achar`) corre
