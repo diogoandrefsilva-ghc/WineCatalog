@@ -222,6 +222,10 @@ async function lerPagina(page) {
       canonico: document.querySelector('link[rel="canonical"]')?.href || null,
       h1,
       ldNome: prod?.name || null,
+      // A adega: a marca/fabricante do JSON-LD, senão o link da adega (Vivino).
+      ldProdutor: (() => { const b = prod && (prod.brand || prod.manufacturer); const x = Array.isArray(b) ? b[0] : b;
+        return typeof x === "string" ? x : (x && x.name) || null; })(),
+      adega: limpa(document.querySelector('a[href*="/wineries/"]')?.innerText) || null,
       ldNota: prod?.aggregateRating?.ratingValue ?? null,
       ldAval: prod?.aggregateRating?.ratingCount ?? prod?.aggregateRating?.reviewCount ?? null,
       ldTem: ld.length > 0,
@@ -264,6 +268,10 @@ function numerosDe(info) {
   }
   if (nota != null && (nota < 1 || nota > 5)) nota = null;
   return { nota, aval };
+}
+function produtorDaPagina(info) {
+  const t = String(info?.ldProdutor || info?.adega || "").replace(/\s+/g, " ").trim();
+  return t && t.length <= 80 ? t : null;
 }
 function nomeDe(info) {
   const limpa = s => s ? s.replace(/\s*[|–-]\s*Vivino.*$/i, "").trim() : null;
@@ -507,13 +515,19 @@ async function verificar(page, v) {
       const txt = `${nomePagina || ""} ${a.info.titulo || ""} ${a.final.replace(/[-/]/g, " ")}`;
       const p = parecenca(v, txt);
       det.atual.parecenca = Math.round(p * 100) / 100;
-      if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "") && !recusados.has(idDoVinho(a.final))) {
+      // Um link colado pelo admin no painel ("Vinho novo"): foi ele que o
+      // abriu, e o nome não o recusa — só a cor (e a colheita, lá em baixo).
+      const confiado = v.vivino_confiado && idDoVinho(a.final) === idDoVinho(v.vivino_url);
+      if (confiado) det.atual.colado = true;
+      if (confiado ? corBate(v, txt)
+          : p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "") && !recusados.has(idDoVinho(a.final))) {
         estado = "certo";
         det._preco = precoDaPagina(a.info, a.final, { vivino: true });
         det._ficha = fichaDosPares(a.info, { vivino: true });
         const { nota, aval } = numerosDe(a.info);
         proposta = { vivino_url: urlLimpo(a.info.canonico || a.info.ogUrl || a.final) || urlLimpo(a.final),
-                     vivino_nota: nota, vivino_avaliacoes: aval, nome: nomePagina, confianca: det.atual.parecenca };
+                     vivino_nota: nota, vivino_avaliacoes: aval, nome: nomePagina, confianca: det.atual.parecenca,
+                     produtor_pagina: produtorDaPagina(a.info) };
         // O que não se leu não entra na proposta: ficava a apagar um número
         // que o catálogo tem só porque a página o escondeu.
         if (nota == null) delete proposta.vivino_nota;
@@ -586,7 +600,8 @@ async function verificar(page, v) {
           det._ficha = fichaDosPares(b.info, { vivino: true });
           const { nota, aval } = numerosDe(b.info);
           proposta = { vivino_url: urlLimpo(b.info.canonico || b.final) || melhor.vivino_url,
-                       vivino_nota: nota, vivino_avaliacoes: aval, nome, confianca: Math.round(p * 100) / 100 };
+                       vivino_nota: nota, vivino_avaliacoes: aval, nome, confianca: Math.round(p * 100) / 100,
+                       produtor_pagina: produtorDaPagina(b.info) };
           if (nota == null) delete proposta.vivino_nota;
           if (aval == null) delete proposta.vivino_avaliacoes;
           semOutraColheita(v, proposta, det, nome, b.final);
@@ -850,6 +865,21 @@ async function lerLoja(page, loja, v) {
   const soDistintivas = distintivas(nome).slice(0, 4).join(" ");
   const chaves = distintivas(nome).filter(t => t.length >= 4);
   const det = { loja: loja.id, procuras: [] };
+  // O link colado no painel: vai-se direto à página do produto, sem procura
+  // e sem regras de nome (foi o admin que o escolheu).
+  const colado = v.links_lojas && v.links_lojas[loja.id];
+  if (colado) {
+    const pg = await abrir(page, colado);
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: { ...det, http: pg.status } };
+    const nomeP = (pg.info && (nomeDe(pg.info) || pg.info.h1)) || "";
+    const pp = precoDaPagina(pg.info, colado);
+    const ficha = fichaDosPares(pg.info);
+    det.direto = true;
+    det.escolhido = { nome: nomeP, href: colado, http: pg.status, colado: true, ficha_lida: Object.keys(ficha).length ? ficha : undefined };
+    if (!pg.info || pg.status >= 400) { det.erro = `o link colado não abriu (HTTP ${pg.status})`; return { detalhe: det }; }
+    if (!pp) { det.sem_preco = true; return { detalhe: det, ficha }; }
+    return { achado: { preco: pp.preco, url: colado.split(/[?#]/)[0], colheita: colheitaDe(nomeP), nome: nomeP }, detalhe: det, ficha };
+  }
   for (const q of [...new Set([nome, semCor, soDistintivas])].filter(x => x && x.length >= 3)) {
     let itens = [], como = null;
     const ordem = PROCURA_BOA[loja.id] != null ? [PROCURA_BOA[loja.id]] : loja.procuras.map((_, k) => k);
@@ -1170,7 +1200,7 @@ async function main() {
           // regras do nome (o "Quinta do Portal" de 9,50 € deu o "…Auru" de
           // 109,89 €). Fica de lado — o preço E a ficha dessa página.
           const pc = numero(v.preco_medio), pl = numero(r.achado?.preco);
-          if (pc > 0 && pl > 0 && (pl / pc > 3 || pl / pc < 1 / 3)) {
+          if (pc > 0 && pl > 0 && !r.detalhe?.direto && (pl / pc > 3 || pl / pc < 1 / 3)) {
             console.log(`   ${loja.nome}: ${pl.toFixed(2)} € posto de lado — longe de mais do preço médio do catálogo (${pc} €): "${r.achado.nome}"`);
             r.detalhe = { ...(r.detalhe || {}), preco_de_lado: { loja: pl, catalogo: pc } };
             res.detalhe.lojas[res.detalhe.lojas.length - 1] = r.detalhe;
@@ -1270,19 +1300,43 @@ async function main() {
 // O admin escreve nome, produtor, ano e cor. Se o catálogo já o tiver (a
 // mesma `achar` da `criar`), trata-se como um enriquecimento dessa linha —
 // nunca nasce uma segunda. Senão, vai sem id: só ganha um ao gravar.
+// Os links colados no painel ("Vinho novo"): cada um vai para o seu sítio
+// pelo domínio. O do Vivino tem de ser o de um VINHO (/w/<nº>); os outros
+// sítios ficam de fora (e o registo diz quais).
+function linksDoVinho(lista) {
+  const out = { lojas: {}, ignorados: [] };
+  for (const u of (Array.isArray(lista) ? lista : [])) {
+    let h = "";
+    try { h = new URL(u).hostname.replace(/^www\./, ""); } catch { out.ignorados.push(u); continue; }
+    if (/(^|\.)vivino\.com$/.test(h)) {
+      const l = urlLimpo(u);
+      if (l) out.vivino = l; else out.ignorados.push(u);
+    } else if (/(^|\.)garrafeiranacional\.com$/.test(h)) out.lojas.garrafeira_nacional = u;
+    else if (/(^|\.)granvine\.com$/.test(h)) out.lojas.granvine = u;
+    else if (/(^|\.)vinha\.pt$/.test(h)) out.lojas.vinha = u;
+    else out.ignorados.push(u);
+  }
+  return out;
+}
+
 async function vinhosNovos(lista) {
   const out = [];
   for (const x of (Array.isArray(lista) ? lista : [lista]).slice(0, 20)) {
     const novo = { nome: String(x.nome || "").trim(), produtor: String(x.produtor || "").trim(),
                    ano: parseInt(x.ano, 10) || null, tipo: x.tipo || null };
     if (!novo.nome) continue;
+    // Os links que o admin colou: foi ele que os abriu, e valem mais do que
+    // uma procura. O do Vivino substitui o que houver (se o vinho já existir).
+    const lk = linksDoVinho(x.links);
+    if (lk.ignorados.length) console.log(`"${novo.nome}": links postos de lado (não são do Vivino /w/<nº>, GN, Granvine nem Vinha.pt): ${lk.ignorados.join(" ")}`);
+    const extra = { links_lojas: lk.lojas, ...(lk.vivino ? { vivino_url: lk.vivino, vivino_confiado: true } : {}) };
     const ja = await rpc("vivino_achar", { p_nome: novo.nome, p_produtor: novo.produtor, p_ano: novo.ano });
     if (ja) {
       console.log(`"${novo.nome}" já existe no catálogo (#${ja.id}) — enriqueço essa linha.`);
-      out.push({ ...ja, tipo: ja.tipo || novo.tipo, novo });
+      out.push({ ...ja, tipo: ja.tipo || novo.tipo, novo, ...extra });
     } else {
       out.push({ id: null, nome: novo.nome, produtor: novo.produtor, ano: novo.ano, tipo: novo.tipo,
-                 vivino_url: null, precos: null, ficha: {}, novo });
+                 vivino_url: null, precos: null, ficha: {}, novo, ...extra });
     }
   }
   return out;
@@ -1303,6 +1357,11 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   const atual = v.ficha || {};
   // A cor que o admin escolheu no painel, num vinho que já existia sem ela.
   if (v.novo && v.id && v.novo.tipo && vazio(atual.tipo)) junta("tipo", null, v.novo.tipo, "catalogo-admin");
+  // Vinho NOVO sem produtor: propõe-se o que a página do Vivino diz (a adega).
+  // Só num vinho que ainda não existe — num que existe é identidade, e isso
+  // é o Editar da app. Entra na criação (vivino_novo), não pela aplicar_fontes.
+  if (v.novo && !v.id && !v.novo.produtor && res.proposta?.produtor_pagina)
+    alteracoes.push({ campo: "produtor", antes: null, depois: res.proposta.produtor_pagina, origem: "vivino-pagina", aplicar: true, identidade: true });
   let aplicado = false;
   if (res.proposta && res.proposta.vivino_url) {
     aplicado = true;
@@ -1367,8 +1426,10 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
 async function aplicarPlano(pl, quem = QUEM) {
   // Um vinho NOVO nasce aqui, e só aqui: depois de o admin rever a
   // simulação. Se entretanto alguém o criou, usa-se o que já existe.
+  const recusouLink0 = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false);
+  const prodPagina = (pl.alteracoes || []).find(a => a.campo === "produtor" && a.identidade && a.aplicar !== false && !recusouLink0);
   if (!pl.id && pl.novo) {
-    const r = await rpc("vivino_novo", { p_nome: pl.novo.nome, p_produtor: pl.novo.produtor || "",
+    const r = await rpc("vivino_novo", { p_nome: pl.novo.nome, p_produtor: pl.novo.produtor || prodPagina?.depois || "",
       p_ano: pl.novo.ano ?? null, p_tipo: pl.novo.tipo || null, p_quem: quem });
     pl.id = Number(r.id);
     console.log(`   ${r.existia ? "já existia — é o" : "criado:"} #${pl.id}`);
@@ -1380,7 +1441,7 @@ async function aplicarPlano(pl, quem = QUEM) {
   const doVivino = a => /^vivino-/.test(a.origem);
   const porOrigem = {};
   for (const a of pl.alteracoes || []) {
-    if (a.aplicar === false) continue;
+    if (a.aplicar === false || a.identidade) continue;
     if (recusouLink && doVivino(a)) continue;
     let depois = a.depois;
     if (recusouLink && a.campo === "precos" && depois && depois.vivino) {
@@ -1446,7 +1507,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

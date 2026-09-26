@@ -602,6 +602,11 @@ BEGIN
       -- A imagem em si (o painel mostra-a em miniatura, para se escolher a
       -- olho quais trocar) e de onde veio: do Vivino, de uma loja, a nossa
       -- fotografia (o bucket winecatalog-rotulos) ou outro site.
+      -- Os preços: o de cada sítio (`precos`, com a colheita e a data) e o
+      -- preço médio que ficou, com a origem — o painel mostra-os lado a lado.
+      'preco_medio', v.ficha -> 'preco_medio',
+      'origem_preco', v.origens -> 'preco_medio' ->> 'o',
+      'precos', v.ficha -> 'precos',
       'imagem_url', v.ficha ->> 'imagem_url',
       'imagem_de', CASE WHEN COALESCE(v.ficha ->> 'imagem_url', '') = '' THEN NULL
                         WHEN v.ficha ->> 'imagem_url' ~* 'images\.vivino\.com' OR v.origens -> 'imagem_url' ->> 'o' ~ '^vivino-' THEN 'vivino'
