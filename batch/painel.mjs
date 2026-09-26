@@ -27,23 +27,26 @@ const TOKEN = randomBytes(16).toString("hex");
 
 let corrida = null;          // { modo, inicio, linhas: [], fim, codigo }
 
+// O que se procura: tudo · só o Vivino · só os preços das lojas (ver MODO
+// no vivino-verificar.mjs). Qualquer outra coisa vale "completo".
+function modoPesquisa(x) { return ["completo", "vivino", "precos"].includes(x) ? x : "completo"; }
 function correr(modo, opcoes) {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
-  delete env.APLICAR; delete env.IDS; delete env.NOVO;
+  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO;
   if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
   else if (modo === "novo") {
     // Vinho novo: sempre SIMULAÇÃO — só nasce no catálogo ao gravá-la.
     env.NOVO = JSON.stringify(opcoes.vinhos);
     env.ENSAIO = "true";
-    env.LOJAS = opcoes.lojas === false ? "false" : "true";
+    env.MODO = modoPesquisa(opcoes.pesquisa);
   } else {
     env.ENSAIO = modo === "simular" ? "true" : "false";
     env.LIMITE = String(Math.max(1, Math.min(50, Number(opcoes.limite) || 10)));
     // Escolhidos na lista do catálogo: só esses, em vez da fila.
     const ids = (Array.isArray(opcoes.ids) ? opcoes.ids : []).map(x => parseInt(x, 10)).filter(x => x > 0).slice(0, 50);
     if (ids.length) env.IDS = ids.join(",");
-    env.LOJAS = opcoes.lojas === false ? "false" : "true";
+    env.MODO = modoPesquisa(opcoes.pesquisa);
   }
   corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null };
   const c = corrida;
@@ -123,7 +126,7 @@ const servidor = http.createServer(async (req, res) => {
       })).filter(x => x.nome);
       if (!vinhos.length) return json(res, 400, { erro: "Escreve pelo menos um nome." });
       if (vinhos.some(x => !x.tipo)) return json(res, 400, { erro: "Escolhe a cor de cada vinho — é ela que separa o tinto do branco com o mesmo nome." });
-      correr("novo", { vinhos, lojas: b.lojas });
+      correr("novo", { vinhos, pesquisa: b.pesquisa });
       return json(res, 200, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/gravar") {
@@ -196,7 +199,11 @@ a{color:var(--bd)}
 <div class="card"><h2>Correr</h2>
   <div class="linha">
     <label>Vinhos: <input type="number" id="limite" min="1" max="50" value="10"></label>
-    <label title="Desligado: só o Vivino — link, nota, avaliações (e o que a página do Vivino diz). Muito mais rápido."><input type="checkbox" id="lojas" checked> também as lojas (preço na Garrafeira Nacional, Granvine, Vinha.pt) — desliga para ver <b>só o Vivino</b>, mais rápido</label>
+    <label>Procurar: <select id="pesquisa">
+      <option value="completo">Tudo — Vivino e lojas (a ficha toda)</option>
+      <option value="vivino">Só o Vivino — link, nota, avaliações, imagem</option>
+      <option value="precos">Só preços — Garrafeira Nacional → Granvine → Vinha.pt</option>
+    </select></label>
     <button class="prim" onclick="correr('simular')">Simular</button>
     <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>
   </div>
@@ -262,11 +269,11 @@ function catContar(){document.getElementById("cat-n").textContent=ESC.size+" esc
 async function correrEscolhidos(modo){
   if(!ESC.size)return alert("Marca pelo menos um vinho.");
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,lojas:document.getElementById("lojas").checked});comecar();}catch(e){alert(e.message);}
+  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,pesquisa:document.getElementById("pesquisa").value});comecar();}catch(e){alert(e.message);}
 }
 async function correr(modo){
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,limite:+document.getElementById("limite").value,lojas:document.getElementById("lojas").checked});comecar();}
+  try{await post("/correr",{modo,limite:+document.getElementById("limite").value,pesquisa:document.getElementById("pesquisa").value});comecar();}
   catch(e){alert(e.message);}
 }
 function comecar(){visto=0;document.getElementById("log").textContent="";clearInterval(timer);timer=setInterval(seguir,1000);seguir();}
@@ -336,7 +343,7 @@ async function procurarNovos(){
   if(!vinhos.length)return alert("Escreve pelo menos um nome.");
   if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
   if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
-  try{await post("/novo",{vinhos,lojas:document.getElementById("lojas").checked});comecar();}catch(e){alert(e.message);}
+  try{await post("/novo",{vinhos,pesquisa:document.getElementById("pesquisa").value});comecar();}catch(e){alert(e.message);}
 }
 novaLinha();
 carregarCatalogo();

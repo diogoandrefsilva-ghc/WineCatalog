@@ -45,8 +45,20 @@ const EXECUCAO = process.env.EXECUCAO || null;
 const MOTOR = (process.env.MOTOR || "browser").toLowerCase();
 const SERPER_KEY = process.env.SEARCH_API_KEY || "";
 const SERPER_URL = process.env.SEARCH_API_URL || "https://google.serper.dev/search";
-// As lojas só no motor browser (no PC); LOJAS=false para as saltar.
-const LOJAS_LIGADAS = process.env.LOJAS !== "false";
+// O que se procura (MODO), escolhido no painel (26/09/2026, pelo dono):
+//  · "completo" — Vivino e lojas, a ficha toda;
+//  · "vivino"   — só o Vivino: o link, a nota, as avaliações e a imagem
+//                 (vazia, ou que também veio do Vivino). O preço médio só
+//                 muda se NÃO tiver vindo de uma loja: sem as lojas nesta
+//                 corrida, não há nada que diga que o delas está errado;
+//  · "precos"   — só as lojas (GN → Granvine → Vinha.pt), pela ordem, a
+//                 parar na primeira que tenha o vinho; o preço médio fica
+//                 com esse. Não abre o Vivino nem regista verificação.
+// LOJAS=false (o nome antigo) é o mesmo que MODO=vivino.
+const MODO = ["completo", "vivino", "precos"].includes(process.env.MODO) ? process.env.MODO
+  : process.env.LOJAS === "false" ? "vivino" : "completo";
+// As lojas só no motor browser (no PC).
+const LOJAS_LIGADAS = MODO !== "vivino";
 const QUEM = MOTOR === "serper" ? "script Serper (GitHub Actions)" : "script no PC (Vivino e lojas)";
 
 // Entre páginas: devagar de propósito. São poucas dezenas por noite.
@@ -1081,7 +1093,10 @@ async function main() {
     for (const [i, v] of plano.vinhos.entries()) {
       if (i > 0) await (MOTOR === "serper" ? new Promise(r => setTimeout(r, 700)) : pausa());
       let res;
-      try { res = MOTOR === "serper" ? await verificarSerper(v) : await verificar(page, v); }
+      try {
+        res = MODO === "precos" && MOTOR === "browser" ? { estado: "precos", detalhe: {} }
+          : MOTOR === "serper" ? await verificarSerper(v) : await verificar(page, v);
+      }
       catch (e) {
         res = { estado: "erro", detalhe: { motor: MOTOR, erro: String(e.message || e).slice(0, 300) } };
         if (e.fatal) {
@@ -1102,6 +1117,7 @@ async function main() {
       const hoje = new Date().toISOString().slice(0, 10);
       const precos = { ...(v.precos && typeof v.precos === "object" ? v.precos : {}) };
       let precosMudaram = false;
+      let achadaAgora = null;
       // O que cada página diz da ficha, pela ordem da prioridade das fontes.
       const fichas = [];
       if (MOTOR === "browser" && LOJAS_LIGADAS && res.estado !== "bloqueado") {
@@ -1114,13 +1130,16 @@ async function main() {
           try { r = await lerLoja(page, loja, v); }
           catch (e) { r = { detalhe: { loja: loja.id, erro: String(e.message || e).slice(0, 200) } }; }
           res.detalhe.lojas.push(r.detalhe);
-          if (r.ficha && Object.keys(r.ficha).length)
+          if (MODO !== "precos" && r.ficha && Object.keys(r.ficha).length)
             fichas.push({ origem: loja.origem, ficha: r.ficha, fonte: { url: r.detalhe?.escolhido?.href, titulo: loja.nome } });
           if (r.bloqueado) { lojasBloqueadas.add(loja.id); console.log(`   ${loja.nome}: recusou as páginas — salto-a no resto da corrida.`); continue; }
           if (r.achado) {
             precos[loja.id] = { ...r.achado, em: hoje };
             precosMudaram = true;
+            achadaAgora = achadaAgora || loja.id;
             console.log(`   ${loja.nome}: ${r.achado.preco.toFixed(2)} €${r.achado.colheita ? ` (colheita ${r.achado.colheita})` : ""} — "${r.achado.nome}"`);
+            // Só preços: a primeira loja que o tem decide, as outras nem se abrem.
+            if (MODO === "precos") break;
           } else {
             console.log(`   ${loja.nome}: ${r.detalhe?.sem_preco ? "encontrou o vinho mas não leu o preço" : "não encontrou"}`);
           }
@@ -1158,7 +1177,15 @@ async function main() {
       if (res.ficha && Object.keys(res.ficha).length)
         fichas.push({ origem: MOTOR === "serper" ? "vivino-serper" : "vivino-pagina", ficha: res.ficha,
                       fonte: { url: res.proposta?.vivino_url || v.vivino_url, titulo: "Vivino" } });
-      const escolha = PRIORIDADE_PRECO.find(k => precos[k] && numero(precos[k].preco) != null);
+      // Que preço passa a preço médio. No "completo", o primeiro da ordem
+      // (lojas, depois o Vivino). No "precos", a loja que o teve AGORA — um
+      // preço antigo de uma loja que hoje não o encontrou não conta. No
+      // "vivino", o do Vivino, e só se o que lá está não veio de uma loja.
+      const escolha = MODO === "precos" ? achadaAgora
+        : MODO === "vivino" ? (res.vivino_preco && precos.vivino && numero(precos.vivino.preco) != null && !/^loja-/.test(v.origem_preco || "") ? "vivino" : null)
+        : PRIORIDADE_PRECO.find(k => precos[k] && numero(precos[k].preco) != null);
+      if (MODO === "vivino" && precos.vivino && /^loja-/.test(v.origem_preco || ""))
+        console.log(`   preço médio fica ${v.preco_medio} € (veio de uma loja — só o Vivino não lhe mexe)`);
 
       const pl = planoDoVinho(v, res, precos, precosMudaram, escolha, fichas);
       for (const a of pl.alteracoes)
@@ -1246,14 +1273,22 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   // A ficha (castas, região, teor…): só nos campos VAZIOS — o que já lá
   // está foi escrito por alguém (ou por uma pesquisa) e uma página de loja
   // não lhe passa por cima. Cada campo vem da primeira fonte que o tem.
+  // Uma imagem que veio do Vivino segue o link validado agora: se o link
+  // antigo era de outro vinho, a garrafa também era. As outras (a nossa
+  // fotografia, a de uma loja) não se tocam.
+  const imagemDoVivino = !vazio(atual.imagem_url)
+    && (/images\.vivino\.com/i.test(String(atual.imagem_url)) || /^vivino-/.test(v.origem_imagem || ""));
   for (const campo of CAMPOS_PAGINA) {
-    if (!vazio(atual[campo])) continue;
+    // Só o Vivino: da ficha, só a imagem.
+    if (MODO === "vivino" && campo !== "imagem_url") continue;
+    const trocaImagem = campo === "imagem_url" && imagemDoVivino;
+    if (!vazio(atual[campo]) && !trocaImagem) continue;
     // A fotografia prefere o Vivino (a garrafa recortada, igual em todos);
     // o resto vem pela ordem das lojas.
     const ordem = campo === "imagem_url" ? [...fichas].sort((a, b) => /^vivino/.test(b.origem) - /^vivino/.test(a.origem)) : fichas;
-    const f = ordem.find(x => !vazio(x.ficha[campo]));
+    const f = ordem.find(x => !vazio(x.ficha[campo]) && (!trocaImagem || /^vivino/.test(x.origem)));
     if (!f) continue;
-    junta(campo, null, f.ficha[campo], f.origem);
+    junta(campo, atual[campo] ?? null, f.ficha[campo], f.origem);
     if (f.fonte?.url && !(fontes[f.origem] || []).some(x => x.url === f.fonte.url))
       fontes[f.origem] = (fontes[f.origem] || []).concat([f.fonte]);
   }
@@ -1302,6 +1337,8 @@ async function aplicarPlano(pl, quem = QUEM) {
     if (r.ficou.length)
       console.log(`   ! não entrou (o que lá está é mais forte): ${r.ficou.map(f => `${f.campo} [${f.origem}]`).join(", ")}`);
   }
+  // Só preços: o Vivino não foi aberto, não há verificação a registar.
+  if (pl.estado === "precos") return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
   // E a verificação fica registada sem ação, e não como "aceite".
   await rpc("vivino_gravar", { p_vinho_id: pl.id, p_res: pl.registo, p_execucao: EXECUCAO,
     p_revisao: recusouLink && pl.revisao === "aceite" ? "sem_acao" : pl.revisao });

@@ -58,7 +58,7 @@ De cada vez que quiseres correr — **duplo clique em `vinhos.bat`** (Windows):
 
 No painel:
 
-- **Correr** — quantos vinhos, se lê os preços das lojas, e:
+- **Correr** — quantos vinhos, o que procurar (ver abaixo), e:
   - **Simular** — lê tudo e não grava nada. Guarda uma simulação em
     `batch/simulacoes/` (fica só no teu computador);
   - **Enriquecer** — grava logo no catálogo.
@@ -70,11 +70,17 @@ No painel:
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
   só é criado quando a gravares. Se já existir, enriquece o que lá está.
-- **Só o Vivino**: desliga "também as lojas" no cartão Correr — vale para
-  Simular/Enriquecer, para os escolhidos no catálogo e para o vinho novo. O
-  script confirma o link (abre, é o vinho certo), lê a nota e as avaliações
-  e, se preciso, procura o link certo; não abre as lojas. Poupa uns 30–60 s
-  por vinho.
+- **Procurar** (no cartão Correr; vale para Simular/Enriquecer, para os
+  escolhidos no catálogo e para o vinho novo):
+  - **Tudo** — Vivino e lojas, a ficha toda (só preenche campos vazios).
+  - **Só o Vivino** — confirma o link (abre, é o vinho certo) e, se preciso,
+    procura o certo; lê a nota e as avaliações; e a **imagem**, se estiver
+    vazia ou também tiver vindo do Vivino. Não abre as lojas (poupa uns
+    30–60 s por vinho), e por isso **não mexe num preço médio que veio de
+    uma loja**; os outros campos da ficha também não.
+  - **Só preços** — não abre o Vivino: Garrafeira Nacional → Granvine →
+    Vinha.pt, e pára na primeira que tenha o vinho; o preço médio fica com
+    esse.
 - **Registo** — uma linha por vinho, enquanto corre.
 - **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
   depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e
@@ -102,7 +108,7 @@ Notas:
 - Os vinhos que tratas são os da **fila** (o botão "🍷 Verificar no Vivino"
   na ficha de um vinho) e depois os que nunca foram verificados.
 - Sem o painel (Mac, ou à mão): `npm run vivino`, com `LIMITE=`, `ENSAIO=true`
-  e `LOJAS=` no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
+  e `MODO=completo|vivino|precos` no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
   simulação revista à mão (põe `"aplicar": false` no que não queres).
 - O painel só escuta neste computador (127.0.0.1) e cada pedido que corre o
   script leva um código que só a página aberta conhece.

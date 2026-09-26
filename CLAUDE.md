@@ -702,6 +702,21 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   Sidónio de Sousa Garrafeira" do Vivino. O que vem depois continua a
   contar.
 
+**Três modos de procurar** (`MODO`, escolhido no painel; 26/09/2026, pelo
+dono). **Tudo** (`completo`): Vivino e lojas, a ficha toda. **Só o Vivino**
+(`vivino`): o link, a nota, as avaliações e a imagem — e nada mais da ficha.
+Sem as lojas nesta corrida não há nada que diga que o preço delas está
+errado, por isso **um preço médio com origem `loja-*` não se toca**; os
+outros podem passar ao do Vivino (com a regra da metade ao dobro).
+**Só preços** (`precos`): não abre o Vivino nem regista verificação; GN →
+Granvine → Vinha.pt, pára na PRIMEIRA que tem o vinho, e o preço médio fica
+com esse (um preço antigo de uma loja que hoje não o encontrou não conta).
+**Uma imagem que veio do Vivino segue o link validado** (nos dois modos que
+abrem o Vivino): se o link antigo era de outro vinho, a garrafa também era.
+A nossa fotografia e a de uma loja nunca se trocam. A `vivino_linha` passou a
+levar `origem_preco` e `origem_imagem` para isto. `LOJAS=false` (o nome
+antigo) continua a valer `MODO=vivino`.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista

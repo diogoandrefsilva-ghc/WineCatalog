@@ -290,6 +290,10 @@ AS $$
     'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
     'preco_medio', v.ficha -> 'preco_medio',
     'precos', v.ficha -> 'precos',
+    -- De onde veio o preço médio e a imagem: no modo "só o Vivino" um preço
+    -- de loja não se toca, e só se troca uma imagem que também veio do Vivino.
+    'origem_preco', v.origens -> 'preco_medio' ->> 'o',
+    'origem_imagem', v.origens -> 'imagem_url' ->> 'o',
     'ficha', v.ficha);
 $$;
 
