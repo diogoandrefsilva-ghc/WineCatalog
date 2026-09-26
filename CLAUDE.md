@@ -750,6 +750,25 @@ imagem" das lojas ficam de fora (`imagemDe`). A foto de uma loja pode ser de
 outra colheita — aceite, como no preço. `LOJAS=false` (o nome
 antigo) continua a valer `MODO=vivino`.
 
+**Uma fonte de preço retira-se à mão** (26/09/2026, Editar › "Fontes de
+preço", `wcPrecosEditHTML`): o Casa de Saima tinha o Vivino a 8,49 € com as
+lojas a 63 € e 69 €. Retirar NÃO apaga — a entrada de `precos` fica com
+`retirado:true` (+ `retirado_em`): apagada, a corrida seguinte do script lia
+a mesma página e punha lá o mesmo número. Marcada, o script não a lê nem a
+conta para o preço médio (`retirada`/`conta`), a `garrafeira.precos_lojas`
+não a devolve, a ficha mostra-a riscada, e desmarcar devolve-a.
+Se a fonte retirada era a do **preço de referência** (`wcFonteDoPrecoRef`:
+pela origem `loja-*`/`vivino-*`, senão pelo valor igual), o ecrã diz qual
+passa a ser — a seguinte que sobra pela ordem do script, GN → Granvine →
+Vinha.pt → Vivino — e põe-na no campo; sem nenhuma, o campo esvazia e diz
+que o vinho fica sem preço de referência. Um valor escrito à mão no campo
+não se toca.
+
+**"Preço de referência", não "preço médio" nem "de mercado"** (26/09/2026,
+pedido do dono): é o nome em TODOS os ecrãs das duas apps. A coluna/chave
+continua `preco_medio` (e `precoMedio` nos prompts) — mudar o nome dos
+dados mexia nas quatro apps e no catálogo para nada.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista
