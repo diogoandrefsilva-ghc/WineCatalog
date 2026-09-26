@@ -829,7 +829,20 @@ DECLARE
 BEGIN
   IF winecatalog.chave_base(p_nome, p_produtor) = '' THEN RETURN NULL; END IF;
 
-  v_id := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, true);
+  IF p_ano IS NULL THEN
+    -- SEM ANO NO PEDIDO, NÃO HÁ "A COLHEITA CERTA" (26/09/2026). A chave
+    -- sem ano só casa com a linha que também não tem ano — e essa pode ser
+    -- um espelho quase vazio ao lado de uma colheita com a ficha toda. Quem
+    -- não disse o ano recebe a linha do vinho com MAIS informação e, em
+    -- empate, a mais recente: é a ordem da `achar` sem exigir colheita. O
+    -- `exato` diz se a que respondeu também não tem ano. (Foi o Sidónio de
+    -- Sousa na wishlist da Garrafeira: sem ano, que é o normal num desejo.)
+    v_id := winecatalog.achar(p_nome, COALESCE(p_produtor,''), NULL, false);
+    IF v_id IS NULL THEN RETURN NULL; END IF;
+    v_exato := (SELECT v.ano IS NULL FROM winecatalog.vinhos v WHERE v.id = v_id);
+  ELSE
+    v_id := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, true);
+  END IF;
   IF v_id IS NULL THEN
     -- Sem a colheita pedida, serve outra do mesmo vinho — a mais
     -- preenchida, e em empate a mais recente. O que ela pode ou não pode
@@ -871,7 +884,9 @@ BEGIN
   -- Vivino, o preço e a janela de consumo não são, e esses nunca
   -- atravessam colheitas (é a mesma regra do `v_outra` aqui em cima, e
   -- não pode ter duas versões: `winecatalog.da_colheita`).
-  IF v_exato THEN
+  -- Sem ano pedido também: a mais completa responde, e as outras colheitas
+  -- emprestam-lhe só o que é estável e ela não tenha.
+  IF v_exato OR p_ano IS NULL THEN
     v_irmao := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, false, r.id);
     IF v_irmao IS NOT NULL THEN
       SELECT * INTO r2 FROM winecatalog.vinhos v WHERE v.id = v_irmao;

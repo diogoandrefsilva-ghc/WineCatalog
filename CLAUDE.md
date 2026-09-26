@@ -1035,6 +1035,16 @@ de cada app antes de assumir que a que está calada está bem.**
 - **A colheita irmã a ser tapada.** O `procurar` achava a linha do ano
   pedido e ficava por aí — mesmo quando essa linha era um espelho quase
   vazio e a do ano ao lado tinha dezassete campos.
+- **Sem ano, a linha sem ano não é "a certa" (26/09/2026).** A chave sem ano
+  só casava com a linha que também não tinha ano, e o `procurar` ficava
+  com ela mesmo sendo a mais pobre. Agora, **sem ano no pedido, responde a
+  linha do vinho com mais informação e, em empate, a mais recente** (a
+  ordem da `achar` sem exigir colheita), com as irmãs a emprestar o que é
+  estável. E **o ano nunca se inventa**: só vai ao catálogo se quem procura
+  o escreveu, e a `vinho-info` já não devolve um ano que não lhe pediram (o
+  Sidónio de Sousa, sem ano na wishlist, ficou com `ano: 2017` na ficha
+  pela IA). Do lado da Garrafeira, o vinho novo pergunta PRIMEIRO ao
+  catálogo (`comparar`) e só oferece a IA num botão — ver o `CLAUDE.md` de lá.
 - **A ordem de expandir abreviaturas.** Primeiro mapeia-se ("qta."→"quinta"),
   depois filtram-se as palavras vazias. Ao contrário, a mesma garrafa ficava
   com duas chaves.
