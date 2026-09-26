@@ -542,6 +542,40 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .pr-res-fora div{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:12.5px;padding:4px 0}
 .pr-res-fora .wc-note{margin:0}
 
+/* ── REVER ANTES DE GRAVAR — o ecrã da Garrafeira (`.ia-linha`) ──
+   Uma linha por campo: o nome em versalete, o que está (riscado) → o que se
+   encontrou, e de onde veio o que está. A linha inteira é o <label>: toca-se
+   em qualquer sítio para marcar. Um link lá dentro abre-se sem mexer na
+   caixa (é a regra do <label> com conteúdo interativo). */
+.rv-lista{margin-top:6px;border-top:1px solid var(--bo)}
+.rv-linha{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--bo);cursor:pointer}
+.rv-linha input{width:17px;height:17px;margin-top:2px;flex-shrink:0;accent-color:var(--wine)}
+.rv-campo{flex:1;min-width:0;font-size:13px;line-height:1.55;word-break:break-word}
+.rv-campo b{display:block;font-size:10px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;color:var(--mu)}
+.rv-antes{color:var(--mu);text-decoration:line-through;font-size:12px}
+.rv-seta{color:var(--mu);margin:0 6px}
+.rv-novo{color:var(--tx);font-weight:600}
+.rv-vazio{font-style:normal;color:var(--mu);font-weight:400}
+.rv-img{display:block;height:64px;width:auto;max-width:100%;object-fit:contain;margin:4px 0;border-radius:6px;background:#fff}
+.rv-antes .rv-img{opacity:.55}
+.rv-lnk{color:var(--wine);word-break:break-all}
+.rv-lnk span{padding-left:3px;font-size:10px}
+.rv-campo .og-tag{display:inline-block;margin-top:4px}
+.rv-nota{display:block;font-size:11.5px;color:var(--mu);margin-top:3px}
+.rv-aviso{margin:0 0 10px;padding:9px 11px;border:1px solid #f0e4c8;border-radius:11px;background:#fdf8ec;
+  font-size:12.5px;color:#8a6414}
+.rv-memoria{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 10px;padding:9px 11px;
+  border:1px solid #f0e4c8;border-radius:11px;background:#fdf8ec;font-size:12.5px;color:#8a6414}
+.rv-memoria span{flex:1;min-width:150px}
+.rv-fontes{font-size:11px;color:var(--mu);margin-top:12px;line-height:1.75;word-break:break-word}
+.rv-fontes a{color:var(--wine)}
+.rv-lembrete{margin-top:14px}
+.rv-lembrete>div:nth-child(2){flex:1;min-width:0}
+.rv-lembrete .btn-prim.auto{flex:0 0 auto}
+.lote-rv-cab{margin:0 0 10px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.lote-rv-cab .lote-cont{font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.lote-rv-cab .lote-v-nome,.lote-rv-cab .lote-v-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 /* ── PROCURAR, pesquisa manual (copiar prompt, colar resposta) ── */
 .pr-manual label{display:block;font-size:11px;font-weight:600;color:var(--mu);
   text-transform:uppercase;letter-spacing:.4px;margin:14px 0 5px}
@@ -627,6 +661,10 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .lote-passo.on i{background:var(--wine);border-color:var(--wine);color:#fff}
 .lote-passo.feito{color:var(--gold)}
 .lote-passo.feito i{background:var(--gold);border-color:var(--gold);color:#fff}
+/* Quatro passos não cabem por extenso num telemóvel: ficam os números, e o
+   nome só do passo em que se está. */
+.lote-passo b{font-weight:inherit}
+@media(max-width:480px){.lote-passo:not(.on) b{display:none}}
 
 .lote-sel-cab{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
   margin:16px 0 6px;font-size:11px;font-weight:600;color:var(--mu);
@@ -681,7 +719,7 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   border-bottom:1px solid var(--bo);font-size:13px}
 .lote-prog-l:last-child{border-bottom:none}
 .lote-prog-l span:first-child{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.lote-prog-l .wc-note{margin:0;flex-shrink:0;text-align:right}
+.lote-prog-l .wc-note{margin:0;flex:0 1 auto;max-width:62%;text-align:right}
 
 /* O histórico de alterações (ficha e Alertas) */
 .hist{display:flex;flex-direction:column}

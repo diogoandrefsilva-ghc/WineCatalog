@@ -18,7 +18,8 @@
 // que escreve no catálogo por iniciativa de uma PESSOA (as outras escrevem
 // de passagem, a reboque de um trabalho que a pessoa já pediu para si).
 // Quem lê o catálogo é toda a gente aprovada; quem o manda mexer, e gastar,
-// é quem é dono dele.
+// é quem é dono dele. Desde 26/09/2026 a app pede `rever:true`: isto só
+// PROPÕE, e é o admin que escolhe o que entra (`winecatalog.pesquisa_aplicar`).
 //
 // Arquitetura assíncrona igual à `sugerir-vinho`/`verificar-vinhos`
 // (EdgeRuntime.waitUntil + polling do browser) — a linha de trabalho é
@@ -641,12 +642,21 @@ async function lerVinho(id: number, signal?: AbortSignal): Promise<Linha | null>
    dali para a frente EXATAMENTE como a automática (mesma `juntar`, força 3,
    mesmo relatório do que entrou e porquê). Zero chamadas ao Gemini, zero
    custo — só o trabalho de ler e validar, que é o mesmo trabalho que já se
-   fazia à resposta automática. */
+   fazia à resposta automática.
+
+   `rever` (26/09/2026) é o modo REVER ANTES DE GRAVAR, o mesmo desenho da
+   Garrafeira: não se chama a `juntar`. A pesquisa fecha com as PROPOSTAS
+   (o valor encontrado e o que o catálogo tinha nesse momento, com a origem)
+   e o admin escolhe no ecrã o que entra — pela
+   `winecatalog.pesquisa_aplicar`, que lê os valores DAQUI, da linha da
+   pesquisa, e nunca do browser. Sem `rever` fica o comportamento antigo
+   (grava pela força e relata): é o que uma app ainda em cache chama, e
+   deixa o deploy desta função não depender do da página. */
 async function processarPesquisa(
   pesquisaId: number, vinhoId: number, quem: string, campos: string[] | null,
   respostaManual: string | null = null, colheitaEspecifica: boolean = false,
   notas: string = "", sites: string[] = [], profunda: boolean = false,
-  vivinoDado: string = "",
+  vivinoDado: string = "", rever: boolean = false,
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -870,7 +880,46 @@ async function processarPesquisa(
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
         estado: "concluido",
-        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes, pesquisaWeb, profunda },
+        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes, pesquisaWeb, profunda, ...(rever ? { rever: true } : {}) },
+      });
+      return;
+    }
+
+    /* REVER ANTES DE GRAVAR: não se escreve nada. Cada proposta leva o que
+       o catálogo tinha AGORA (`atual`, com a origem e a força) — é o que o
+       ecrã mostra ao lado, e é contra isso que a `pesquisa_aplicar` confere
+       que nada mudou entretanto. */
+    if (rever) {
+      const propostas: Record<string, unknown>[] = Object.keys(ficha).map((k) => ({
+        campo: k,
+        valor: ficha[k],
+        atual: antes.ficha?.[k] ?? null,
+        origemAtual: String(antes.origens?.[k]?.o ?? "") || null,
+        forcaAtual: Number(antes.origens?.[k]?.f ?? 0),
+      }));
+      if (produtorMudou) {
+        propostas.push({
+          campo: "produtor", valor: produtorSugerido, identidade: true,
+          atual: antes.produtor || null,
+        });
+      }
+      console.log("CATALOGO-INFO rever:", propostas.length, "propostas",
+                  "modelo:", model, "fontes:", fontes.length);
+      await registar("ok", {
+        modelo: model, vinho_id: vinhoId,
+        // O que a IA trouxe (a vista `consumo` conta isto como itens da IA);
+        // o que o admin aceitar fica no `sync_log` da `pesquisa_aplicar`.
+        campos: propostas.length, rever: true,
+        fontes: fontes.length,
+        ...(grounding ? { grounding } : {}),
+        ...(pesquisaWeb !== null ? { pesquisaWeb } : {}), ...(profunda ? { profunda: true } : {}), ...serperLog,
+        ...(usage ? { usageMetadata: usage } : {}),
+        chamadas_gemini: chamadasGemini, custo_estimado_eur: custoEstimado,
+        manual: respostaManual !== null,
+      }, quem);
+      await fechar(pesquisaId, {
+        estado: "concluido",
+        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda, rever: true },
       });
       return;
     }
@@ -1056,6 +1105,9 @@ Deno.serve(async (req) => {
     // `pesquisarSerper`). Só o admin chega aqui, por isso não há outra
     // verificação a fazer.
     const profunda = body?.profunda === true && respostaManual === null;
+    // Rever antes de gravar (ver `processarPesquisa`): a app de agora manda
+    // sempre; sem isto é a app antiga, que conta com a escrita pela força.
+    const rever = body?.rever === true;
     /* `notas`/`sites`: contexto LIVRE (duas caixas de texto na app, não
        campos fechados) — ajuda a não confundir este vinho com um homónimo
        e a dar prioridade a fontes de confiança. Só entram no prompt
@@ -1093,7 +1145,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda, vivinoDado),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda, vivinoDado, rever),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {
