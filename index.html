@@ -360,7 +360,7 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="modal-head">
       <div><div class="fi-nome" id="procurar-titulo"></div>
-           <div class="fi-sub">Procurar informação</div></div>
+           <div class="fi-sub" id="procurar-sub">Procurar informação</div></div>
       <button class="modal-x" onclick="fecharModal('modal-procurar')" aria-label="Fechar">✕</button>
     </div>
     <div class="modal-body" id="procurar-corpo"></div>
@@ -369,8 +369,9 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
 
 <!-- Atualizar informação em vários vinhos de uma vez (admin): até 10
      vinhos, até 5 campos, UM prompt para colar num assistente de IA — a
-     resposta entra vinho a vinho pelo MESMO caminho da pesquisa manual de
-     um vinho só (ver `wcLoteEnviar` em app.js). -->
+     resposta lê-se vinho a vinho pelo MESMO caminho da pesquisa manual de
+     um vinho só, e revê-se vinho a vinho antes de gravar (ver
+     `wcLoteEnviar`/`wcLoteRever` em app.js). -->
 <div class="modal" id="modal-lote" onclick="fecharFundo(event,'modal-lote')">
   <div class="modal-box" onclick="event.stopPropagation()">
     <div class="modal-head">

@@ -285,6 +285,7 @@ a{color:var(--bd)}
   <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
     <label>Imagem: <select id="cat-img" onchange="pintarCatalogo()"><option value="">todas</option><option value="sem">sem imagem</option><option value="vivino">do Vivino</option><option value="loja">de uma loja</option><option value="outro">de outro site</option><option value="nossa">fotografia vossa</option></select></label>
     <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
+    <label title="O script propõe a adega que a página do Vivino mostra (só preenche — trocar um produtor é o Editar da app)"><input type="checkbox" id="cat-semprod" onchange="pintarCatalogo()"> sem produtor</label>
     <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label>
     <label title="Sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe"><input type="checkbox" id="cat-link" onchange="pintarCatalogo()"> link do Vivino suspeito</label></div>
   <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
@@ -334,9 +335,9 @@ async function carregarCatalogo(){
 const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
 function catVisiveis(){
   const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
-  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
+  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,spr=document.getElementById("cat-semprod").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
   return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
-    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
+    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!spr||!String(v.produtor||"").trim())&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
 }
 function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
 // Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
@@ -430,7 +431,7 @@ async function abrirSim(){
       // nada a fazer; "mudou" — foi corrigido depois de simular: mostra-se
       // o valor de AGORA → o da simulação, desmarcado, e decide-se.
       const ja=a.desde==="ja",mudou=a.desde==="mudou",liga=a.aplicar!==false&&!ja&&!mudou;
-      rows.push('<tr class="alt'+(ja?' dim':liga?'':' off')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(ja?' data-ja="1" disabled':mudou?' data-mudou="1"':'')+(liga?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td>'+
+      rows.push('<tr class="alt'+(ja?' dim':liga?'':' off')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(ja?' data-ja="1" disabled':mudou?' data-mudou="1"':'')+(liga?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+(a.identidade?' <span class="tag" title="Faz parte da identidade do vinho (a chave). Só preenche um produtor vazio.">identidade</span>':'')+'</td><td>'+
         (ja?valor(a.campo,a.depois)+' <span class="tag">já está assim na BD</span>'
           :'<span class="antes">'+valor(a.campo,mudou?a.agora:a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+
            (mudou?'<br><span class="tag mudou">mudou desde a simulação</span> <span class="nota">na simulação era: '+valor(a.campo,a.antes)+'</span>':''))+

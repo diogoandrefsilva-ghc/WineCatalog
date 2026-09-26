@@ -578,6 +578,66 @@ BEGIN
 END;
 $$;
 
+-- ---------------------------------------------------------------------
+-- O PRODUTOR de um vinho que JÁ EXISTE e não o tem (26/09/2026). Os oito
+-- vinhos novos de 25/09 nasceram todos sem produtor (a proposta da página
+-- do Vivino ainda não existia), e a proposta só valia para um vinho que
+-- ainda não existisse — por isso nenhuma corrida seguinte os preenchia,
+-- mesmo lendo "Já Te Disse" na página certa.
+-- Só PREENCHE: um produtor que já lá está não se troca daqui (é o Editar
+-- da app). É identidade — mexe na `chave` —, por isso a mesma trava da
+-- `editar`: se a chave nova já for de outra linha, não entra e diz qual
+-- (vai-se a Duplicados). Uma linha fundida também não: corrige-se a que
+-- ficou. Nunca levanta erro por isto — o resto do vinho grava na mesma.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.vivino_produtor(p_vinho_id bigint, p_produtor text, p_quem text)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  r       winecatalog.vinhos%ROWTYPE;
+  v_prod  text := btrim(regexp_replace(COALESCE(p_produtor, ''), '\s+', ' ', 'g'));
+  v_chave text;
+  v_outro bigint;
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
+  END IF;
+  IF v_prod = '' OR length(v_prod) > 150 THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'produtor vazio ou comprido de mais');
+  END IF;
+  SELECT * INTO r FROM winecatalog.vinhos WHERE id = p_vinho_id FOR UPDATE;
+  IF r.id IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'o vinho não existe');
+  END IF;
+  IF EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = r.id) THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'foi fundido noutro — corrige o que ficou');
+  END IF;
+  IF btrim(COALESCE(r.produtor, '')) <> '' THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'já tem produtor (' || r.produtor || ') — mudá-lo é o Editar da app');
+  END IF;
+  v_chave := winecatalog.chave(r.nome, v_prod, r.ano);
+  IF v_chave <> r.chave THEN
+    SELECT id INTO v_outro FROM winecatalog.vinhos WHERE chave = v_chave AND id <> r.id LIMIT 1;
+    IF v_outro IS NOT NULL THEN
+      RETURN jsonb_build_object('ok', false, 'motivo',
+        format('com este produtor passa a ser a mesma linha que a #%s — junta-as em Duplicados', v_outro));
+    END IF;
+  END IF;
+  PERFORM set_config('winecatalog.quem', COALESCE(NULLIF(p_quem, ''), 'script'), true);
+  BEGIN
+    UPDATE winecatalog.vinhos SET
+      produtor   = v_prod,
+      chave      = v_chave,
+      chave_base = winecatalog.chave_base(r.nome, v_prod)
+    WHERE id = r.id;
+  EXCEPTION WHEN unique_violation THEN
+    RETURN jsonb_build_object('ok', false, 'motivo', 'outra linha ficou com essa identidade entretanto');
+  END;
+  RETURN jsonb_build_object('ok', true, 'vinho', r.id, 'produtor', v_prod);
+END;
+$$;
+
 
 -- ---------------------------------------------------------------------
 -- ESCOLHER NO PAINEL (25/09/2026). O painel do vinhos.bat mostra o catálogo
@@ -681,6 +741,8 @@ REVOKE ALL ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) 
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_linha(winecatalog.vinhos)       TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_achar(text, text, integer)      TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_novo(text, text, integer, text, text) TO service_role;
+REVOKE ALL ON FUNCTION winecatalog.vivino_produtor(bigint, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.vivino_produtor(bigint, text, text) TO service_role;
 REVOKE ALL ON FUNCTION winecatalog.vivino_catalogo()       FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.vivino_estes(bigint[])   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.vivino_catalogo()     TO service_role;

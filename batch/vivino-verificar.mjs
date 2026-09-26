@@ -1364,11 +1364,20 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   const atual = v.ficha || {};
   // A cor que o admin escolheu no painel, num vinho que já existia sem ela.
   if (v.novo && v.id && v.novo.tipo && vazio(atual.tipo)) junta("tipo", null, v.novo.tipo, "catalogo-admin");
-  // Vinho NOVO sem produtor: propõe-se o que a página do Vivino diz (a adega).
-  // Só num vinho que ainda não existe — num que existe é identidade, e isso
-  // é o Editar da app. Entra na criação (vivino_novo), não pela aplicar_fontes.
-  if (v.novo && !v.id && !v.novo.produtor && res.proposta?.produtor_pagina)
-    alteracoes.push({ campo: "produtor", antes: null, depois: res.proposta.produtor_pagina, origem: "vivino-pagina", aplicar: true, identidade: true });
+  // Sem produtor: propõe-se o que a página do Vivino diz (a adega). Num vinho
+  // novo entra na criação (vivino_novo); num que já existe, pela
+  // vivino_produtor — que só PREENCHE (trocar um produtor é o Editar da app).
+  // Até 26/09/2026 só valia para o vinho novo, e os oito criados a 25/09
+  // (antes de haver proposta) ficavam sem produtor em todas as corridas.
+  // Um vinho do "Vinho novo" que afinal já existia sem produtor fica com o
+  // que o admin escreveu no painel, antes do da página.
+  const prodAgora = String((v.id ? v.produtor : v.novo?.produtor) || "").trim();
+  if (!prodAgora) {
+    const escrito = v.id ? String(v.novo?.produtor || "").trim() : "";
+    if (escrito) alteracoes.push({ campo: "produtor", antes: null, depois: escrito, origem: "catalogo-admin", aplicar: true, identidade: true });
+    else if (res.proposta?.produtor_pagina)
+      alteracoes.push({ campo: "produtor", antes: null, depois: res.proposta.produtor_pagina, origem: "vivino-pagina", aplicar: true, identidade: true });
+  }
   // Um link da MESMA colheita do vinho, com o mesmo número, não se troca pelo
   // genérico (26/09/2026, pedido do dono): "…/w/76439?year=2016" num vinho de
   // 2016 é mais preciso do que "…/w/76439". Nem pela língua ("/en/"). A
@@ -1438,23 +1447,34 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
 // `juntar`; cada campo que muda fica no histórico, com "Repor"), agrupados
 // pela origem; depois a verificação.
 async function aplicarPlano(pl, quem = QUEM) {
-  // Um vinho NOVO nasce aqui, e só aqui: depois de o admin rever a
-  // simulação. Se entretanto alguém o criou, usa-se o que já existe.
+  // Um link novo desmarcado na revisão leva atrás o que se leu NA PÁGINA
+  // dele (a nota, as avaliações, o preço do Vivino, a adega): eram de outro vinho.
   // Um link que JÁ ESTÁ na BD (`ja`, ver `compararComAgora`) não foi recusado:
   // só não há nada a escrever — o que se leu na página dele continua a valer.
-  const recusouLink0 = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false && !a.ja);
-  const prodPagina = (pl.alteracoes || []).find(a => a.campo === "produtor" && a.identidade && a.aplicar !== false && !recusouLink0);
+  const recusouLink = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false && !a.ja);
+  const doVivino = a => /^vivino-/.test(a.origem);
+  const prod = (pl.alteracoes || []).find(a => a.campo === "produtor" && a.identidade && a.aplicar !== false
+    && !(recusouLink && doVivino(a)));
+  // Um vinho NOVO nasce aqui, e só aqui: depois de o admin rever a
+  // simulação. Se entretanto alguém o criou, usa-se o que já existe.
+  let criado = false;
   if (!pl.id && pl.novo) {
-    const r = await rpc("vivino_novo", { p_nome: pl.novo.nome, p_produtor: pl.novo.produtor || prodPagina?.depois || "",
+    const r = await rpc("vivino_novo", { p_nome: pl.novo.nome, p_produtor: pl.novo.produtor || prod?.depois || "",
       p_ano: pl.novo.ano ?? null, p_tipo: pl.novo.tipo || null, p_quem: quem });
     pl.id = Number(r.id);
+    criado = !r.existia;
     console.log(`   ${r.existia ? "já existia — é o" : "criado:"} #${pl.id}`);
   }
   if (!pl.id) throw new Error("vinho sem id");
-  // Um link novo desmarcado na revisão leva atrás o que se leu NA PÁGINA
-  // dele (a nota, as avaliações, o preço do Vivino): eram de outro vinho.
-  const recusouLink = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false && !a.ja);
-  const doVivino = a => /^vivino-/.test(a.origem);
+  // Num vinho que já existia, o produtor não vai na criação: vai aqui, e só
+  // se ainda estiver vazio. Se não entrar (outra linha com essa identidade),
+  // o resto grava na mesma e o registo diz porquê.
+  if (prod && !criado) {
+    try {
+      const r = await rpc("vivino_produtor", { p_vinho_id: pl.id, p_produtor: prod.depois, p_quem: quem });
+      console.log(r.ok ? `   produtor: ${r.produtor}` : `   ! o produtor não entrou: ${r.motivo}`);
+    } catch (e) { console.log(`   ! o produtor não entrou: ${String(e.message || e).slice(0, 200)}`); }
+  }
   const porOrigem = {};
   for (const a of pl.alteracoes || []) {
     if (a.aplicar === false || a.identidade) continue;
