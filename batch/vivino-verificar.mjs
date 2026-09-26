@@ -409,7 +409,26 @@ async function procurar(page, v) {
 // Reserva Tinto" — o motor browser só olhava para a parecença.
 function bateNome(v, nome) {
   const t = tituloLimpo(nome);
-  return mencaoBate(v, t) && castasBatem(v, t) && aMais(v, t).length <= MAX_A_MAIS;
+  if (!mencaoBate(v, t) || !castasBatem(v, t) || castaAMais(v, t)) return false;
+  // As castas da nossa FICHA não contam como palavras a mais (o "Casa de
+  // Canhotos" é o "…Canhotos Alvarinho" porque a ficha diz Alvarinho). E um
+  // nome com UMA palavra distintiva não aguenta nenhuma a mais: o "Quinta
+  // do Portal" casava com o "…Portal Auru" (5.ª corrida, 26/09/2026), um
+  // vinho de 110 € no lugar de um de 9,50 €. Com duas ou mais, uma a mais
+  // ainda passa ("Signature", "Colheita").
+  const limite = distintivas(v.nome).length <= 1 ? 0 : MAX_A_MAIS;
+  return aMaisSemAsNossasCastas(v, t).length <= limite;
+}
+// Uma casta no título que nem o nosso nome nem a nossa ficha dizem é outro
+// vinho: o "Quinta do Portal" (tinto, Touriga/Roriz/Franca na ficha) casou
+// com o "Quinta do Portal Portal Moscatel do Douro". É a outra metade da
+// `castasBatem` (essa exige as do nosso nome no título; esta recusa as do
+// título que não são nossas). Sem castas na ficha não se sabe, e não recusa.
+function castaAMais(v, titulo) {
+  const ficha = Array.isArray(v.ficha?.castas) ? v.ficha.castas : [];
+  if (!ficha.length) return false;
+  const nossas = new Set([...castasDe(v.nome), ...castasDe(ficha.join(" , "))]);
+  return castasDe(titulo).some(c => !nossas.has(c));
 }
 
 // A CASTA no nome é identidade. Na 1.ª corrida com lojas (25/09/2026),
@@ -1139,6 +1158,17 @@ async function main() {
           try { r = await lerLoja(page, loja, v); }
           catch (e) { r = { detalhe: { loja: loja.id, erro: String(e.message || e).slice(0, 200) } }; }
           res.detalhe.lojas.push(r.detalhe);
+          // Um preço de loja a mais do triplo (ou menos de um terço) do que o
+          // catálogo tem não é a mesma garrafa: é outro vinho que passou nas
+          // regras do nome (o "Quinta do Portal" de 9,50 € deu o "…Auru" de
+          // 109,89 €). Fica de lado — o preço E a ficha dessa página.
+          const pc = numero(v.preco_medio), pl = numero(r.achado?.preco);
+          if (pc > 0 && pl > 0 && (pl / pc > 3 || pl / pc < 1 / 3)) {
+            console.log(`   ${loja.nome}: ${pl.toFixed(2)} € posto de lado — longe de mais do preço médio do catálogo (${pc} €): "${r.achado.nome}"`);
+            r.detalhe = { ...(r.detalhe || {}), preco_de_lado: { loja: pl, catalogo: pc } };
+            res.detalhe.lojas[res.detalhe.lojas.length - 1] = r.detalhe;
+            continue;
+          }
           // Só preços: da ficha da loja, só a imagem (a página já está aberta).
           const fichaLoja = MODO === "precos" ? (r.ficha?.imagem_url ? { imagem_url: r.ficha.imagem_url } : null) : r.ficha;
           if (fichaLoja && Object.keys(fichaLoja).length)
@@ -1401,7 +1431,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

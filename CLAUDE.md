@@ -702,6 +702,27 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   Sidónio de Sousa Garrafeira" do Vivino. O que vem depois continua a
   contar.
 
+**O que a 5.ª corrida ensinou (imagens e preços, 26/09/2026):**
+- **Um nome com UMA palavra distintiva aguenta zero a mais**: o "Quinta do
+  Portal" (tinto, 9,50 €) casou no Vivino com o "Quinta do Portal Portal
+  Moscatel do Douro" e na Granvine/Vinha.pt com o "…Portal Auru" (109,89 €)
+  — o link, o teor, a nota, as avaliações, o preço, a imagem, as notas de
+  prova e o estágio, tudo de outros vinhos. Com duas ou mais palavras, uma a
+  mais continua a passar. Tudo reposto à mão, e o Moscatel ficou recusado.
+- **Uma casta no título que nem o nome nem a FICHA dizem é outro vinho**
+  (`castaAMais`, a outra metade da `castasBatem`). As castas da ficha não
+  contam como palavras a mais: o "Casa de Canhotos" é o "…Alvarinho" porque
+  a ficha diz Alvarinho. Sem castas na ficha não se sabe, e não recusa.
+  Conferido contra as 49 correspondências já aceites: só as duas erradas
+  mudam.
+- **Um preço de loja a mais do triplo (ou menos de um terço) do preço médio
+  do catálogo fica de lado**, e a ficha dessa página com ele (`preco_de_lado`
+  em `detalhe.lojas`).
+- Três links do catálogo tinham o NOME certo e o NÚMERO de outro vinho (o do
+  Implicit abria um "Fre Red Blend"): o Vivino ignora o nome e lê o número,
+  e quem os escreveu (uma pesquisa de memória) inventou o número. O script
+  apanhou-os todos, que é para isso que abre a página.
+
 **Três modos de procurar** (`MODO`, escolhido no painel; 26/09/2026, pelo
 dono). **Tudo** (`completo`): Vivino e lojas, a ficha toda. **Só o Vivino**
 (`vivino`): o link, a nota, as avaliações e a imagem — e nada mais da ficha.
