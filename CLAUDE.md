@@ -836,9 +836,19 @@ página do produto (`links_lojas`, sem procura nem regras de nome, e sem a
 trava do triplo do preço); o resto fica de lado e o registo diz qual. E
 **sem produtor, propõe-se a adega da página do Vivino** (`produtorDaPagina`:
 a marca do JSON-LD, senão o link `/wineries/`), como alteração de
-`identidade` — só num vinho que ainda NÃO existe (num que existe é o
-Editar), entra na `vivino_novo` e não na `aplicar_fontes`, e cai se o link
-do Vivino for desmarcado.
+`identidade` — num vinho novo entra na `vivino_novo`, nunca na
+`aplicar_fontes`, e cai se o link do Vivino for desmarcado.
+**E num vinho que já existe SEM produtor também** (26/09/2026): os oito
+vinhos novos de 25/09 nasceram todos com o produtor vazio — a proposta
+ainda não existia — e, como ela só valia para um vinho que ainda não
+existisse, nenhuma corrida seguinte os preenchia, mesmo lendo "Já Te Disse"
+na página certa. Agora entra pela `winecatalog.vivino_produtor` (só a
+`service_role`), que **só preenche**: um produtor que já lá está não se
+troca daqui (é o Editar), e se a chave nova já for de outra linha, não
+entra e diz qual (a trava da `editar`) — o resto do vinho grava na mesma.
+Um vinho do "Vinho novo" que afinal já existia sem produtor fica com o que
+o admin escreveu no painel (`catalogo-admin`) antes do da página. O filtro
+**"sem produtor"** de "Escolher no catálogo" junta os que faltam.
 
 **No PC corre-se pelo `vinhos.bat` → `painel.mjs`** (25/09/2026, a pedido
 do dono): `git pull`, e um painel local (`127.0.0.1:8787`, sem

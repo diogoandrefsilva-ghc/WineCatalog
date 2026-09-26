@@ -102,7 +102,12 @@ No painel:
   abre-os diretamente em vez de procurar, e o nome não os recusa (só a cor e
   a colheita contam). O do Vivino tem de ser o de um vinho (`/w/<nº>`). Sem
   produtor, propõe o que a página do Vivino diz (a adega) — aparece na
-  simulação e só entra se o deixares marcado.
+  simulação (com a etiqueta *identidade*) e só entra se o deixares marcado.
+  O mesmo vale para **qualquer vinho do catálogo sem produtor** que o script
+  trate (a fila, os escolhidos, Simular ou Enriquecer): só preenche um
+  produtor vazio, nunca troca um que já lá esteja (isso é o Editar da app).
+  Para os apanhar todos de uma vez: **Escolher no catálogo › sem produtor ›
+  Marcar os que se veem**, com **Procurar: Só o Vivino**.
 - **Procurar** (no cartão Correr; vale para Simular/Enriquecer, para os
   escolhidos no catálogo e para o vinho novo):
   - **Tudo** — Vivino e lojas, a ficha toda (só preenche campos vazios).

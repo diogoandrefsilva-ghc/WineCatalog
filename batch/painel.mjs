@@ -257,6 +257,7 @@ a{color:var(--bd)}
   <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
     <label>Imagem: <select id="cat-img" onchange="pintarCatalogo()"><option value="">todas</option><option value="sem">sem imagem</option><option value="vivino">do Vivino</option><option value="loja">de uma loja</option><option value="outro">de outro site</option><option value="nossa">fotografia vossa</option></select></label>
     <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
+    <label title="O script propõe a adega que a página do Vivino mostra (só preenche — trocar um produtor é o Editar da app)"><input type="checkbox" id="cat-semprod" onchange="pintarCatalogo()"> sem produtor</label>
     <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label>
     <label title="Sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe"><input type="checkbox" id="cat-link" onchange="pintarCatalogo()"> link do Vivino suspeito</label></div>
   <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
@@ -306,9 +307,9 @@ async function carregarCatalogo(){
 const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
 function catVisiveis(){
   const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
-  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
+  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,spr=document.getElementById("cat-semprod").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
   return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
-    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
+    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!spr||!String(v.produtor||"").trim())&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
 }
 function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
 // Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
@@ -397,7 +398,7 @@ async function abrirSim(){
   const rows=[];
   (sim.vinhos||[]).forEach((v,i)=>{
     rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">'+(v.id?"#"+esc(v.id):'<span class="tag">novo</span>')+" "+esc(v.nome)+(v.produtor&&!v.id?' <span class="nota">· '+esc(v.produtor)+'</span>':"")+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">'+(v.id?"— nada a mudar; só regista a verificação":"— não se encontrou nada: é criado só com o que escreveste")+'</span>':"")+'</td></tr>');
-    (v.alteracoes||[]).forEach((a,j)=>rows.push('<tr class="alt'+(a.aplicar===false?' off':'')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(a.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td><span class="antes">'+valor(a.campo,a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+'</td><td class="nota">'+esc(a.origem)+'</td></tr>'));
+    (v.alteracoes||[]).forEach((a,j)=>rows.push('<tr class="alt'+(a.aplicar===false?' off':'')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(a.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+(a.identidade?' <span class="tag" title="Faz parte da identidade do vinho (a chave). Só preenche um produtor vazio.">identidade</span>':'')+'</td><td><span class="antes">'+valor(a.campo,a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+'</td><td class="nota">'+esc(a.origem)+'</td></tr>'));
   });
   t.innerHTML=rows.length?'<table><tr><th></th><th>Campo</th><th>Antes → depois</th><th>Origem</th></tr>'+rows.join("")+'</table>':'<p class="nota">Simulação vazia.</p>';
   document.getElementById("btn-gravar").disabled=!rows.length||!!sim.revista;
