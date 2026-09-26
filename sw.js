@@ -3,7 +3,7 @@
    browser o index.html novo com o app.js velho da cache — botões novos a
    chamar funções que ainda não existem, sem erro visível. Já aconteceu nas
    apps irmãs. */
-const CACHE_NAME = 'wc-cache-v29';
+const CACHE_NAME = 'wc-cache-v30';
 
 self.addEventListener('install', () => self.skipWaiting());
 

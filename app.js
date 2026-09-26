@@ -3024,11 +3024,78 @@ async function wcHistorico(vinhoId,alvo){
       box.innerHTML=vinhoId?`<p class="wc-note">${t}</p>`:`<div class="wc-card"><p class="wc-note">${t}</p></div>`;
       return;
     }
-    const linhas=l.map(a=>wcHistLinhaHTML(a,!vinhoId)).join('');
-    box.innerHTML=vinhoId?`<div class="hist">${linhas}</div>`:`<div class="wc-card"><div class="hist">${linhas}</div></div>`;
+    if(vinhoId){box.innerHTML=wcHistFichaHTML(vinhoId,l);return;}
+    const linhas=l.map(a=>wcHistLinhaHTML(a,true)).join('');
+    box.innerHTML=`<div class="wc-card"><div class="hist">${linhas}</div></div>`;
   }catch(e){
     box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
   }
+}
+
+/* Na ficha, a lista corrida enchia o ecrã — uma corrida do script escreve
+   dez, quinze campos de uma vez. Fica atrás de um botão, e lá dentro um
+   bloco por DIA, também fechado: a lista dos dias é o resumo, e abre-se só
+   o que interessa. O que está aberto vive em memória e só para o MESMO
+   vinho — o "Repor" refresca a ficha, e fechar-se debaixo do dedo era
+   pior do que não ter dobras; outro vinho abre sempre fechado. */
+let _wcHistVinho=null,_wcHistAberto=false,_wcHistDias=null;
+
+function wcHistDia(s){
+  const d=new Date(s);
+  if(isNaN(d))return 'sem-data';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function wcHistHora(s){
+  const d=new Date(s);
+  return isNaN(d)?'—':d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'});
+}
+function wcHistBtnHTML(n,nDias){
+  const tit=(n===1?'1 alteração':`${nFmt(n)} alterações`)+(nDias>1?` em ${nDias} dias`:'');
+  return `<span>${_wcHistAberto?'Esconder o histórico':'Ver o histórico · '+tit}</span><span>${_wcHistAberto?'▲':'▼'}</span>`;
+}
+
+function wcHistFichaHTML(vinhoId,l){
+  if(_wcHistVinho!==vinhoId){_wcHistVinho=vinhoId;_wcHistAberto=false;_wcHistDias=null;}
+  const dias=[],por={};   // pela ordem da `historico`: o mais recente primeiro
+  l.forEach(a=>{
+    const k=wcHistDia(a.quando);
+    if(!por[k]){por[k]=[];dias.push(k);}
+    por[k].push(a);
+  });
+  // Um dia só não precisa de dois toques para se ler.
+  if(!_wcHistDias)_wcHistDias=new Set(dias.length===1?dias:[]);
+  const blocos=dias.map(k=>{
+    const as=por[k];
+    const aberto=_wcHistDias.has(k);
+    const campos=[...new Set(as.map(a=>WC_CAMPO_NOME[a.campo]||a.campo))].join(', ');
+    return `<div class="hist-dia">
+      <button class="hist-dia-btn" onclick="wcHistAlternarDia('${k}')">
+        <span class="hist-dia-t"><strong>${esc(k==='sem-data'?'Sem data':dataFmt(as[0].quando))}</strong>
+          <span class="hist-dia-n">· ${as.length===1?'1 alteração':`${nFmt(as.length)} alterações`}</span>
+          <span class="hist-dia-c">${esc(campos)}</span></span>
+        <span class="hist-dia-seta" id="hist-ds-${k}">${aberto?'▲':'▼'}</span>
+      </button>
+      <div class="hist hist-dia-det" id="hist-dd-${k}" style="display:${aberto?'':'none'}">${as.map(a=>wcHistLinhaHTML(a,false,true)).join('')}</div>
+    </div>`;
+  }).join('');
+  return `<button class="pv-btn" id="hist-btn" data-n="${l.length}" data-dias="${dias.length}" onclick="wcHistAlternar()">${wcHistBtnHTML(l.length,dias.length)}</button>
+  <div class="hist-dias" id="hist-det" style="display:${_wcHistAberto?'':'none'}">${blocos}</div>`;
+}
+
+function wcHistAlternar(){
+  const d=document.getElementById('hist-det'),b=document.getElementById('hist-btn');
+  if(!d||!b)return;
+  _wcHistAberto=!_wcHistAberto;
+  d.style.display=_wcHistAberto?'':'none';
+  b.innerHTML=wcHistBtnHTML(Number(b.dataset.n),Number(b.dataset.dias));
+}
+function wcHistAlternarDia(k){
+  const d=document.getElementById('hist-dd-'+k),s=document.getElementById('hist-ds-'+k);
+  if(!d||!_wcHistDias)return;
+  const abrir=d.style.display==='none';
+  if(abrir)_wcHistDias.add(k);else _wcHistDias.delete(k);
+  d.style.display=abrir?'':'none';
+  if(s)s.textContent=abrir?'▲':'▼';
 }
 
 function wcHistValor(k,v){
@@ -3036,7 +3103,7 @@ function wcHistValor(k,v){
   return wcValorHTML(k,v);
 }
 
-function wcHistLinhaHTML(a,comVinho){
+function wcHistLinhaHTML(a,comVinho,soHora){
   const campo=WC_CAMPO_NOME[a.campo]||a.campo;
   const identidade=['nome','produtor','ano','_criado'].includes(a.campo);
   /* "Repor" só faz sentido se o valor de agora ainda é o que esta
@@ -3047,7 +3114,7 @@ function wcHistLinhaHTML(a,comVinho){
     <div class="hist-cab">
       ${comVinho?`<a href="#" onclick="wcVerFicha(${Number(a.vinhoId)});return false"><strong>${esc(a.nome||'(vinho)')}</strong>${a.ano?' '+esc(String(a.ano)):''}</a> · `:''}
       <strong>${esc(campo)}</strong>
-      <span class="wc-note">${esc(dataFmt(a.quando))} · ${esc(a.quem||'?')}</span>
+      <span class="wc-note">${esc(soHora?wcHistHora(a.quando):dataFmt(a.quando))} · ${esc(a.quem||'?')}</span>
       ${a.origem?`<span class="og-tag ${wcOrigemCls(a.origem)}">${esc(wcOrigemTxt(a.origem))}</span>`:''}
     </div>
     ${a.campo==='_criado'?`<div class="hist-v">vinho criado no catálogo</div>`:
