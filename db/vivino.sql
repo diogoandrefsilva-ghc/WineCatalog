@@ -188,7 +188,9 @@ BEGIN
       'agora', jsonb_build_object(
         'vivino_url',        v.ficha -> 'vivino_url',
         'vivino_nota',       v.ficha -> 'vivino_nota',
-        'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes'))
+        'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
+        'vivino_nota_global',       v.ficha -> 'vivino_nota_global',
+        'vivino_avaliacoes_global', v.ficha -> 'vivino_avaliacoes_global'))
       ORDER BY x.verificado_em DESC, x.id DESC)
     FROM (
       -- Uma proposta por decidir de um vinho que entretanto foi FUNDIDO
@@ -241,11 +243,13 @@ BEGIN
   IF r.id IS NULL THEN RAISE EXCEPTION 'Verificação não encontrada.'; END IF;
 
   IF p_decisao = 'aceite' THEN
-    -- Só os três campos do Vivino, venha o que vier: isto não é uma porta
-    -- para escrever outra coisa na ficha.
+    -- Só os campos do Vivino (o link e as duas notas: a da colheita e a de
+    -- todas), venha o que vier: isto não é uma porta para escrever outra
+    -- coisa na ficha.
     SELECT COALESCE(jsonb_object_agg(key, value), '{}') INTO v_campos
       FROM jsonb_each(COALESCE(p_campos, r.proposta, '{}'))
-     WHERE key IN ('vivino_url','vivino_nota','vivino_avaliacoes');
+     WHERE key IN ('vivino_url','vivino_nota','vivino_avaliacoes',
+                   'vivino_nota_global','vivino_avaliacoes_global');
     IF v_campos = '{}'::jsonb THEN
       RAISE EXCEPTION 'Não há nada para aplicar nesta verificação.';
     END IF;
@@ -288,6 +292,9 @@ AS $$
     'vivino_url', v.ficha ->> 'vivino_url',
     'vivino_nota', v.ficha -> 'vivino_nota',
     'vivino_avaliacoes', v.ficha -> 'vivino_avaliacoes',
+    -- A de todas as colheitas (o Vivino sem `?year=`), à parte da de cima.
+    'vivino_nota_global', v.ficha -> 'vivino_nota_global',
+    'vivino_avaliacoes_global', v.ficha -> 'vivino_avaliacoes_global',
     'preco_medio', v.ficha -> 'preco_medio',
     'precos', v.ficha -> 'precos',
     -- De onde veio o preço médio e a imagem: no modo "só o Vivino" um preço
@@ -410,7 +417,9 @@ BEGIN
      AND (v_prop IS NULL OR (
           winecatalog.igual(v.ficha -> 'vivino_url', v_prop -> 'vivino_url')
       AND (v_prop -> 'vivino_nota' IS NULL OR winecatalog.igual(v.ficha -> 'vivino_nota', v_prop -> 'vivino_nota'))
-      AND (v_prop -> 'vivino_avaliacoes' IS NULL OR winecatalog.igual(v.ficha -> 'vivino_avaliacoes', v_prop -> 'vivino_avaliacoes'))))
+      AND (v_prop -> 'vivino_avaliacoes' IS NULL OR winecatalog.igual(v.ficha -> 'vivino_avaliacoes', v_prop -> 'vivino_avaliacoes'))
+      AND (v_prop -> 'vivino_nota_global' IS NULL OR winecatalog.igual(v.ficha -> 'vivino_nota_global', v_prop -> 'vivino_nota_global'))
+      AND (v_prop -> 'vivino_avaliacoes_global' IS NULL OR winecatalog.igual(v.ficha -> 'vivino_avaliacoes_global', v_prop -> 'vivino_avaliacoes_global'))))
   THEN
     v_rev := 'sem_acao';
   END IF;

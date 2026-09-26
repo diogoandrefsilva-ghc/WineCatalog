@@ -420,8 +420,10 @@ $$;
 -- pagar outra vez para saber que o Barca Velha é do Douro é dinheiro
 -- deitado fora.
 --
--- São também os campos que NÃO se aproveitam de outra colheita: ver
--- `winecatalog.procurar`.
+-- São também, quase todos, os campos que NÃO se aproveitam de outra
+-- colheita: ver `winecatalog.da_colheita` e `winecatalog.procurar`. A
+-- exceção é a nota GLOBAL do Vivino (a de todas as colheitas, 26/09/2026):
+-- envelhece como a outra, mas é do VINHO e não de um ano.
 --
 -- Repara no que NÃO está aqui nem em lado nenhum do catálogo: o
 -- "barato/justo/caro" da WineSelection. Esse não é volátil — é de OUTRA
@@ -437,6 +439,7 @@ CREATE OR REPLACE FUNCTION winecatalog.volatil(p_campo text)
 AS $$
   SELECT COALESCE(p_campo, '') IN (
     'vivino_nota', 'vivino_avaliacoes', 'vivino_url',
+    'vivino_nota_global', 'vivino_avaliacoes_global',
     'preco_medio', 'imagem_url', 'precos'
   );
 $$;
@@ -452,6 +455,15 @@ $$;
 -- (invariante 6). Até 25/09/2026 a janela contava como estável e passava
 -- de uma colheita para a outra na `procurar`, como as castas.
 --
+-- A NOTA GLOBAL DO VIVINO é volátil e NÃO é da colheita (26/09/2026).
+-- `vivino_nota`/`vivino_avaliacoes` são as de UMA colheita (o script abre
+-- a página com `?year=`); `vivino_nota_global`/`vivino_avaliacoes_global`
+-- são as de todas — o que o Vivino mostra sem ano. Um 4,5 com 40
+-- avaliações de 2019 e um 4,2 com 5000 do vinho todo são duas perguntas
+-- diferentes, e a segunda serve a qualquer colheita: é a mesma em 2019 e
+-- em 2021, por isso passa de uma para a outra na `procurar` (desde que não
+-- esteja velha) — e é a que serve a uma carta que não diz o ano.
+--
 -- E pela mesma razão um vinho SEM colheita não tem janela nenhuma: é a
 -- janela de uma colheita qualquer que o modelo imaginou, e no ano em que
 -- sair a seguinte continua a dizer o mesmo. Quem o garante é o trigger
@@ -463,7 +475,8 @@ CREATE OR REPLACE FUNCTION winecatalog.da_colheita(p_campo text)
   RETURNS boolean LANGUAGE sql IMMUTABLE
   SET search_path TO 'winecatalog', 'public'
 AS $$
-  SELECT winecatalog.volatil(p_campo)
+  SELECT (winecatalog.volatil(p_campo)
+          AND COALESCE(p_campo, '') NOT IN ('vivino_nota_global', 'vivino_avaliacoes_global'))
       OR COALESCE(p_campo, '') IN ('beber_de', 'beber_ate');
 $$;
 
@@ -889,12 +902,17 @@ BEGIN
   -- não pode ter duas versões: `winecatalog.da_colheita`).
   -- Sem ano pedido também: a mais completa responde, e as outras colheitas
   -- emprestam-lhe só o que é estável e ela não tenha.
+  -- O que se empresta e é VOLÁTIL (a nota global do Vivino — a única que é
+  -- volátil sem ser da colheita) passa pelo mesmo corte de idade da linha
+  -- que responde: velho lá é velho cá.
   IF v_exato OR p_ano IS NULL THEN
     v_irmao := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, false, r.id);
     IF v_irmao IS NOT NULL THEN
       SELECT * INTO r2 FROM winecatalog.vinhos v WHERE v.id = v_irmao;
       FOR k IN SELECT key FROM jsonb_each(r2.ficha) LOOP
-        IF NOT winecatalog.da_colheita(k) AND NOT (v_ficha ? k) THEN
+        IF NOT winecatalog.da_colheita(k) AND NOT (v_ficha ? k)
+           AND NOT (winecatalog.volatil(k)
+                    AND COALESCE((r2.origens -> k ->> 'em')::timestamptz, r2.criado_em) < v_corte) THEN
           v_ficha := v_ficha || jsonb_build_object(k, r2.ficha -> k);
           v_orig  := v_orig  || jsonb_build_object(k, COALESCE(r2.origens -> k, '{}'::jsonb));
           v_empr  := v_empr  || to_jsonb(k);
@@ -1077,7 +1095,13 @@ AS $$
     'tipo',     r.ficha ->> 'tipo',
     'regiao',   COALESCE(r.ficha ->> 'regiao', r.ficha ->> 'pais'),
     'castas',   r.ficha -> 'castas',
+    -- As duas notas do Vivino — a da colheita e a de todas —, cada uma com
+    -- as avaliações: qual se mostra decide-a a app (`wcNotaVivino`, a
+    -- mesma regra do `notaVivino` da Garrafeira).
     'nota',     r.ficha -> 'vivino_nota',
+    'aval',     r.ficha -> 'vivino_avaliacoes',
+    'notaGlobal', r.ficha -> 'vivino_nota_global',
+    'avalGlobal', r.ficha -> 'vivino_avaliacoes_global',
     'preco',    r.ficha -> 'preco_medio',
     -- A fotografia do vinho (a do RÓTULO, que é do vinho — nunca a
     -- `imagem_path` tirada em casa, que apanha a prateleira à volta e é

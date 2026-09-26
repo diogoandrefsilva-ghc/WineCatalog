@@ -499,7 +499,7 @@ async function garrCorrigir(){
   catch(e){alert(e.message);}
 }
 let FICH=null;
-const FICH_CAMPO={estilo:"Estilo",mencao:"Menção",classificacao:"Classificação",regiao:"Região",sub_regiao:"Sub-região",pais:"País",teor:"Teor",estagio_meses:"Estágio (meses)",estagio_texto:"Estágio",castas:"Castas",vivino_nota:"Nota Vivino",vivino_avaliacoes:"Avaliações",imagem_url:"Imagem",preco_medio:"Preço de referência",beber_de:"Beber de",beber_ate:"Beber até",notas_prova:"Notas de prova",harmonizacao:"Harmonização",ai_resumo:"Resumo"};
+const FICH_CAMPO={estilo:"Estilo",mencao:"Menção",classificacao:"Classificação",regiao:"Região",sub_regiao:"Sub-região",pais:"País",teor:"Teor",estagio_meses:"Estágio (meses)",estagio_texto:"Estágio",castas:"Castas",vivino_nota:"Nota Vivino (colheita)",vivino_avaliacoes:"Avaliações (colheita)",vivino_nota_global:"Nota Vivino (todas)",vivino_avaliacoes_global:"Avaliações (todas)",imagem_url:"Imagem",preco_medio:"Preço de referência",beber_de:"Beber de",beber_ate:"Beber até",notas_prova:"Notas de prova",harmonizacao:"Harmonização",ai_resumo:"Resumo"};
 const FICH_CONTA={outra_colheita:"de outra colheita (não se toca)",cor_diferente:"com cor diferente da do catálogo (não se toca)",sem_catalogo:"fora do catálogo"};
 function fichValor(c,v){
   if(v==null||v==="")return '<span class="nota">(vazio)</span>';

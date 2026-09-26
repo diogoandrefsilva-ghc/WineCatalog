@@ -279,7 +279,7 @@ const WC_CAMPOS=[
   ['regiao','Região'],['sub_regiao','Sub-região'],['pais','País'],
   ['teor','Teor alcoólico'],['estagio_meses','Estágio (meses)'],
   ['estagio_texto','Estágio'],
-  ['vivino_nota','Nota Vivino'],['vivino_avaliacoes','Avaliações Vivino'],
+  ['vivino_nota','Nota Vivino (colheita)'],['vivino_avaliacoes','Avaliações Vivino (colheita)'],
   ['vivino_url','Vivino'],['preco_medio','Preço de referência'],
   ['beber_de','Beber de'],['beber_ate','Beber até'],
   ['notas_prova','Notas de prova'],['harmonizacao','Harmonização'],
@@ -313,11 +313,66 @@ const WC_PROC_TOTAL=WC_CAMPOS.length+1;
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
    um preço de há oito meses, que é coisa que quem olha quer saber. */
-const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','preco_medio','imagem_url','precos'];
+const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','vivino_nota_global','vivino_avaliacoes_global',
+  'preco_medio','imagem_url','precos'];
 /* Campos que só o script escreve e que por isso NÃO entram em WC_CAMPOS
    (que é também a lista do que se pode pedir às pesquisas e ao lote — e
    nenhuma delas sabe o que é `precos`). Aparecem na ficha com este nome. */
-const WC_ROTULOS_EXTRA={precos:'Preços nas lojas'};
+const WC_ROTULOS_EXTRA={precos:'Preços nas lojas',
+  vivino_nota_global:'Nota Vivino (todas as colheitas)',
+  vivino_avaliacoes_global:'Avaliações Vivino (todas as colheitas)'};
+/* A NOTA DO VIVINO SÃO DUAS (26/09/2026, pedido do dono). `vivino_nota`/
+   `vivino_avaliacoes` são as da COLHEITA (o script abre a página com
+   `?year=`); estas são as de TODAS as colheitas (a página sem ano). Um 4,5
+   com 40 avaliações de 2019 e um 4,2 com 5000 do vinho todo respondem a
+   perguntas diferentes. Só o script as escreve — as pesquisas não as
+   conhecem, e por isso ficam fora de `WC_CAMPOS` (o que se pode pedir) e
+   da escolha de campos da "Procurar informação"; mexem-se no Editar. */
+const WC_VIVINO_GLOBAL=['vivino_nota_global','vivino_avaliacoes_global'];
+/* A ordem da FICHA: a de `WC_CAMPOS`, com a nota de todas as colheitas logo
+   a seguir à da colheita — lida ao lado dela, e não perdida no fim. */
+const WC_FICHA=WC_CAMPOS.flatMap(c=>c[0]==='vivino_avaliacoes'
+  ?[c].concat(WC_VIVINO_GLOBAL.map(k=>[k,WC_ROTULOS_EXTRA[k]])):[c]);
+/* QUAL DAS DUAS SE MOSTRA num cartão — a mesma regra do `notaVivino` da
+   Garrafeira (mexer numa é mexer na outra, no mesmo dia):
+   · a da colheita, se tiver pelo menos 100 avaliações;
+   · senão a que tiver MAIS avaliações — que é quase sempre a de todas as
+     colheitas (o vinho todo não pode ter menos do que um dos anos dele);
+     em empate, a de todas. É isto que resolve o caso de nenhuma chegar às
+     100: ganha a que mais gente avaliou.
+   Uma nota sem contagem conta como zero avaliações; só uma das duas, é essa.
+   Nunca uma média das duas: era um número que ninguém encontra no Vivino. */
+const WC_VIVINO_MIN_AVAL=100;
+function wcNotaVivino(nota,aval,notaG,avalG){
+  const n=x=>{if(x==null||x==='')return null;const v=Number(x);return isFinite(v)?v:null;};
+  const c=n(nota)!=null?{nota:n(nota),aval:n(aval),de:'colheita'}:null;
+  const g=n(notaG)!=null?{nota:n(notaG),aval:n(avalG),de:'global'}:null;
+  if(!c||!g)return c||g;
+  if((c.aval||0)>=WC_VIVINO_MIN_AVAL)return c;
+  return (c.aval||0)>(g.aval||0)?c:g;
+}
+/* A mesma escolha a partir de uma FICHA (a ficha aberta, a revisão). */
+function wcNotaVivinoFicha(f){
+  f=f||{};
+  return wcNotaVivino(f.vivino_nota,f.vivino_avaliacoes,f.vivino_nota_global,f.vivino_avaliacoes_global);
+}
+/* O porquê, para o `title` do crachá. */
+function wcNotaVivinoTitulo(nv,ano){
+  if(!nv)return '';
+  const q=nv.aval!=null?` · ${nFmt(nv.aval)} avaliações`:'';
+  return nv.de==='global'?`Nota do Vivino de todas as colheitas${q}`
+    :`Nota do Vivino${ano?' da colheita '+ano:''}${q}`;
+}
+/* A nota de uma LINHA da lista (`resumo_linha`): a estrela e, quando é a de
+   todas as colheitas, a palavra "todas" — a da colheita é o normal e não
+   leva nada (até 26/09/2026 era a única, e muita veio de pesquisas sem
+   colheita; chamar-lhe "da colheita" no cartão era dizer o que não se sabe). */
+function wcNotaLinhaHTML(v,cls){
+  const nv=wcNotaVivino(v.nota,v.aval,v.notaGlobal,v.avalGlobal);
+  if(!nv)return '';
+  return `<span class="${cls||'cat-nota'}" title="${esc(wcNotaVivinoTitulo(nv,v.ano))}">★ ${esc(String(nv.nota))}${
+    nv.de==='global'?' <small class="nota-de">todas</small>':''}</span>`;
+}
 const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vinha:'Vinha.pt',vivino:'Vivino'};
 
 function wcValorHTML(k,v){
@@ -720,7 +775,7 @@ function wcLinhaHTML(v){
       ${castas?`<div class="cat-castas">${esc(castas)}</div>`:''}
     </div>
     <div class="cat-lado">
-      ${v.nota!=null?`<span class="cat-nota">★ ${esc(String(v.nota))}</span>`:''}
+      ${wcNotaLinhaHTML(v)}
       ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}
     </div>
   </div>`;
@@ -734,7 +789,7 @@ function wcCartaoHTML(v){
     <div class="cat-nome">${esc(v.nome||'(sem nome)')}</div>
     <div class="cat-sub">${esc(sub||'—')}${v.ano?' · '+esc(String(v.ano)):''}</div>
     <div class="cat-cartao-n">
-      ${v.nota!=null?`<span class="cat-nota">★ ${esc(String(v.nota))}</span>`:''}
+      ${wcNotaLinhaHTML(v)}
       ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}
     </div>
   </div>`;
@@ -864,9 +919,9 @@ function wcProvenienciaHTML(v){
   const ficha=v.ficha||{};
   const origens=v.origens||{};
   const nome={};
-  WC_CAMPOS.forEach(([k,l])=>{nome[k]=l;});
-  const chaves=WC_CAMPOS.map(([k])=>k).filter(k=>k in origens)
-    .concat(Object.keys(origens).filter(k=>!WC_CAMPOS.some(([c])=>c===k)));
+  WC_FICHA.forEach(([k,l])=>{nome[k]=l;});
+  const chaves=WC_FICHA.map(([k])=>k).filter(k=>k in origens)
+    .concat(Object.keys(origens).filter(k=>!WC_FICHA.some(([c])=>c===k)));
   if(!chaves.length)return '';
 
   let forte=0,media=0,fraca=0;
@@ -909,7 +964,11 @@ function wcFichaHTML(v){
   const img=String(ficha.imagem_url||'').trim();
   const origem=[v.produtor,ficha.regiao,ficha.sub_regiao].filter(Boolean).map(esc).join(' · ');
   const jan=wcJanelaTxt(ficha.beber_de,ficha.beber_ate);
-  const nota=ficha.vivino_nota;
+  const nv=wcNotaVivinoFicha(ficha);
+  /* A que se mostra leva a colheita ou "todas as colheitas" quando as duas
+     existem — com uma só, fica como sempre foi (ver `wcNotaLinhaHTML`). */
+  const temDuas=ficha.vivino_nota!=null&&ficha.vivino_nota_global!=null;
+  const nvDe=!nv?'':nv.de==='global'?' · todas as colheitas':(temDuas&&v.ano?' · colheita '+v.ano:'');
 
   let h=`<div class="mhero">
     <button class="mx" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
@@ -922,7 +981,7 @@ function wcFichaHTML(v){
         <div class="mhero-k">${esc([tipo,ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
         <h3>${esc(v.nome||'(sem nome)')}</h3>
         <div class="mhero-s"><span class="mhero-o">${origem||'<em>sem produtor nem região</em>'}${origem&&v.ano?' · ':''}</span>${v.ano?`<b>${esc(String(v.ano))}</b>`:''}</div>
-        ${nota!=null?`<span class="mhero-n">★ ${esc(Number(nota).toFixed(2))} Vivino${ficha.vivino_avaliacoes?` · ${esc(nFmt(ficha.vivino_avaliacoes))}`:''}</span>`:''}
+        ${nv?`<span class="mhero-n" title="${esc(wcNotaVivinoTitulo(nv,v.ano))}">★ ${esc(nv.nota.toFixed(2))} Vivino${nv.aval?` · ${esc(nFmt(nv.aval))}`:''}${esc(nvDe)}</span>`:''}
         ${jan?`<span class="mhero-n">${esc(jan)}</span>`:''}
       </div>
     </div>
@@ -947,8 +1006,8 @@ function wcFichaHTML(v){
   h+=`<div id="proc-caixa"></div>`;
 
   /* ── A FICHA ── */
-  const conhecidos=WC_CAMPOS.filter(([k])=>k in ficha);
-  const extra=Object.keys(ficha).filter(k=>!WC_CAMPOS.some(([c])=>c===k)).map(k=>[k,WC_ROTULOS_EXTRA[k]||k]);
+  const conhecidos=WC_FICHA.filter(([k])=>k in ficha);
+  const extra=Object.keys(ficha).filter(k=>!WC_FICHA.some(([c])=>c===k)).map(k=>[k,WC_ROTULOS_EXTRA[k]||k]);
   const todos=conhecidos.concat(extra);
 
   h+='<div class="msec">Ficha</div>';
@@ -1053,8 +1112,10 @@ const WC_EDIT=[
   ['teor','Teor alcoólico (%)','num'],
   ['estagio_meses','Estágio (meses)','int'],
   ['estagio_texto','Estágio','txt'],
-  ['vivino_nota','Nota Vivino (0-5)','num'],
-  ['vivino_avaliacoes','Avaliações Vivino','int'],
+  ['vivino_nota','Nota Vivino da colheita (0-5)','num'],
+  ['vivino_avaliacoes','Avaliações Vivino da colheita','int'],
+  ['vivino_nota_global','Nota Vivino de todas as colheitas (0-5)','num'],
+  ['vivino_avaliacoes_global','Avaliações Vivino de todas as colheitas','int'],
   ['vivino_url','URL do Vivino','txt'],
   ['preco_medio','Preço de referência (€)','num'],
   ['beber_de','Beber de (ano)','int'],
@@ -1753,6 +1814,7 @@ function wcAbrirProcurar(){
   </label>`;
   for(const [k,lbl] of WC_EDIT.map(([k,l])=>[k,l])){
     if(_wcFicha.ano==null&&WC_JANELA.includes(k))continue;   // sem colheita não há janela
+    if(WC_VIVINO_GLOBAL.includes(k))continue;                // só o script as lê (ver WC_VIVINO_GLOBAL)
     const tem=k in ficha;
     const o=origens[k]||{}, f=Number(o.f||0);
     h+=`<label class="pr-campo">
@@ -2918,7 +2980,7 @@ function wcLadoHTML(v,outro,podeDecidir){
     <div class="par-meta">
       <span>${nFmt(v.campos)} campos</span>
       <span class="forca f${esc(String(v.forca))}">${esc(String(v.forca))}</span>
-      ${v.nota!=null?`<span class="cat-nota">${esc(String(v.nota))}</span>`:''}
+      ${wcNotaLinhaHTML(v)}
     </div>
     <div class="par-chave"><code>${esc(v.chave)}</code></div>
     ${podeDecidir?`<button class="btn-n larg" onclick="wcFundir(${outro.id},${v.id})">Ficar com esta</button>`:''}
@@ -3217,6 +3279,11 @@ function wcVivNum(n,casas){
   return isFinite(x)?x.toLocaleString('pt-PT',casas?{minimumFractionDigits:casas,maximumFractionDigits:casas}:{}):esc(String(n));
 }
 
+/* A nota de todas as colheitas, quando a há (a de cima é a da colheita). */
+function wcVivGlobalHTML(x){
+  if(!x||(x.vivino_nota_global==null&&x.vivino_avaliacoes_global==null))return '';
+  return `<span class="viv-sub">todas as colheitas: ${wcVivNum(x.vivino_nota_global,1)} ★ · ${wcVivNum(x.vivino_avaliacoes_global)} avaliações</span>`;
+}
 function wcVivinoHTML(r,i){
   const [rot,desc]=WC_VIV_ESTADO[r.estado]||[r.estado,''];
   const a=r.agora||{}, p=r.proposta||null;
@@ -3237,11 +3304,13 @@ function wcVivinoHTML(r,i){
     <p class="wc-note" style="margin-top:6px">${esc(desc)}${r.nomePagina?` — a página diz <strong>“${esc(r.nomePagina)}”</strong>`:''}</p>
     <div class="rep-vals">
       <div><span>no catálogo agora</span><b class="viv-url">${wcVivLink(a.vivino_url)}</b>
-        <b>${wcVivNum(a.vivino_nota,1)} ★ · ${wcVivNum(a.vivino_avaliacoes)} avaliações</b></div>
+        <b>${wcVivNum(a.vivino_nota,1)} ★ · ${wcVivNum(a.vivino_avaliacoes)} avaliações</b>
+        ${wcVivGlobalHTML(a)}</div>
       ${p?`<div class="agora"><span>${apagar?'proposta':'o script propõe'}</span>
         ${apagar?'<b>apagar o link (não encontrou o vinho no Vivino)</b>':
         `<b class="viv-url">${wcVivLink(p.vivino_url)}</b>
          <b>${wcVivNum(p.vivino_nota,1)} ★ · ${wcVivNum(p.vivino_avaliacoes)} avaliações</b>
+         ${wcVivGlobalHTML(p)}
          ${p.nome?`<span class="viv-sub">“${esc(p.nome)}”${p.confianca!=null?` · parecença ${Math.round(Number(p.confianca)*100)}%`:''}</span>`:''}`}
       </div>`:''}
     </div>
