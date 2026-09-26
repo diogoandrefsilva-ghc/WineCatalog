@@ -429,6 +429,13 @@ desenho do `iaMostrarResultado` da Garrafeira:
 - a mesma revisão serve a pesquisa **automática**, a **profunda**, a
   **manual** (o texto colado sobrevive a um erro) e o **lote**.
 
+**As etapas dizem-se como na Garrafeira** (26/09/2026): a revisão abre
+com "A pesquisa com IA terminou e trouxe informação nova em N campos" (ou
+"A pesquisa avançada…", "A resposta colada…"), e depois de uma pesquisa com
+IA pergunta sempre "Pretendes fazer a pesquisa avançada?" — que é a
+profunda com outro nome (Serper, e o Gemini só a ler). Antes o botão só
+aparecia quando a resposta tinha vindo de memória.
+
 **Sem `rever` a Edge Function faz o de antes** (grava pela força e relata):
 é o que uma app ainda em cache manda, e é o que deixa publicar a função sem
 esperar pela página. O `sync_log` da pesquisa conta em `campos` o que a IA

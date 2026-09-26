@@ -1928,7 +1928,7 @@ function wcProcCaixa(){return document.getElementById('proc-caixa');}
    pesquisa anda, e o resultado aparece-lhe lá. */
 function wcProcEspera(profunda,manual){
   const t=manual?'A ler a resposta colada…'
-    :profunda?'Pesquisa profunda — a pesquisar no Google…':'A pesquisar…';
+    :profunda?'Pesquisa avançada — a pesquisar no Google…':'A pesquisar com IA…';
   const box=document.getElementById('procurar-corpo');
   if(box){
     box.innerHTML=`<div class="pr-espera">
@@ -2100,11 +2100,20 @@ function wcRevisaoCorpo(res,o){
   const igual=nIg?`<p class="wc-note">${nIg===1?'Mais 1 campo veio':'Mais '+nIg+' campos vieram'} igual ao que
     já está (${esc(r.iguais.map(wcRvNome).join(', '))}).</p>`:'';
   let h='';
+  /* As mesmas etapas e as mesmas palavras da Garrafeira: o que a pesquisa
+     fez, numa frase, e — depois de uma pesquisa com IA — a pergunta da
+     seguinte, a avançada (a profunda: Serper, e o Gemini só a ler). */
+  const manual=res.pesquisaWeb!==true&&res.pesquisaWeb!==false;
+  const quem=manual?'A resposta colada':res.profunda?'A pesquisa avançada':'A pesquisa com IA';
+  const n=r.linhas.length;
+  h+=`<p class="wc-note" style="font-size:13.5px;color:var(--tx)">${quem} terminou e ${n
+    ?`trouxe informação nova em <b>${n}</b> ${n===1?'campo':'campos'}.`:'não trouxe nada de novo.'}</p>`;
   if(res.aviso)h+=`<div class="rv-aviso">⚠️ ${esc(res.aviso)}</div>`;
-  if(o.profunda&&res.pesquisaWeb===false){
-    h+=`<div class="rv-memoria"><span>🧠 O Gemini respondeu <b>de memória</b>, sem pesquisa Google.
-      Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.</span>
-      <button class="btn-n" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda</button></div>`;
+  if(o.profunda&&!manual&&!res.profunda){
+    h+=`<div class="rv-memoria"><span>${res.pesquisaWeb===false
+        ?'🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net. '
+        :''}<b>Pretendes fazer a pesquisa avançada?</b> Pesquisa mesmo no Google (o Vivino incluído) e a IA só lê o que se encontrou.</span>
+      <button class="btn-n" onclick="wcProcurarProfunda()">🔬 Pesquisa avançada</button></div>`;
   }
   if(r.linhas.length){
     h+=`<p class="wc-note"><strong>Ainda não foi gravado nada.</strong> Só entra o que ficar marcado.
@@ -2112,9 +2121,9 @@ function wcRevisaoCorpo(res,o){
       <div class="rv-lista" id="${o.id}">${r.linhas.join('')}</div>${igual}
       <div class="macoes fim">${o.botoes(true)}</div>`;
   }else{
-    h+=`<p class="wc-note" style="font-size:13.5px;color:var(--tx)">${r.total
-        ?'A pesquisa não trouxe nada de novo — o que está na ficha já bate certo com o que se encontrou.'
-        :'A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: é o modelo a não inventar, que é o que se lhe pede.'}</p>
+    h+=`<p class="wc-note">${r.total
+        ?'O que está na ficha já bate certo com o que se encontrou.'
+        :'Não confirmou nenhum dos campos pedidos. Não é um erro: é o modelo a não inventar, que é o que se lhe pede.'}</p>
       ${igual}<div class="macoes fim">${o.botoes(false)}</div>`;
   }
   const fontes=Array.isArray(res.fontes)?res.fontes:[];
@@ -2122,7 +2131,7 @@ function wcRevisaoCorpo(res,o){
     `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join(' · ')}</div>`;
   h+=`<div class="rv-fontes"><i>${
     res.pesquisaWeb===false?'⚠️ Isto saiu da memória do modelo, sem pesquisa na net — confere tudo antes de aceitar.'
-    :res.pesquisaWeb===true?(res.profunda?'Pesquisa profunda: tirado só dos resultados do Google.':'Pesquisado no Google.')+
+    :res.pesquisaWeb===true?(res.profunda?'Pesquisa avançada: tirado só dos resultados do Google.':'Pesquisado no Google.')+
       ' Leitura automática de páginas da net — vale como ponto de partida, não como certeza.'
     :'Resposta colada de um assistente de IA — confere antes de aceitar.'}${res.modelo?` · ${esc(res.modelo)}`:''}</i></div>`;
   return h;
