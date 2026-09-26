@@ -327,8 +327,9 @@ function wcValorHTML(k,v){
     return ['garrafeira_nacional','granvine','vinha','vivino'].filter(l=>v[l]&&v[l].preco!=null).map(l=>{
       const x=v[l];
       const t=`${esc(WC_LOJAS_NOMES[l]||l)} ${esc(eurFmt(x.preco))}${x.colheita?` (colheita ${esc(String(x.colheita))})`:''}`;
-      return (x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t)+
-        (x.em?` <span class="wc-note">· ${esc(x.em)}</span>`:'');
+      const a=x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t;
+      return (x.retirado?`<s>${a}</s> <span class="wc-note">· retirado à mão</span>`:a)+
+        (x.em&&!x.retirado?` <span class="wc-note">· ${esc(x.em)}</span>`:'');
     }).join('<br>')||'—';
   }
   if(Array.isArray(v))return esc(v.join(', '));
@@ -1272,7 +1273,8 @@ function wcAbrirEditar(){
     para a próxima escrita de qualquer garrafeira o voltar a preencher. Para travar um valor
     errado, corrige-o em vez de o apagares.</p>
   <div class="divi"></div>
-  ${wcCamposEditHTML('ed-',ficha,origens)}`;
+  ${wcCamposEditHTML('ed-',ficha,origens)}
+  ${wcPrecosEditHTML(ficha.precos,ficha.preco_medio)}`;
 
   /* A identidade fica atrás de um interruptor, e não por timidez: mexer no
      nome muda a CHAVE, que é o que faz duas linhas serem a mesma. Aberto
@@ -1301,6 +1303,63 @@ function wcAbrirEditar(){
   wcJanelaSincronizar('ed-',v.ano);
   abrirModal('modal-editar');
 }
+/* ── AS FONTES DE PREÇO ──
+   Os preços das lojas (`ficha.precos`) só o script os escreve, e às vezes
+   escreve mal: o Casa de Saima Garrafeira veio a 8,49 € do Vivino, com as
+   lojas a 60 €. Aqui retira-se uma fonte — e RETIRAR não é apagar: a
+   entrada fica com `retirado:true`. Apagada, a corrida seguinte do script
+   lia a mesma página e punha lá o mesmo número; marcada, o script salta-a,
+   a Garrafeira (`precos_lojas`) não a vê, e desmarcar devolve-a. */
+function wcPrecosEditHTML(precos,medio){
+  if(!precos||typeof precos!=='object'||Array.isArray(precos))return '';
+  const lojas=['garrafeira_nacional','granvine','vinha','vivino'];
+  const ks=Object.keys(precos).filter(l=>precos[l]&&precos[l].preco!=null)
+    .sort((a,b)=>(lojas.indexOf(a)+1||99)-(lojas.indexOf(b)+1||99));
+  if(!ks.length)return '';
+  const m=Number(medio);
+  return `<div class="divi"></div>
+  <div class="ed-campo"><label>Fontes de preço</label>
+  <p class="wc-note">Marca as que estão <strong>erradas</strong>. Ficam de fora do preço nas três
+    apps e o script deixa de as ler — desmarcar devolve-as.</p>
+  ${ks.map(l=>{
+    const x=precos[l], pr=Number(x.preco);
+    const t=`${esc(WC_LOJAS_NOMES[l]||l)} · ${esc(eurFmt(x.preco))}${x.colheita?` · colheita ${esc(String(x.colheita))}`:''}`;
+    return `<label class="ed-check"><input type="checkbox" class="ed-preco-ret" data-loja="${esc(l)}"
+        ${x.retirado?'checked':''} onchange="wcPrecoRetirarMudou()">
+      Retirar ${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t}${
+        isFinite(m)&&m>0&&Math.abs(pr-m)<0.005?' <span class="wc-note">(é o preço médio)</span>':''}</label>`;
+  }).join('')}
+  <p class="wc-note ed-oculto" id="ed-preco-aviso">O <strong>preço médio</strong> veio de uma fonte
+    que retiraste — corrige-o ou esvazia-o lá em cima.</p></div>`;
+}
+function wcPrecoRetirarMudou(){
+  const precos=((_wcFicha||{}).ficha||{}).precos||{};
+  const el=document.getElementById('ed-preco_medio');
+  const m=el?parseFloat(String(el.value).replace(',','.')):NaN;
+  const bate=[...document.querySelectorAll('.ed-preco-ret')].some(c=>c.checked&&
+    isFinite(m)&&Math.abs(Number((precos[c.dataset.loja]||{}).preco)-m)<0.005);
+  const a=document.getElementById('ed-preco-aviso');
+  if(a)a.classList.toggle('ed-oculto',!bate);
+}
+/* O `precos` inteiro de volta, com a marca posta ou tirada; `undefined`
+   quando nada mudou — a `editar` já não escreve o que é igual, mas assim
+   nem o manda. */
+function wcLerPrecosRetirados(){
+  const antes=((_wcFicha||{}).ficha||{}).precos;
+  const cs=[...document.querySelectorAll('.ed-preco-ret')];
+  if(!antes||!cs.length)return undefined;
+  const hoje=new Date().toISOString().slice(0,10);
+  const novo=JSON.parse(JSON.stringify(antes));
+  let mudou=false;
+  cs.forEach(c=>{
+    const x=novo[c.dataset.loja];
+    if(!x||!!x.retirado===c.checked)return;
+    mudou=true;
+    if(c.checked){x.retirado=true;x.retirado_em=hoje;}
+    else{delete x.retirado;delete x.retirado_em;}
+  });
+  return mudou?novo:undefined;
+}
 function wcEdIdent(){
   const on=document.getElementById('ed-ident').checked;
   document.getElementById('ed-ident-box').classList.toggle('ed-oculto',!on);
@@ -1318,6 +1377,8 @@ async function wcGuardarEdicao(){
   catch(e){toast('Erro: '+e.message,1);if(b){b.disabled=false;b.textContent='Guardar';}return;}
   const anoEd=String((document.getElementById('ed-ano')||{}).value||'').trim();
   const args={p_id:_wcFicha.id,p_campos:wcLerCampos('ed-',ident?anoEd==='':_wcFicha.ano==null)};
+  const precosNovos=wcLerPrecosRetirados();
+  if(precosNovos)args.p_campos.precos=precosNovos;
   if(ident){
     const ano=anoEd;
     args.p_nome=String((document.getElementById('ed-nome')||{}).value||'').trim();

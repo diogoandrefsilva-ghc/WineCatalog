@@ -745,6 +745,15 @@ imagem" das lojas ficam de fora (`imagemDe`). A foto de uma loja pode ser de
 outra colheita — aceite, como no preço. `LOJAS=false` (o nome
 antigo) continua a valer `MODO=vivino`.
 
+**Uma fonte de preço retira-se à mão** (26/09/2026, Editar › "Fontes de
+preço", `wcPrecosEditHTML`): o Casa de Saima tinha o Vivino a 8,49 € com as
+lojas a 63 € e 69 €. Retirar NÃO apaga — a entrada de `precos` fica com
+`retirado:true` (+ `retirado_em`): apagada, a corrida seguinte do script lia
+a mesma página e punha lá o mesmo número. Marcada, o script não a lê nem a
+conta para o preço médio (`retirada`/`conta`), a `garrafeira.precos_lojas`
+não a devolve, a ficha mostra-a riscada, e desmarcar devolve-a. O preço
+médio não se mexe sozinho: se veio dessa fonte, o ecrã avisa.
+
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
 região, país, teor, estágio, harmonização, notas de prova — dos pares
 "rótulo → valor" das páginas (tabelas, `dt/dd`, linhas "Castas: …"), da lista

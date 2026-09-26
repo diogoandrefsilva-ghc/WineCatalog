@@ -1147,6 +1147,11 @@ async function main() {
       const precos = { ...(v.precos && typeof v.precos === "object" ? v.precos : {}) };
       let precosMudaram = false;
       let achadaAgora = null;
+      // Uma fonte que o admin RETIROU em Editar (o preço estava errado) fica
+      // como está: nem se lê de novo, nem conta para o preço médio. Sem isto
+      // a corrida seguinte punha lá o mesmo número (é o que a página diz).
+      const retirada = k => !!(precos[k] && precos[k].retirado);
+      const conta = k => precos[k] && !precos[k].retirado && numero(precos[k].preco) != null;
       // O que cada página diz da ficha, pela ordem da prioridade das fontes.
       const fichas = [];
       if (MOTOR === "browser" && LOJAS_LIGADAS && res.estado !== "bloqueado") {
@@ -1154,6 +1159,7 @@ async function main() {
         res.detalhe.lojas = [];
         for (const loja of LOJAS) {
           if (lojasBloqueadas.has(loja.id)) continue;
+          if (retirada(loja.id)) { console.log(`   ${loja.nome}: retirada à mão — não se lê`); continue; }
           await pausa();
           let r;
           try { r = await lerLoja(page, loja, v); }
@@ -1187,6 +1193,10 @@ async function main() {
           }
         }
       }
+      if (res.vivino_preco && retirada("vivino")) {
+        console.log(`   Vivino: preço retirado à mão — fica de fora`);
+        delete res.vivino_preco;
+      }
       if (res.vivino_preco) {
         precos.vivino = { ...res.vivino_preco, em: hoje };
         precosMudaram = true;
@@ -1195,15 +1205,15 @@ async function main() {
       // O preço do Vivino tem de estar perto do das lojas (metade a dobro):
       // o 8,49 € de um Garrafeira de 60 € não era da mesma garrafa. Vale
       // também para um preço do Vivino gravado numa corrida anterior.
-      const daLoja = PRIORIDADE_PRECO.filter(k => k !== "vivino").map(k => precos[k]).find(x => x && numero(x.preco) != null);
-      if (precos.vivino && daLoja) {
+      const daLoja = PRIORIDADE_PRECO.filter(k => k !== "vivino" && conta(k)).map(k => precos[k])[0];
+      if (conta("vivino") && daLoja) {
         const r = numero(precos.vivino.preco) / numero(daLoja.preco);
         if (!(r >= 0.5 && r <= 2)) {
           console.log(`   Vivino: ${precos.vivino.preco} € posto de lado — longe de mais das lojas (${daLoja.preco} €)`);
           delete precos.vivino;
           precosMudaram = true;
         }
-      } else if (precos.vivino && res.vivino_preco && numero(v.preco_medio) > 0) {
+      } else if (conta("vivino") && res.vivino_preco && numero(v.preco_medio) > 0) {
         // Sem loja nenhuma (só o Vivino, ou nenhuma o tinha), a mesma regra
         // contra o preço médio que o catálogo já tem: na 4.ª corrida o
         // "Grande Piano Grande Reserva" passou de 32,20 € a 9,75 €. Não se
@@ -1224,8 +1234,8 @@ async function main() {
       // preço antigo de uma loja que hoje não o encontrou não conta. No
       // "vivino", o do Vivino, e só se o que lá está não veio de uma loja.
       const escolha = MODO === "precos" ? achadaAgora
-        : MODO === "vivino" ? (res.vivino_preco && precos.vivino && numero(precos.vivino.preco) != null && !/^loja-/.test(v.origem_preco || "") ? "vivino" : null)
-        : PRIORIDADE_PRECO.find(k => precos[k] && numero(precos[k].preco) != null);
+        : MODO === "vivino" ? (res.vivino_preco && conta("vivino") && !/^loja-/.test(v.origem_preco || "") ? "vivino" : null)
+        : PRIORIDADE_PRECO.find(conta);
       if (MODO === "vivino" && precos.vivino && /^loja-/.test(v.origem_preco || ""))
         console.log(`   preço médio fica ${v.preco_medio} € (veio de uma loja — só o Vivino não lhe mexe)`);
 
