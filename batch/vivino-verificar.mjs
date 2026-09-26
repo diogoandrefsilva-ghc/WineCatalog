@@ -612,6 +612,7 @@ async function verificar(page, v) {
     // null). Continua a ser uma proposta — o admin é que decide.
     if (!proposta && estado === "nao_existe") proposta = { vivino_url: null };
   }
+  if (proposta && proposta.vivino_url) await lerGlobal(page, v, proposta, det);
   const ficha = det._ficha || null;
   delete det._ficha;
   if (ficha && Object.keys(ficha).length) det.ficha_lida = ficha;
@@ -751,6 +752,54 @@ function semOutraColheita(v, proposta, det, nome, final) {
   delete proposta.vivino_avaliacoes;
   det._preco = null;
   det.outra_colheita = mostrada;
+}
+// A NOTA DE TODAS AS COLHEITAS (26/09/2026, pedido do dono). A da colheita
+// é a mais certa quando tem avaliações que cheguem; com 40, um 4,5 diz
+// menos do que o 4,2 de 5000 do vinho todo. Guardam-se as duas
+// (`vivino_nota_global`/`vivino_avaliacoes_global`), e quem mostra escolhe
+// (`notaVivino` na Garrafeira, `wcNotaVivino` aqui: a da colheita a partir
+// de 100 avaliações). A global é a que o Vivino mostra SEM `?year=` — o
+// Carm deu 8664 assim na 1.ª corrida.
+// · Vinho sem colheita: a página já foi aberta sem ano, e o que se leu É a
+//   global — passa para lá, e a da colheita fica vazia (não há colheita).
+// · Com colheita: abre-se outra vez o mesmo vinho sem ano. Tem de ser o
+//   mesmo número, sem `year=` no endereço final (senão abriu UMA colheita),
+//   e com pelo menos tantas avaliações como a colheita (o vinho todo não
+//   pode ter menos do que um dos anos dele — se tiver, é outro número da
+//   página). O que não passa fica de fora; a da colheita não se toca.
+// Uma recusa aqui não deita o vinho abaixo: fica registada, e o vinho
+// seguinte é que conta para as duas recusas seguidas.
+async function lerGlobal(page, v, proposta, det) {
+  const mover = () => {
+    if (proposta.vivino_nota != null) proposta.vivino_nota_global = proposta.vivino_nota;
+    if (proposta.vivino_avaliacoes != null) proposta.vivino_avaliacoes_global = proposta.vivino_avaliacoes;
+    delete proposta.vivino_nota; delete proposta.vivino_avaliacoes;
+  };
+  if (!v.ano) {
+    const final = (det.melhor || det.atual || {}).url_final || "";
+    if (anoDoLink(final)) {
+      delete proposta.vivino_nota; delete proposta.vivino_avaliacoes;
+      det.global = { motivo: "sem colheita no catálogo, e a página abriu numa colheita" };
+    } else {
+      mover();
+      det.global = { mesma_pagina: true };
+    }
+    return;
+  }
+  await pausa();
+  const url = urlLimpo(proposta.vivino_url);
+  const g = await abrir(page, url);
+  det.global = { url, http: g.status, url_final: g.final };
+  if (bloqueio(g.status, g.info)) { det.global.bloqueado = true; return; }
+  if (!g.info || idDoVinho(g.final) !== idDoVinho(url)) { det.global.motivo = "não abriu o mesmo vinho"; return; }
+  if (anoDoLink(g.final)) { det.global.motivo = "a página abriu numa colheita"; return; }
+  const { nota, aval } = numerosDe(g.info);
+  det.global.nota = nota; det.global.avaliacoes = aval;
+  if (aval != null && proposta.vivino_avaliacoes != null && aval < proposta.vivino_avaliacoes) {
+    det.global.motivo = "menos avaliações do que a colheita"; return;
+  }
+  if (nota != null) proposta.vivino_nota_global = nota;
+  if (aval != null) proposta.vivino_avaliacoes_global = aval;
 }
 function anoDoLink(url) {
   try { return new URL(url).searchParams.get("year") || null; } catch { return null; }
@@ -1064,7 +1113,7 @@ async function verificarSerper(v) {
       const txt = `${tit} ${r.link.replace(/[-/]/g, " ")}`;
       const { nota, aval } = numerosDoResultado(r);
       const c = porId.get(id) || { vivino_url: urlLimpo(r.link), texto: tit || r.link, notas: [], avals: [],
-        parecenca: 0, cor_bate: false, a_mais: null, mencao_bate: false };
+        notasG: [], avalsG: [], parecenca: 0, cor_bate: false, a_mais: null, mencao_bate: false };
       if (mencaoBate(v, tit)) c.mencao_bate = true;
       const p = Math.round(parecenca(v, txt) * 100) / 100;
       if (p > c.parecenca || c.a_mais == null) {
@@ -1072,14 +1121,25 @@ async function verificarSerper(v) {
         const am = aMais(v, tit);
         if (c.a_mais == null || am.length < c.a_mais.length) { c.a_mais = am; c.texto = tit || c.texto; }
       }
-      if (nota != null) c.notas.push(nota);
-      if (aval != null) c.avals.push(aval);
+      // As estrelas que o Google mostra são as da página que ele guardou: um
+      // link sem `?year=` é o vinho todo (a nota GLOBAL), um com o ano do
+      // catálogo é a nossa colheita, um com outro ano não é nenhuma das duas
+      // (26/09/2026). Até aqui iam todas para a da colheita.
+      const anoR = anoDoLink(r.link);
+      if (!anoR) {
+        if (nota != null) c.notasG.push(nota);
+        if (aval != null) c.avalsG.push(aval);
+      } else if (v.ano && anoR === String(v.ano)) {
+        if (nota != null) c.notas.push(nota);
+        if (aval != null) c.avals.push(aval);
+      }
       porId.set(id, c);
     }
     const moda = xs => xs.length ? [...xs].sort((a, b) => xs.filter(x => x === b).length - xs.filter(x => x === a).length)[0] : null;
     candidatos = [...porId.values()].map(c => ({
       vivino_url: c.vivino_url, texto: c.texto, parecenca: c.parecenca, cor_bate: c.cor_bate,
       a_mais: c.a_mais || [], mencao_bate: c.mencao_bate, nota: moda(c.notas), avaliacoes: moda(c.avals),
+      nota_global: moda(c.notasG), avaliacoes_global: moda(c.avalsG),
     // A parecença primeiro: faltar uma palavra do NOSSO nome ("Syrah") é
     // pior do que o título ter uma a mais ("Signature"). Na 2.ª corrida, a
     // ordem ao contrário escolheu o "Aldeias de Juromenha Reserva" (sem o
@@ -1100,6 +1160,8 @@ async function verificarSerper(v) {
     proposta = { vivino_url: melhor.vivino_url, nome: melhor.texto, confianca: melhor.parecenca };
     if (melhor.nota != null) proposta.vivino_nota = melhor.nota;
     if (melhor.avaliacoes != null) proposta.vivino_avaliacoes = melhor.avaliacoes;
+    if (melhor.nota_global != null) proposta.vivino_nota_global = melhor.nota_global;
+    if (melhor.avaliacoes_global != null) proposta.vivino_avaliacoes_global = melhor.avaliacoes_global;
     if (atualValido && idDoVinho(melhor.vivino_url) === atualId) estado = "certo";
     else estado = v.vivino_url ? "diferente" : "sem_link";
   } else if (v.vivino_url && !atualValido && !/\/wines\/\d+/.test(v.vivino_url)) {
@@ -1178,7 +1240,9 @@ async function main() {
       const p = res.proposta;
       console.log(`${v.id ? "#" + v.id : "NOVO"} ${v.nome}${v.ano && !String(v.nome).includes(String(v.ano)) ? " " + v.ano : ""} → ${res.estado}` +
         (res.nome_pagina ? ` · página: "${res.nome_pagina}"` : "") +
-        (p ? ` · proposta: ${p.vivino_url ?? "apagar o link"} ${p.vivino_nota ?? ""} ${p.vivino_avaliacoes ?? ""}` : ""));
+        (p ? ` · proposta: ${p.vivino_url ?? "apagar o link"} ${p.vivino_nota ?? ""} ${p.vivino_avaliacoes ?? ""}` +
+             (p.vivino_nota_global != null || p.vivino_avaliacoes_global != null
+               ? ` · global ${p.vivino_nota_global ?? "?"} ${p.vivino_avaliacoes_global ?? ""}` : "") : ""));
       // ── As lojas (só no PC: o motor Serper não abre páginas) ──
       const hoje = new Date().toISOString().slice(0, 10);
       const precos = { ...(v.precos && typeof v.precos === "object" ? v.precos : {}) };
@@ -1395,6 +1459,11 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
     const antes = Number(v.vivino_avaliacoes), depois = Number(res.proposta.vivino_avaliacoes);
     if (!(antes > 0 && depois > antes * 5 && depois - antes > 1000))
       junta("vivino_avaliacoes", v.vivino_avaliacoes, res.proposta.vivino_avaliacoes, origemVivino);
+    // A de todas as colheitas (`lerGlobal`), com a mesma trava do salto.
+    junta("vivino_nota_global", atual.vivino_nota_global, res.proposta.vivino_nota_global, origemVivino);
+    const antesG = Number(atual.vivino_avaliacoes_global), depoisG = Number(res.proposta.vivino_avaliacoes_global);
+    if (!(antesG > 0 && depoisG > antesG * 5 && depoisG - antesG > 1000))
+      junta("vivino_avaliacoes_global", atual.vivino_avaliacoes_global, res.proposta.vivino_avaliacoes_global, origemVivino);
     fontes[origemVivino] = [{ url: res.proposta.vivino_url, titulo: "Vivino" }];
   }
   if (precosMudaram) junta("precos", v.precos, precos, "lojas-script");

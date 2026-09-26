@@ -9,6 +9,13 @@ cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na fich
 do vinho), com o valor de antes e um botão para o repor. Em **Alertas › Links
 do Vivino por validar** ficam só os casos que pedem uma decisão.
 
+**Duas notas do Vivino** (desde 26/09/2026): a **da colheita** (a página
+aberta com `?year=<ano>`) e a **de todas as colheitas** (a mesma página sem
+ano — `vivino_nota_global`/`vivino_avaliacoes_global`). Num vinho com
+colheita isso é uma página a mais por vinho, com a mesma pausa; num vinho
+sem colheita a página já é a de todas, e só essa se grava. As apps mostram a
+da colheita a partir de 100 avaliações, e a global abaixo disso.
+
 O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vinha.pt → Vivino.
 Os três ficam guardados na ficha ("Preços nas lojas"), com o link, a colheita
 e a data. Se a loja só tiver outra colheita, aceita-se e fica escrita ao lado.

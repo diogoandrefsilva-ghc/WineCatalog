@@ -312,6 +312,8 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .cat-cartao .cat-sub{white-space:normal}
 .cat-cartao-n{display:flex;align-items:center;gap:6px;margin-top:8px}
 .cat-nota{background:#fdf6e8;border:1px solid #f0e0b8;color:#7a5b0a;font-size:11.5px;font-weight:700;padding:3px 7px;border-radius:20px}
+/* "todas": a nota que se mostra é a de todas as colheitas (`wcNotaVivino`). */
+.cat-nota .nota-de{font-size:9.5px;font-weight:600;opacity:.8;letter-spacing:.02em}
 .cat-campos{font-size:11px;color:var(--mu);font-weight:600}
 .forca{
   width:19px;height:19px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;

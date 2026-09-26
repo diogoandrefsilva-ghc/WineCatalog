@@ -148,6 +148,10 @@ Cada uma custou um erro.
    `catalogo-info` não a pede nem a aceita sem ano, e os formulários
    escondem o campo. A Garrafeira faz o mesmo do lado dela (Wishlist
    incluída).
+   **A exceção é a nota do Vivino de TODAS as colheitas**
+   (`vivino_nota_global`/`vivino_avaliacoes_global`, 26/09/2026): é volátil
+   (envelhece) mas não é da colheita — é do vinho, e passa de um ano para o
+   outro. Ver "A nota do Vivino são duas".
 7. **Nada disto pode deitar uma procura abaixo.** É uma poupança, não uma
    dependência.
 8. **A chave vive só no SQL** (ver acima).
@@ -991,6 +995,45 @@ do dono das apps, para umas dezenas de páginas de cada vez do seu próprio
 catálogo, a partir do seu computador. Se o Vivino recusar (`bloqueado` na
 lista), não se contorna — nada de proxies nem de disfarçar o browser:
 fica o motor Serper, ou a validação à mão.
+
+### A nota do Vivino são duas (26/09/2026)
+O dono das apps: "um 4,2 com 5000 avaliações e um 4,5 com 40, percebes?".
+A nota de UMA colheita isola aquele ano, mas com poucas avaliações diz
+pouco; a do vinho todo tem gente que chegue, mas mistura anos. Guardam-se as
+duas, no catálogo e na Garrafeira:
+- **`vivino_nota`/`vivino_avaliacoes`** — a da **colheita** (o script abre a
+  página com `?year=`), como sempre;
+- **`vivino_nota_global`/`vivino_avaliacoes_global`** — a de **todas as
+  colheitas** (a página sem ano). Volátil (`volatil`) mas **fora da
+  `da_colheita`**: na `procurar` passa de uma colheita para a outra (se não
+  estiver velha — o empréstimo passou a respeitar o corte de idade), e é a
+  que serve a uma carta que não diz o ano.
+
+**Quem as escreve é o script** (`lerGlobal` em `batch/vivino-verificar.mjs`):
+num vinho com colheita, uma segunda abertura da mesma página sem `?year=`
+(mesmo número, sem `year=` no endereço final, e com pelo menos tantas
+avaliações como a colheita — senão fica de fora); num vinho sem colheita, o
+que se leu já é a global e a da colheita fica vazia. No motor Serper, as
+estrelas de um resultado sem `?year=` são a global, as de um com o nosso ano
+são a colheita, as de outro ano não contam. As pesquisas (IA) continuam a
+escrever na `vivino_nota` — não as conhecem, e por isso as globais não
+estão em `WC_CAMPOS` nem na escolha de campos da "Procurar informação"
+(`WC_VIVINO_GLOBAL`); mexem-se no Editar. **Os valores que já existiam não
+se mexeram** (decisão do dono): muita da `vivino_nota` de antes é, na
+verdade, a do vinho todo (as 157 vindas das garrafeiras têm em média 3737
+avaliações; as 13 lidas pelo script com `?year=`, 297). O script vai
+acertando à medida que passa.
+
+**A que se MOSTRA num cartão é uma regra só**, em duas cópias que têm de
+bater (`wcNotaVivino` aqui, `notaVivino` na Garrafeira — mexer numa é mexer
+na outra, no mesmo dia): **a da colheita a partir de 100 avaliações**; senão
+**a que tiver mais avaliações** (quase sempre a global — o vinho todo não pode
+ter menos do que um dos anos dele), e em empate a global. É isto que
+resolve o caso de nenhuma chegar às 100. Sem contagem conta zero; havendo só
+uma, é essa. **Nunca uma média das duas** — era um número que ninguém
+encontra no Vivino. O crachá diz "todas" quando é a global; a da colheita
+não leva nada, porque até aqui era a única e muita não sabia a colheita.
+Na ficha aparecem as duas, cada uma com a sua origem.
 
 ### As marcas dos amigos na WineSelection (25/09/2026)
 Na carta da WineSelection, cada vinho ganha pastilhas: **🍾** está na
