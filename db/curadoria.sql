@@ -470,6 +470,190 @@ $$;
 
 
 -- =====================================================================
+-- 4B. REVER ANTES DE GRAVAR (26/09/2026) — o mesmo desenho da Garrafeira
+--
+-- Até aqui a pesquisa GRAVAVA sozinha (a `juntar`, pela força) e só depois
+-- dizia o que tinha entrado. O dono das apps: "nunca percebo se fica
+-- automaticamente guardado, se tenho que ir a algum lado, o que é que foi
+-- atualizado, se posso aceitar ou não". Agora a `catalogo-info`, chamada
+-- com `rever:true`, fecha a pesquisa com as PROPOSTAS (o valor encontrado
+-- e o que estava no catálogo nesse momento) e não escreve nada; o admin vê
+-- campo a campo e só o que ele marcar entra, por aqui.
+--
+-- O que entra, entra como `catalogo-pesquisa` (força 3), por cima do que lá
+-- estava seja qual for a força: a força existe para decidir quando NINGUÉM
+-- olha, e aqui o admin olhou — viu o valor de agora e a origem dele ao lado
+-- e escolheu. A origem continua a dizer que veio de uma pesquisa, não de
+-- uma correção à mão (invariante 9): quem abrir a ficha tem de saber isso.
+--
+-- Os VALORES vêm da linha da pesquisa, nunca do browser: a app só diz
+-- QUAIS campos. É o que a Edge Function já validou e normalizou — um
+-- atalho que aceitasse valores daqui era outra porta para dentro da ficha.
+--
+-- Um campo que MUDOU desde a pesquisa não se toca: o admin decidiu contra
+-- o valor que viu, não contra o que lá está agora (uma corrida do script
+-- entretanto, outra pesquisa). A mesma regra do "Repor" do histórico.
+--
+-- O PRODUTOR é identidade (mexe na `chave`): vai pela `editar` com o
+-- interruptor de identidade, que recusa se passar a ser a mesma linha que
+-- outra — nesse caso o resto grava na mesma e o erro volta para o ecrã.
+--
+-- `p_campos` vazio DESCARTA: a pesquisa deixa de ficar à espera na ficha.
+-- =====================================================================
+CREATE OR REPLACE FUNCTION winecatalog.pesquisa_aplicar(p_id bigint, p_campos text[])
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  p          winecatalog.pesquisas%ROWTYPE;
+  r          winecatalog.vinhos%ROWTYPE;
+  v_ficha    jsonb;
+  v_origens  jsonb;
+  v_fontes   jsonb;
+  v_entrou   jsonb := '[]'::jsonb;
+  v_iguais   jsonb := '[]'::jsonb;
+  v_mudaram  jsonb := '[]'::jsonb;
+  v_prop     jsonb;
+  k          text;
+  v          jsonb;
+  v_atual    jsonb;
+  v_prod     text;
+  v_prod_ok  boolean := false;
+  v_prod_err text;
+BEGIN
+  IF NOT winecatalog.sou_admin() THEN
+    RAISE EXCEPTION 'Só o admin do catálogo pode guardar uma pesquisa.';
+  END IF;
+  SELECT * INTO p FROM winecatalog.pesquisas WHERE id = p_id FOR UPDATE;
+  IF p.id IS NULL THEN RAISE EXCEPTION 'Pesquisa não encontrada.'; END IF;
+  IF p.estado <> 'concluido' OR COALESCE(p.resultado ->> 'rever', '') <> 'true' THEN
+    RAISE EXCEPTION 'Esta pesquisa não está à espera de revisão.';
+  END IF;
+  IF p.resultado ? 'aplicadoEm' THEN
+    RAISE EXCEPTION 'Esta pesquisa já foi guardada (ou descartada). Pesquisa outra vez se quiseres mudar mais alguma coisa.';
+  END IF;
+  -- A proposta foi procurada pelo nome da linha que entretanto se fundiu:
+  -- a mesma regra da `vivino_resolver` — pesquisa-se outra vez o que ficou.
+  IF EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = p.vinho_id) THEN
+    RAISE EXCEPTION 'Este vinho foi fundido noutro depois da pesquisa — pesquisa outra vez no que ficou.';
+  END IF;
+
+  SELECT * INTO r FROM winecatalog.vinhos WHERE id = p.vinho_id FOR UPDATE;
+  IF r.id IS NULL THEN RAISE EXCEPTION 'A linha do catálogo desapareceu.'; END IF;
+  v_ficha := r.ficha; v_origens := r.origens; v_fontes := r.fontes;
+
+  FOR v_prop IN SELECT value FROM jsonb_array_elements(COALESCE(p.resultado -> 'propostas', '[]'::jsonb)) LOOP
+    k := v_prop ->> 'campo';
+    CONTINUE WHEN k IS NULL OR NOT (k = ANY (COALESCE(p_campos, '{}'::text[])));
+    IF k = 'produtor' THEN
+      v_prod := btrim(COALESCE(v_prop ->> 'valor', ''));
+      CONTINUE;
+    END IF;
+    CONTINUE WHEN k !~ '^[a-z][a-z0-9_]{0,39}$';
+    v := v_prop -> 'valor';
+    CONTINUE WHEN winecatalog.vazio(v);
+    -- Sem colheita não há janela (o trigger `vinhos_sem_colheita` também a
+    -- tiraria, mas assim não aparece como "entrou").
+    CONTINUE WHEN r.ano IS NULL AND k IN ('beber_de', 'beber_ate');
+    IF k = 'regiao' AND jsonb_typeof(v) = 'string' THEN
+      v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
+      CONTINUE WHEN v IS NULL;
+    END IF;
+    IF (v_ficha ? k) AND winecatalog.igual(v_ficha -> k, v) THEN
+      v_iguais := v_iguais || to_jsonb(k);
+      CONTINUE;
+    END IF;
+    v_atual := v_prop -> 'atual';
+    IF winecatalog.vazio(v_atual) <> winecatalog.vazio(v_ficha -> k)
+       OR (NOT winecatalog.vazio(v_atual) AND NOT winecatalog.igual(v_ficha -> k, v_atual)) THEN
+      v_mudaram := v_mudaram || to_jsonb(k);
+      CONTINUE;
+    END IF;
+    v_ficha   := v_ficha   || jsonb_build_object(k, v);
+    v_origens := v_origens || jsonb_build_object(k, jsonb_build_object(
+      'o', 'catalogo-pesquisa', 'f', winecatalog.forca('catalogo-pesquisa', k), 'em', now()));
+    v_entrou  := v_entrou  || to_jsonb(k);
+  END LOOP;
+
+  IF jsonb_array_length(v_entrou) > 0 THEN
+    -- As fontes da pesquisa acompanham o que dela se aceitou — a mesma
+    -- acumulação da `juntar` (sem repetir URL, 8 no máximo).
+    IF jsonb_typeof(p.resultado -> 'fontes') = 'array' THEN
+      SELECT COALESCE(jsonb_agg(f), '[]'::jsonb) INTO v_fontes FROM (
+        SELECT DISTINCT ON (f ->> 'url') f
+          FROM jsonb_array_elements(COALESCE(v_fontes, '[]'::jsonb) || (p.resultado -> 'fontes')) f
+         WHERE COALESCE(f ->> 'url', '') <> ''
+         ORDER BY (f ->> 'url') LIMIT 8) x;
+    END IF;
+    UPDATE winecatalog.vinhos
+       SET ficha = v_ficha, origens = v_origens, fontes = COALESCE(v_fontes, fontes),
+           atualizado_em = now()
+     WHERE id = r.id;
+  END IF;
+
+  IF COALESCE(v_prod, '') <> '' AND v_prod IS DISTINCT FROM r.produtor THEN
+    BEGIN
+      PERFORM winecatalog.editar(r.id, '{}'::jsonb, r.nome, v_prod, r.ano, true);
+      v_prod_ok := true;
+    EXCEPTION WHEN OTHERS THEN
+      v_prod_err := SQLERRM;
+    END;
+  END IF;
+
+  UPDATE winecatalog.pesquisas
+     SET resultado = resultado || jsonb_build_object(
+           'aplicadoEm', now(),
+           'aplicados', v_entrou || CASE WHEN v_prod_ok THEN '["produtor"]'::jsonb ELSE '[]'::jsonb END,
+           'descartada', COALESCE(array_length(p_campos, 1), 0) = 0)
+   WHERE id = p.id;
+
+  IF jsonb_array_length(v_entrou) > 0 OR v_prod_ok THEN
+    INSERT INTO winecatalog.sync_log (origem, acao, estado, quem, detalhe)
+    VALUES ('app', 'pesquisa_aplicar', 'ok', auth.email(), jsonb_build_object(
+      'vinho_id', r.id, 'pesquisa_id', p.id, 'entrou', v_entrou,
+      'produtor', v_prod_ok, 'mudaram', v_mudaram));
+  END IF;
+
+  RETURN jsonb_build_object('ok', true, 'entrou', v_entrou, 'iguais', v_iguais,
+    'mudaram', v_mudaram, 'produtor', v_prod_ok, 'produtorErro', v_prod_err);
+END;
+$$;
+
+-- A pesquisa que ficou por rever (ou ainda a correr) para um vinho — é o
+-- que a ficha mostra ao abrir, para uma pesquisa fechada a meio não se
+-- perder: "fica à espera de ti na ficha do vinho". Só a ÚLTIMA pesquisa do
+-- vinho conta: uma pesquisa profunda pedida a partir da revisão de outra
+-- substitui-a, e a de antes não pode voltar a aparecer depois de esta ser
+-- tratada. Uma semana chega; mais velha, já não diz o que está no catálogo.
+CREATE OR REPLACE FUNCTION winecatalog.pesquisa_por_rever(p_vinho_id bigint)
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE p winecatalog.pesquisas%ROWTYPE;
+BEGIN
+  IF NOT winecatalog.sou_admin() THEN
+    RAISE EXCEPTION 'Sem acesso.';
+  END IF;
+  SELECT * INTO p FROM winecatalog.pesquisas
+   WHERE vinho_id = p_vinho_id
+   ORDER BY criado_em DESC LIMIT 1;
+  IF p.id IS NULL THEN RETURN NULL; END IF;
+  IF NOT ((p.estado = 'pendente' AND p.criado_em > now() - interval '5 minutes')
+       OR (p.estado = 'concluido' AND p.resultado ->> 'rever' = 'true'
+           AND NOT p.resultado ? 'aplicadoEm'
+           AND jsonb_array_length(COALESCE(p.resultado -> 'propostas', '[]'::jsonb)) > 0
+           AND p.fechado_em > now() - interval '7 days')) THEN
+    RETURN NULL;
+  END IF;
+  RETURN jsonb_build_object(
+    'id', p.id, 'vinhoId', p.vinho_id, 'estado', p.estado,
+    'resultado', p.resultado, 'erro', p.erro,
+    'criadoEm', p.criado_em, 'fechadoEm', p.fechado_em);
+END;
+$$;
+
+
+-- =====================================================================
 -- 5. COMPARAR — "o que é que o catálogo tem de diferente do que eu tenho?"
 --
 -- ESTA É A ÚNICA FUNÇÃO DESTE SCHEMA ABERTA A QUALQUER PESSOA COM LOGIN,
@@ -719,6 +903,8 @@ REVOKE ALL ON FUNCTION winecatalog.editar(bigint, jsonb, text, text, integer, bo
 REVOKE ALL ON FUNCTION winecatalog.criar(text, text, integer, jsonb)   FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pesquisa_criar(bigint)          FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.pesquisa_ver(bigint)            FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.pesquisa_aplicar(bigint, text[]) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.pesquisa_por_rever(bigint)      FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.listar_reportes(text)           FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.contar_reportes()               FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION winecatalog.resolver_reporte(bigint, text, text) FROM PUBLIC, anon;
@@ -726,6 +912,8 @@ GRANT EXECUTE ON FUNCTION winecatalog.editar(bigint, jsonb, text, text, integer,
 GRANT EXECUTE ON FUNCTION winecatalog.criar(text, text, integer, jsonb)   TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_criar(bigint)          TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_ver(bigint)            TO authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_aplicar(bigint, text[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_por_rever(bigint)      TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.listar_reportes(text)           TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.contar_reportes()               TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.resolver_reporte(bigint, text, text) TO authenticated;

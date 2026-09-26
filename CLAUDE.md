@@ -24,8 +24,9 @@ tudo o que aqui está foi pago com um erro.
   · Escapes · Modais (`abrirModal`/`fecharModal`) · Tabs · **De onde veio
   cada campo** · **O catálogo em números** · **Catálogo** · **A ficha de um vinho**
   (a capa + **Editar** + **Vinho novo** + **Procurar informação**, ver
-  abaixo) · **FAB do Catálogo** · **Atualizar informação em lote**
-  (`wcLotePrompt`/`wcLoteEnviar`) · **Alertas** · **Duplicados** ·
+  abaixo) · **Rever antes de gravar** (`wcRevisaoCorpo`) · **FAB do
+  Catálogo** · **Atualizar informação em lote**
+  (`wcLotePrompt`/`wcLoteEnviar`/`wcLoteRever`) · **Alertas** · **Duplicados** ·
   Utilizadores (admin) · **Auth (Supabase)** · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
@@ -304,13 +305,15 @@ vinhos** e até **5 campos**, um prompt só.
 
 **Não é um caminho de escrita novo.** Cada vinho da resposta colada entra
 pela EXATA MESMA porta da pesquisa manual de um vinho só —
-`winecatalog.pesquisa_criar` + `catalogo-info.ts` com `resposta` no
-corpo — só que chamada uma vez por vinho em vez de uma vez só
-(`wcLoteEnviar`, sequencial, um pedido de cada vez). Isso quer dizer força
-3, a MESMA `juntar` campo a campo, e o mesmo relatório de "o que entrou e
-porquê" — nada disto contorna o que já existe. Um atalho que escrevesse
-direto na `ficha` a partir do JSON colado, sem passar pela `juntar`, era a
-porta dos fundos que o resto da app evita a direito.
+`winecatalog.pesquisa_criar` + `catalogo-info.ts` com `resposta` e
+`rever` no corpo — só que chamada uma vez por vinho em vez de uma vez só
+(`wcLoteEnviar`, sequencial, um pedido de cada vez). E revê-se da mesma
+maneira (ver "Rever antes de gravar", abaixo): **vinho a vinho**, no mesmo
+ecrã de um vinho só, com "Guardar e seguinte" e "Saltar" (`wcLoteRever`),
+e no fim uma lista do que ficou em cada um. Só o que se marcar entra, pela
+`pesquisa_aplicar` — nada disto contorna o que já existe. Um atalho que
+escrevesse direto na `ficha` a partir do JSON colado era a porta dos
+fundos que o resto da app evita a direito.
 
 **Os campos são qualquer um de `WC_CAMPOS`, nunca o Produtor.** O
 Produtor é IDENTIDADE (faz parte da `chave`), não ficha — a mesma razão
@@ -376,21 +379,57 @@ com o mesmo desenho assíncrono da `sugerir-vinho`/`verificar-vinhos`
 (`EdgeRuntime.waitUntil` + polling do browser, porque a pesquisa pode
 passar de um minuto). Escolhem-se os campos — pedir os vinte de uma vez
 põe o modelo a andar atrás de tudo e a voltar com meia dúzia de coisas
-mornas — e o resultado diz sempre **o que NÃO entrou e porquê**: se o
-catálogo já tinha uma fonte mais forte, isso é o sistema a funcionar, mas
-só se souber que aconteceu.
+mornas — e **nada fica gravado sem o admin confirmar** (ver "Rever antes de
+gravar", logo a seguir).
 
 **O Produtor é sempre uma das opções a pedir, mesmo já preenchido** — só uma
 leitura errada o faz vir diferente, e é exatamente isso que vale a pena
 confirmar (foi o que faltava quando "+ Vinho novo" começou a criar linhas
 com nome mas sem produtor: a pesquisa nunca era chamada a preenchê-lo).
 Mas o Produtor não é campo de FICHA — é IDENTIDADE, faz parte da `chave` —
-e por isso não passa pela `juntar` como os outros: uma pesquisa não pode
-mudar de que vinho se trata só por ter sido pedida. O que volta é uma
-SUGESTÃO à parte no relatório (`identidade:true` na proposta, nunca
-`entrou`), a aplicar à mão em **Editar**, com o interruptor de identidade
-que já verifica duplicados. Vale para as duas pesquisas — automática e
-manual, que passam pelo mesmo `processarPesquisa`.
+e por isso não se escreve como os outros: uma pesquisa não pode mudar de
+que vinho se trata só por ter sido pedida. Na revisão é uma linha como as
+outras (`identidade:true` na proposta, com uma nota a dizê-lo), desmarcada
+se já houver produtor; marcada, a `pesquisa_aplicar` passa-a pela `editar`
+com o interruptor de identidade — que recusa se a linha passar a ser a
+mesma que outra (vai-se a Duplicados), e o resto grava na mesma. Vale para
+as duas pesquisas — automática e manual, que passam pelo mesmo
+`processarPesquisa`.
+
+### Rever antes de gravar — *o ecrã da Garrafeira* (26/09/2026)
+Até aqui a pesquisa **gravava sozinha**, pela força (`juntar`), e só depois
+dizia o que tinha entrado e o que não. O dono das apps: "nunca percebo se
+fica automaticamente guardado, se tenho que ir a algum lado, o que é que foi
+atualizado, se posso aceitar ou não as novas informações". Passou a ser o
+desenho do `iaMostrarResultado` da Garrafeira:
+- a app chama a `catalogo-info` com **`rever:true`**: a função não escreve
+  nada e fecha a pesquisa com as PROPOSTAS — o valor encontrado e o que o
+  catálogo tinha nesse momento (`atual`, com a origem e a força);
+- a janela da pesquisa **fica aberta** a mostrar a espera e depois, campo a
+  campo, *o que está (riscado) → o que se encontrou*, com a `og-tag` de onde
+  veio o que está (é o que a Garrafeira não precisa e aqui é a razão de a
+  app existir). **Vêm marcados só os campos vazios**; trocar o que já lá
+  estava é um clique consciente. Os que vieram iguais não fazem linha — diz-se
+  quantos foram. "Guardar o que está marcado" · "Marcar tudo" · "Descartar";
+- grava a **`winecatalog.pesquisa_aplicar(p_id, p_campos)`** (`curadoria.sql`):
+  os VALORES vêm da linha da pesquisa, nunca do browser (a app só diz quais);
+  entram como `catalogo-pesquisa` (força 3) **por cima de qualquer força** —
+  a força decide quando ninguém olha, e aqui o admin viu o valor de agora e a
+  origem ao lado e escolheu; um campo que **mudou desde a pesquisa** não se
+  toca (a regra do "Repor"); as fontes da pesquisa acompanham o que se
+  aceitou. `p_campos` vazio **descarta**. Cada pesquisa só se grava uma vez;
+- **fechar a janela a meio não perde nada**: a ficha mostra "Há uma pesquisa
+  por rever" (`pesquisa_por_rever`: a ÚLTIMA pesquisa do vinho, se ainda
+  estiver a correr ou por rever, até 7 dias) e retoma a espera se ainda
+  estiver a correr. O Escape fecha a janela da pesquisa, não a ficha;
+- a mesma revisão serve a pesquisa **automática**, a **profunda**, a
+  **manual** (o texto colado sobrevive a um erro) e o **lote**.
+
+**Sem `rever` a Edge Function faz o de antes** (grava pela força e relata):
+é o que uma app ainda em cache manda, e é o que deixa publicar a função sem
+esperar pela página. O `sync_log` da pesquisa conta em `campos` o que a IA
+TROUXE (a vista `consumo` lê isso como itens da IA); o que o admin aceitou
+fica numa linha `pesquisa_aplicar` (origem `app`, fora da `consumo`).
 
 **Sobre a escolha de modelo, uma confissão.** A secção "O que falta"
 abaixo dizia que a WineCatalog não devia ganhar uma TERCEIRA cópia da

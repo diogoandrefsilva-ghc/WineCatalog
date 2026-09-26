@@ -299,9 +299,9 @@ const WC_CAMPOS_JSON={
   /* O PRODUTOR não é campo da ficha — é IDENTIDADE (faz parte da `chave`) —
      mas continua a ser sempre uma das opções que se pode pedir à pesquisa,
      mesmo já preenchido: só pode vir DIFERENTE por engano de quem escreveu.
-     O que a pesquisa devolve nunca escreve sozinho (ver `catalogo-info.ts`,
-     `processarPesquisa`) — aparece à parte no resultado, para aplicar em
-     Editar com o interruptor de identidade. */
+     O que a pesquisa devolve nunca escreve sozinho — como tudo o resto, é
+     uma linha da revisão; marcada, vai pela `editar` com o interruptor de
+     identidade, que recusa se passar a ser a mesma linha que outra. */
   produtor:'produtorConfirmado'
 };
 /* Total de campos que se podem PEDIR à pesquisa — os da ficha (WC_CAMPOS)
@@ -806,8 +806,9 @@ async function wcVerFicha(id){
     const v=await catRpc('ver',{p_id:id});
     if(!v){_wcFicha=null;corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
     _wcFicha=v;
+    if(_wcRev&&_wcRev.vinhoId!==v.id)_wcRev=null;
     corpo.innerHTML=wcFichaHTML(v);
-    if(isAdmin())wcHistorico(v.id,'fi-hist');
+    if(isAdmin()){wcHistorico(v.id,'fi-hist');wcProcRetomar(v.id);}
   }catch(e){
     _wcFicha=null;
     corpo.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;
@@ -1668,15 +1669,20 @@ async function wcNovoProcurar(){
    lição que a `vinho-info` já tinha pago, e é por isso que este ecrã abre
    com os campos VAZIOS escolhidos e os outros não.
 
-   O RESULTADO DIZ O QUE **NÃO** ENTROU, e isso é metade do ponto. A
-   `winecatalog.juntar` recusa um campo quando o que já lá estava veio de
-   uma fonte mais forte — o que é o sistema a funcionar (quem tem a garrafa
-   na mão sabe melhor), mas sem isto no ecrã o admin mandava pesquisar, via
-   metade dos campos na mesma e ficava sem saber se a pesquisa falhou ou se
-   a base recusou. São coisas muito diferentes.
+   NADA FICA GRAVADO SEM CONFIRMAÇÃO (26/09/2026 — o ecrã da Garrafeira).
+   Até aqui a pesquisa gravava sozinha, pela força (`juntar`), e só depois
+   dizia o que tinha entrado e o que não — e o dono das apps nunca percebia
+   se ficava guardado, se tinha de ir a algum lado, o que mudou, se podia
+   recusar. Agora a `catalogo-info` vai com `rever:true`: fecha a pesquisa
+   com as PROPOSTAS, e o ecrã mostra campo a campo o que está e o que se
+   encontrou, com os VAZIOS já marcados; só o que ficar marcado entra, pela
+   `winecatalog.pesquisa_aplicar`. Fechar a janela a meio não perde nada: a
+   pesquisa fica à espera na ficha do vinho (`pesquisa_por_rever`).
    ══════════════════════════════════════════════ */
 const FN_CATALOGO_INFO=SB_URL+'/functions/v1/catalogo-info';
 let _wcProcTimer=null, _wcProcId=null, _wcProcAte=0;
+/* A pesquisa que está à espera de revisão: {pesquisaId, vinhoId, res}. */
+let _wcRev=null;
 /* O último pedido automático — é o que a "pesquisa profunda" repete, com os
    mesmos campos e o mesmo contexto, só que a exigir a pesquisa Google. */
 let _wcProcUltimo=null;
@@ -1717,9 +1723,8 @@ function wcAbrirProcurar(){
   const ficha=_wcFicha.ficha||{}, origens=_wcFicha.origens||{};
   const box=document.getElementById('procurar-corpo');
   if(!box)return;
-  let h=`<p class="wc-note">Uma pesquisa Google a sério, com fontes, para este vinho. Vale
-    <strong>força 3</strong> — entra por cima de estimativas e de cópias de garrafeira, e perde
-    para o que tenhas corrigido à mão.</p>
+  let h=`<p class="wc-note"><strong>Nada fica gravado sem confirmares.</strong> No fim vês, campo a
+    campo, o que está no catálogo e o que a pesquisa encontrou — e escolhes o que guardar.</p>
   <p class="wc-note">Escolhe <strong>poucos campos</strong>. Pedir os vinte de uma vez põe o
     modelo a andar atrás de tudo e a voltar com meia dúzia de coisas mornas.</p>
   ${wcContextoHTML()}
@@ -1738,8 +1743,8 @@ function wcAbrirProcurar(){
   /* O PRODUTOR fica de fora do WC_EDIT (não é campo da ficha, é identidade —
      ver `WC_CAMPOS_JSON`), mas é sempre uma opção aqui, MESMO já preenchido:
      só uma leitura errada o faz vir diferente, e é exatamente isso que vale
-     a pena confirmar. Nunca escreve sozinho — a pesquisa devolve-o como
-     sugestão à parte, para aplicar em Editar. */
+     a pena confirmar. Nunca escreve sozinho: na revisão é uma linha como as
+     outras, e marcada vai pela `editar` com o interruptor de identidade. */
   const temProdutor=!!_wcFicha.produtor;
   h+=`<label class="pr-campo">
     <input type="checkbox" value="produtor"${temProdutor?'':' checked'} onchange="wcProcContar()">
@@ -1764,9 +1769,20 @@ function wcAbrirProcurar(){
   </div>
   <button class="btn-n larg" onclick="wcProcurarManual()">✍️ Pesquisa manual — grátis, colar a resposta de um assistente de IA</button>`;
   box.innerHTML=h;
-  document.getElementById('procurar-titulo').textContent=_wcFicha.nome||'(sem nome)';
+  wcProcTitulo('Procurar informação');
   wcProcContar();
   abrirModal('modal-procurar');
+  wcProcTopo();
+}
+/* O título do modal é sempre o vinho; o subtítulo diz em que passo se está. */
+function wcProcTitulo(sub){
+  const t=document.getElementById('procurar-titulo'), s=document.getElementById('procurar-sub');
+  if(t)t.textContent=(_wcFicha&&_wcFicha.nome)||'(sem nome)';
+  if(s)s.textContent=sub;
+}
+function wcProcTopo(){
+  const m=document.getElementById('modal-procurar');
+  if(m)m.scrollTop=0;
 }
 function wcProcCaixas(){return [...document.querySelectorAll('#procurar-corpo .pr-campo input')];}
 function wcProcTodos(on){wcProcCaixas().forEach(c=>c.checked=on);wcProcContar();}
@@ -1789,18 +1805,18 @@ async function wcProcurarArrancar(){
   if(!campos.length)return;
   const b=document.getElementById('pr-ir');
   if(b){b.disabled=true;b.textContent='A arrancar…';}
+  // Lê-se já: a espera a seguir substitui o formulário.
+  const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
+  const ctx=wcContextoLer();
   try{
     const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
-    fecharModal('modal-procurar');
     wcProcEspera();
     /* `jaAndava` é uma pesquisa que já estava a correr para este vinho — e
        nesse caso NÃO se chama outra vez a função, que era pagar duas vezes
        o mesmo trabalho. Sonda-se a que já lá está. */
     if(!p.jaAndava){
-      const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
-      const ctx=wcContextoLer();
       _wcProcUltimo={vinhoId:_wcFicha.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites};
-      await wcProcChamar(Object.assign({pesquisaId:p.id},_wcProcUltimo,{vinhoId:undefined}));
+      await wcProcChamar(Object.assign({pesquisaId:p.id,rever:true},_wcProcUltimo,{vinhoId:undefined}));
     }
     wcProcIniciarPolling(p.id);
   }catch(e){
@@ -1836,7 +1852,7 @@ async function wcProcurarProfunda(){
     wcProcEspera(true);
     if(!p.jaAndava){
       await wcProcChamar({pesquisaId:p.id,campos:u.campos,colheitaEspecifica:u.colheitaEspecifica,
-        notas:u.notas,sites:u.sites,profunda:true});
+        notas:u.notas,sites:u.sites,profunda:true,rever:true});
     }
     wcProcIniciarPolling(p.id);
   }catch(e){
@@ -1845,19 +1861,44 @@ async function wcProcurarProfunda(){
 }
 
 function wcProcCaixa(){return document.getElementById('proc-caixa');}
-function wcProcEspera(profunda){
+/* A espera vive em DOIS sítios: na janela (que é onde se está a olhar) e na
+   ficha por baixo dela — quem fecha a janela a meio continua a ver que a
+   pesquisa anda, e o resultado aparece-lhe lá. */
+function wcProcEspera(profunda,manual){
+  const t=manual?'A ler a resposta colada…'
+    :profunda?'Pesquisa profunda — a pesquisar no Google…':'A pesquisar…';
+  const box=document.getElementById('procurar-corpo');
+  if(box){
+    box.innerHTML=`<div class="pr-espera">
+      <div class="wc-spin escuro"></div>
+      <div><strong>${t}</strong>
+        <div class="wc-note">${manual?'É só um instante.':'Pesquisa Google a sério — pode levar um minuto.'}
+          Podes fechar esta janela: a pesquisa continua e o resultado fica à tua espera na ficha
+          deste vinho. <strong>Nada é gravado sem confirmares.</strong></div></div>
+    </div>`;
+    wcProcTitulo('A pesquisar');
+    abrirModal('modal-procurar');
+    wcProcTopo();
+  }
   const c=wcProcCaixa();
   if(c)c.innerHTML=`<div class="pr-espera">
     <div class="wc-spin escuro"></div>
-    <div><strong>${profunda?'Pesquisa profunda — a pesquisar no Google…':'A pesquisar…'}</strong>
-      <div class="wc-note">Pesquisa Google a sério — pode levar um minuto. Podes fechar isto,
-        que o trabalho continua do lado do servidor.</div></div>
+    <div><strong>${t}</strong>
+      <div class="wc-note">Quando acabar, mostra-te o que encontrou para escolheres o que guardar.</div></div>
   </div>`;
 }
 function wcProcErro(msg){
-  const c=wcProcCaixa();
-  if(c)c.innerHTML=`<div class="pr-espera erro"><div>⚠️</div>
+  const html=`<div class="pr-espera erro"><div>⚠️</div>
     <div><strong>A pesquisa falhou</strong><div class="wc-note">${esc(msg||'erro desconhecido')}</div></div></div>`;
+  const c=wcProcCaixa();
+  if(c)c.innerHTML=html;
+  const m=document.getElementById('modal-procurar'), box=document.getElementById('procurar-corpo');
+  if(m&&m.classList.contains('on')&&box){
+    box.innerHTML=html+`<div class="macoes fim">
+      <button class="btn-n" onclick="wcAbrirProcurar()">‹ Voltar</button>
+      <button class="btn-prim auto" onclick="fecharModal('modal-procurar')">Fechar</button></div>`;
+    wcProcTitulo('Procurar informação');
+  }
 }
 function wcProcPararPolling(){
   if(_wcProcTimer){clearInterval(_wcProcTimer);_wcProcTimer=null;}
@@ -1874,7 +1915,7 @@ async function wcProcPollTick(){
   if(!_wcProcId)return;
   if(Date.now()>_wcProcAte){
     wcProcPararPolling();
-    wcProcErro('demorou demasiado — o resultado pode aparecer se recarregares daqui a pouco');
+    wcProcErro('demorou demasiado — se acabar entretanto, o resultado aparece quando voltares a abrir este vinho');
     return;
   }
   try{
@@ -1883,69 +1924,238 @@ async function wcProcPollTick(){
     if(p.estado==='pendente')return;
     wcProcPararPolling();
     if(p.estado==='erro'){wcProcErro(p.erro);return;}
-    const res=p.resultado||{};
-    /* A ficha refresca-se PRIMEIRO (o `wcFichaHTML` volta a desenhar a
-       caixa vazia) e só depois se escreve o resultado lá dentro. Ao
-       contrário, o relatório aparecia e desaparecia logo a seguir. */
-    await wcRefrescarFicha();
-    const c=wcProcCaixa();
-    if(c)c.innerHTML=wcProcResultadoHTML(res);
-    wcCarregarCatalogo(true);
+    wcProcMostrarRevisao(p);
   }catch(e){
     wcProcPararPolling();
     wcProcErro(e.message);
   }
 }
-function wcProcResultadoHTML(res){
-  const props=Array.isArray(res.propostas)?res.propostas:[];
-  const entraram=props.filter(p=>p.entrou);
-  const ident=props.filter(p=>p.identidade&&!p.entrou);
-  const fora=props.filter(p=>!p.entrou&&!p.identidade);
-  const nome=k=>{if(k==='produtor')return 'Produtor';const c=WC_CAMPOS.find(([x])=>x===k);return c?c[1]:k;};
-  let h=`<div class="pr-res">
-    <div class="pr-res-cab"><strong>${entraram.length?`${entraram.length} campo${entraram.length>1?'s':''} ${entraram.length>1?'entraram':'entrou'}`:'Nada de novo entrou'}</strong>
-      <span class="wc-note">${esc(res.modelo||'')}</span></div>`;
-  if(entraram.length){
-    h+=`<div class="pr-res-l">${entraram.map(p=>
-      `<span class="bdg men">${esc(nome(p.campo))}</span>`).join('')}</div>`;
+/* Ao abrir a ficha: há uma pesquisa deste vinho ainda a correr, ou acabada
+   e por rever? Sem isto, fechar a janela a meio deitava o resultado fora. */
+async function wcProcRetomar(id){
+  try{
+    const p=await catRpc('pesquisa_por_rever',{p_vinho_id:id});
+    if(!p||!_wcFicha||_wcFicha.id!==id)return;
+    if(p.estado==='pendente'){
+      if(_wcProcId===p.id)return;
+      const c=wcProcCaixa();
+      if(c)c.innerHTML=`<div class="pr-espera"><div class="wc-spin escuro"></div>
+        <div><strong>A pesquisar…</strong><div class="wc-note">Quando acabar, mostra-te o que encontrou
+          para escolheres o que guardar.</div></div></div>`;
+      wcProcIniciarPolling(p.id);
+      return;
+    }
+    _wcRev={pesquisaId:p.id,vinhoId:id,res:p.resultado||{}};
+    wcProcLembrete();
+  }catch(_){ /* é um lembrete — a ficha abre na mesma */ }
+}
+
+/* ══════════════════════════════════════════════
+   REVER ANTES DE GRAVAR — o ecrã da Garrafeira (`iaMostrarResultado`)
+
+   Uma linha por campo: o nome, o que está agora (riscado) → o que a
+   pesquisa encontrou, e de onde veio o que está agora (a `og-tag` do resto
+   da app — a Garrafeira não precisa disto, aqui é a razão de a app existir).
+   Vêm marcados SÓ os campos vazios: trocar um valor que já lá estava tem de
+   ser um clique consciente. Os que vieram iguais não fazem linha — diz-se
+   quantos foram, que é também uma resposta ("confirmou o que já lá está").
+
+   Os valores gravam-se do lado do servidor, a partir da linha da pesquisa;
+   daqui só vai a lista dos campos marcados.
+   ══════════════════════════════════════════════ */
+function wcRvVazio(v){return v==null||v===''||(Array.isArray(v)&&!v.length);}
+/* Só para o ECRÃ (esconder as linhas iguais). Quem decide ao gravar é a
+   `winecatalog.igual` — isto é a mesma ideia: sem acentos nem maiúsculas,
+   números como números, castas como conjunto. */
+function wcRvIgual(a,b){
+  if(wcRvVazio(a)||wcRvVazio(b))return wcRvVazio(a)&&wcRvVazio(b);
+  const n=x=>String(x).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+  if(Array.isArray(a)||Array.isArray(b)){
+    if(!Array.isArray(a)||!Array.isArray(b))return false;
+    const c=l=>[...new Set(l.map(n))].sort().join('|');
+    return c(a)===c(b);
   }
-  if(fora.length){
-    /* O importante: POR QUE É QUE não entrou. Sem isto, o admin fica sem
-       saber se a pesquisa falhou ou se a base recusou. */
-    h+=`<div class="wc-note" style="margin-top:8px">O resto a pesquisa encontrou, mas o catálogo
-      já tinha coisa melhor — a fonte de lá é mais forte:</div>
-      <div class="pr-res-fora">${fora.map(p=>
-        `<div><span class="pr-nome">${esc(nome(p.campo))}</span>
-          <span class="wc-note">ficou o de <strong>${esc(wcOrigemTxt(p.ganhou,p.forca))}</strong>
-          (força ${esc(String(p.forca||0))})</span></div>`).join('')}</div>`;
+  const num=/^-?\d+(\.\d+)?$/;
+  if(num.test(String(a).trim())&&num.test(String(b).trim()))return Number(a)===Number(b);
+  return n(a)===n(b);
+}
+function wcRvNome(k){
+  if(k==='produtor')return 'Produtor';
+  if(k==='vivino_url')return 'Link do Vivino';
+  const c=WC_CAMPOS.find(([x])=>x===k);
+  return c?c[1]:k;
+}
+/* Os links vão INTEIROS: é o fim deles (o número do vinho no Vivino) que
+   distingue dois, e decide-se abrindo-os — a mesma lição do `escLink` da
+   Garrafeira. A imagem mostra-se, que é assim que se escolhe uma imagem. */
+function wcRvValorHTML(k,v){
+  if(wcRvVazio(v))return '<em class="rv-vazio">vazio</em>';
+  if(Array.isArray(v))return esc(v.join(', '));
+  if(typeof v==='object')return esc(JSON.stringify(v));
+  const s=String(v);
+  if(/^https?:\/\/\S+$/i.test(s)){
+    const img=k==='imagem_url'?`<img class="rv-img" src="${esc(s)}" alt="" onerror="this.remove()">`:'';
+    return img+`<a class="rv-lnk" href="${esc(s)}" target="_blank" rel="noopener">${esc(s)}<span>↗</span></a>`;
   }
-  if(ident.length){
-    /* O Produtor é IDENTIDADE, não ficha — nunca entra sozinho (mudaria a
-       `chave`). Fica só como sugestão; aplicar é sempre um passo consciente
-       em Editar, com o interruptor de identidade e a verificação de
-       duplicados que ele já faz. */
-    h+=`<div class="wc-note" style="margin-top:8px">A pesquisa sugere outro <strong>produtor</strong> —
-      isto é identidade, não ficha, por isso não entra sozinho:</div>
-      <div class="pr-res-fora">${ident.map(p=>
-        `<div><span class="pr-nome">Produtor</span>
-          <span class="wc-note">"${esc(p.atual||'(vazio)')}" → <strong>"${esc(p.valor)}"</strong> —
-          usa <strong>Editar</strong> (Mexer na identidade) para aplicar, se estiver certo.</span></div>`).join('')}</div>`;
+  if(k==='preco_medio')return esc(eurFmt(v));
+  if(k==='teor')return esc(s)+' %';
+  return esc(s);
+}
+function wcRvOrdem(k){
+  if(k==='produtor')return -1;
+  const i=WC_CAMPOS.findIndex(([c])=>c===k);
+  return i<0?999:i;
+}
+/* As linhas (e o que ficou de fora por vir igual). */
+function wcRvLinhas(res){
+  const props=(Array.isArray(res.propostas)?res.propostas:[]).slice()
+    .sort((a,b)=>wcRvOrdem(a.campo)-wcRvOrdem(b.campo));
+  const iguais=[], linhas=[];
+  for(const p of props){
+    const k=p.campo;
+    if(!p.identidade&&wcRvIgual(p.atual,p.valor)){iguais.push(k);continue;}
+    const vazio=wcRvVazio(p.atual);
+    const f=Number(p.forcaAtual||0);
+    const orig=!vazio&&p.origemAtual
+      ?`<span class="og-tag ${wcOrigemCls(p.origemAtual,f)}">agora: ${esc(wcOrigemTxt(p.origemAtual,f))}</span>`:'';
+    linhas.push(`<label class="rv-linha">
+      <input type="checkbox" data-campo="${esc(k)}"${vazio?' checked':''}>
+      <span class="rv-campo">
+        <b>${esc(wcRvNome(k))}</b>
+        ${vazio?'':`<span class="rv-antes">${wcRvValorHTML(k,p.atual)}</span><span class="rv-seta">→</span>`}<span class="rv-novo">${wcRvValorHTML(k,p.valor)}</span>
+        ${orig}
+        ${p.identidade?'<span class="rv-nota">O produtor é a identidade do vinho. Se com ele esta linha passar a ser a mesma que outra, não muda — junta-as em Duplicados.</span>':''}
+      </span>
+    </label>`);
   }
-  if(res.aviso)h+=`<div class="wc-note" style="margin-top:8px">⚠️ ${esc(res.aviso)}</div>`;
-  if(res.pesquisaWeb===false){
-    h+=`<div class="wc-note" style="margin-top:8px">🧠 <strong>Sem pesquisa Google</strong> —
-      o Gemini respondeu com o que aprendeu no treino. Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.</div>`;
-    if(isAdmin())h+=`<button class="btn-n larg" style="margin-top:8px" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda — pesquisar mesmo no Google</button>`;
-  }else if(res.pesquisaWeb===true){
-    const nf=Array.isArray(res.fontes)?res.fontes.length:0;
-    h+=`<div class="wc-note" style="margin-top:8px">🌐 ${res.profunda?'Pesquisa profunda: resposta tirada só dos resultados do Google':'Pesquisado no Google'}${nf?` · ${nf} fonte${nf>1?'s':''}`:''}.</div>`;
+  return {linhas,iguais,total:props.length};
+}
+/* O corpo da revisão, igual para um vinho e para o lote; muda só a lista
+   (`id`) e os botões. */
+function wcRevisaoCorpo(res,o){
+  const r=wcRvLinhas(res);
+  const nIg=r.iguais.length;
+  const igual=nIg?`<p class="wc-note">${nIg===1?'Mais 1 campo veio':'Mais '+nIg+' campos vieram'} igual ao que
+    já está (${esc(r.iguais.map(wcRvNome).join(', '))}).</p>`:'';
+  let h='';
+  if(res.aviso)h+=`<div class="rv-aviso">⚠️ ${esc(res.aviso)}</div>`;
+  if(o.profunda&&res.pesquisaWeb===false){
+    h+=`<div class="rv-memoria"><span>🧠 O Gemini respondeu <b>de memória</b>, sem pesquisa Google.
+      Costuma acertar em vinhos conhecidos, mas pode estar desatualizado.</span>
+      <button class="btn-n" onclick="wcProcurarProfunda()">🔬 Pesquisa profunda</button></div>`;
   }
-  if(!props.length&&!res.aviso){
-    h+='<div class="wc-note">A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: '+
-       'é o modelo a não inventar, que é o que se lhe pede.</div>';
+  if(r.linhas.length){
+    h+=`<p class="wc-note"><strong>Ainda não foi gravado nada.</strong> Só entra o que ficar marcado.
+      Já vêm marcados os campos que estavam <b>vazios</b>; para trocar o que já lá estava, marca à mão.</p>
+      <div class="rv-lista" id="${o.id}">${r.linhas.join('')}</div>${igual}
+      <div class="macoes fim">${o.botoes(true)}</div>`;
+  }else{
+    h+=`<p class="wc-note" style="font-size:13.5px;color:var(--tx)">${r.total
+        ?'A pesquisa não trouxe nada de novo — o que está na ficha já bate certo com o que se encontrou.'
+        :'A pesquisa não confirmou nenhum dos campos pedidos. Não é um erro: é o modelo a não inventar, que é o que se lhe pede.'}</p>
+      ${igual}<div class="macoes fim">${o.botoes(false)}</div>`;
   }
-  h+='</div>';
+  const fontes=Array.isArray(res.fontes)?res.fontes:[];
+  if(fontes.length)h+=`<div class="rv-fontes">Fontes: ${fontes.map(f=>
+    `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join(' · ')}</div>`;
+  h+=`<div class="rv-fontes"><i>${
+    res.pesquisaWeb===false?'⚠️ Isto saiu da memória do modelo, sem pesquisa na net — confere tudo antes de aceitar.'
+    :res.pesquisaWeb===true?(res.profunda?'Pesquisa profunda: tirado só dos resultados do Google.':'Pesquisado no Google.')+
+      ' Leitura automática de páginas da net — vale como ponto de partida, não como certeza.'
+    :'Resposta colada de um assistente de IA — confere antes de aceitar.'}${res.modelo?` · ${esc(res.modelo)}`:''}</i></div>`;
   return h;
+}
+function wcRevNovos(res){return wcRvLinhas(res).linhas.length;}
+function wcRevTodos(id,on){
+  document.querySelectorAll(`#${id} input[data-campo]`).forEach(c=>c.checked=on);
+}
+function wcRevMarcados(id){
+  return [...document.querySelectorAll(`#${id} input[data-campo]:checked`)].map(c=>c.dataset.campo);
+}
+/* O que a `pesquisa_aplicar` respondeu, numa frase. */
+function wcRevResumo(r){
+  const n=((r&&r.entrou)||[]).length+(r&&r.produtor?1:0);
+  let t=n?`${n} campo${n>1?'s':''} guardado${n>1?'s':''}`:'nada mudou';
+  const m=((r&&r.mudaram)||[]).length;
+  if(m)t+=` · ${m} mudou entretanto no catálogo e ficou como estava`;
+  if(r&&r.produtorErro)t+=` · o produtor não mudou: ${r.produtorErro}`;
+  return t;
+}
+
+/* Um vinho: a pesquisa acabou. */
+function wcProcMostrarRevisao(p){
+  const res=p.resultado||{};
+  if(!res.rever){
+    // Uma pesquisa arrancada pela app antiga (em cache) já gravou sozinha.
+    toast('A pesquisa acabou e gravou pelas regras antigas — vê a ficha.');
+    wcRefrescarFicha();
+    return;
+  }
+  _wcRev={pesquisaId:p.id,vinhoId:p.vinhoId,res};
+  wcProcLembrete();
+  // Por cima de outro ecrã (o Editar, por exemplo) não se abre nada: fica o
+  // lembrete na ficha.
+  const outro=[...document.querySelectorAll('.modal.on')].some(m=>m.id!=='modal-ficha'&&m.id!=='modal-procurar');
+  if(outro){toast('A pesquisa acabou — revê o que encontrou na ficha do vinho');return;}
+  wcRevAbrir();
+}
+/* O lembrete na ficha, por baixo dos botões: fica enquanto a pesquisa
+   estiver por rever, feche-se a janela como se fechar. */
+function wcProcLembrete(){
+  const c=wcProcCaixa();
+  if(!c||!_wcRev||!_wcFicha||_wcFicha.id!==_wcRev.vinhoId)return;
+  const n=wcRevNovos(_wcRev.res);
+  if(!n){c.innerHTML='';return;}
+  c.innerHTML=`<div class="pr-espera rv-lembrete"><div>📋</div>
+    <div><strong>Há uma pesquisa por rever</strong>
+      <div class="wc-note">${n} campo${n>1?'s':''} com informação nova — nada foi gravado ainda.</div></div>
+    <button class="btn-prim auto" onclick="wcRevAbrir()">Rever</button></div>`;
+}
+function wcRevAbrir(){
+  if(!_wcRev)return;
+  const box=document.getElementById('procurar-corpo');
+  if(!box)return;
+  const n=wcRevNovos(_wcRev.res);
+  box.innerHTML=wcRevisaoCorpo(_wcRev.res,{id:'rv-lista',profunda:true,botoes:tem=>tem
+    ?`<button class="btn-prim auto" id="rv-ir" onclick="wcRevGuardar()">Guardar o que está marcado</button>
+      <button class="btn-n" onclick="wcRevTodos('rv-lista',true)">Marcar tudo</button>
+      <button class="btn-n" onclick="wcRevDescartar()">Descartar</button>`
+    :`<button class="btn-prim auto" onclick="wcRevDescartar()">Fechar</button>`});
+  wcProcTitulo(n?'O que se encontrou':'Procurar informação');
+  abrirModal('modal-procurar');
+  wcProcTopo();
+  // Nada de novo = nada a decidir: a pesquisa não fica à espera na ficha.
+  if(!n)wcRevDescartar(true);
+}
+async function wcRevGuardar(){
+  const rv=_wcRev;
+  if(!rv)return;
+  const campos=wcRevMarcados('rv-lista');
+  if(!campos.length){toast('Não marcaste nada — marca o que queres guardar, ou Descartar',1);return;}
+  const b=document.getElementById('rv-ir');
+  if(b){b.disabled=true;b.textContent='A guardar…';}
+  try{
+    const r=await catRpc('pesquisa_aplicar',{p_id:rv.pesquisaId,p_campos:campos});
+    _wcRev=null;
+    fecharModal('modal-procurar');
+    await wcRefrescarFicha();
+    wcCarregarCatalogo(true);
+    const n=((r&&r.entrou)||[]).length+(r&&r.produtor?1:0);
+    toast((n?'Ficha atualizada ✓ — ':'')+wcRevResumo(r),!!(r&&r.produtorErro)||!n);
+  }catch(e){
+    toast('Não foi possível guardar: '+e.message,1);
+    if(b){b.disabled=false;b.textContent='Guardar o que está marcado';}
+  }
+}
+/* Descartar = a pesquisa deixa de ficar à espera na ficha. Não mexe em nada
+   do vinho. `quieto`: sem fechar a janela (o "nada de novo" continua à vista). */
+async function wcRevDescartar(quieto){
+  const rv=_wcRev;
+  _wcRev=null;
+  if(!quieto)fecharModal('modal-procurar');
+  const c=wcProcCaixa();
+  if(c)c.innerHTML='';
+  if(rv)try{await catRpc('pesquisa_aplicar',{p_id:rv.pesquisaId,p_campos:[]});}catch(_){}
 }
 
 /* ── PESQUISA MANUAL — copiar prompt, colar resposta ──
@@ -1961,9 +2171,9 @@ function wcProcResultadoHTML(res){
    Function, só que com `resposta` no corpo em vez de a deixar chamar o
    Gemini. Do lado do servidor, `catalogo-info.ts` salta a escolha de
    modelo e a chamada à API, faz `extrairJson`/`normalizar` no que veio
-   colado, e segue exactamente o mesmo caminho a partir daí — a MESMA
-   `juntar` (força 3, como qualquer pesquisa Google a sério), e o MESMO
-   relatório de "o que entrou e porquê". O polling do lado da app
+   colado, e segue exactamente o mesmo caminho a partir daí — as MESMAS
+   propostas e a MESMA revisão antes de gravar (força 3 no que se aceitar,
+   como qualquer pesquisa Google a sério). O polling do lado da app
    (`wcProcIniciarPolling`) não sabe a diferença — e não precisa de saber. */
 let _wcManualCampos=null;
 
@@ -2046,6 +2256,7 @@ Se não conseguires identificar o vinho de todo, responde {"encontrado": false, 
 }
 
 let _wcManualSites=[];
+let _wcManualColado=null;   // {vinhoId, texto} — um JSON que falhou não obriga a colar outra vez
 function wcProcurarManual(){
   if(!_wcFicha||!isAdmin())return;
   const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);
@@ -2061,19 +2272,22 @@ function wcProcurarManual(){
     <div class="pr-manual">
       <p class="wc-note">1. Copia o prompt. 2. Cola-o no assistente de IA que preferires (quanto
         mais capaz o modelo, melhor costuma ser o resultado — Gemini, ChatGPT, Claude, o que
-        tiveres à mão). 3. Copia a resposta toda (o JSON) e cola-a aqui em baixo. 4. Guarda —
-        entra no catálogo com a mesma força 3 de uma pesquisa automática, sem gastar nada.</p>
+        tiveres à mão). 3. Copia a resposta toda (o JSON) e cola-a aqui em baixo. 4. Vês campo a
+        campo o que muda e escolhes o que guardar — nada entra antes disso, e não se gasta nada.</p>
       <label>Prompt a copiar</label>
       <textarea id="pr-manual-prompt" rows="6" readonly onclick="this.select()">${esc(txt)}</textarea>
       <button class="btn-n larg" onclick="wcManualCopiar()">📋 Copiar prompt</button>
       <label>Resposta (cola aqui)</label>
-      <textarea id="pr-manual-resposta" rows="10" placeholder="Cola aqui o JSON que o modelo devolveu…"></textarea>
+      <textarea id="pr-manual-resposta" rows="10" placeholder="Cola aqui o JSON que o modelo devolveu…">${
+        _wcManualColado&&_wcManualColado.vinhoId===_wcFicha.id?esc(_wcManualColado.texto):''}</textarea>
       <p class="wc-note erro" id="pr-manual-erro"></p>
     </div>
     <div class="macoes fim">
       <button class="btn-n" onclick="wcAbrirProcurar()">‹ Voltar</button>
-      <button class="btn-prim auto" id="pr-manual-ir" onclick="wcProcurarManualEnviar()">Guardar no catálogo</button>
+      <button class="btn-prim auto" id="pr-manual-ir" onclick="wcProcurarManualEnviar()">Ver o que muda ›</button>
     </div>`;
+  wcProcTitulo('Pesquisa manual');
+  wcProcTopo();
 }
 async function wcManualCopiar(){
   const ta=document.getElementById('pr-manual-prompt');
@@ -2092,18 +2306,18 @@ async function wcProcurarManualEnviar(){
   const erroEl=document.getElementById('pr-manual-erro');
   if(!texto.trim()){if(erroEl)erroEl.textContent='Cola primeiro a resposta.';return;}
   if(erroEl)erroEl.textContent='';
+  _wcManualColado={vinhoId:_wcFicha.id,texto};
   const b=document.getElementById('pr-manual-ir');
-  if(b){b.disabled=true;b.textContent='A guardar…';}
+  if(b){b.disabled=true;b.textContent='A ler…';}
   try{
     const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
-    fecharModal('modal-procurar');
-    wcProcEspera();
+    wcProcEspera(false,true);
     if(!p.jaAndava){
       const r=await fetch(FN_CATALOGO_INFO,{
         method:'POST',
         headers:{'Content-Type':'application/json',apikey:SB_KEY,
                  Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-        body:JSON.stringify({pesquisaId:p.id,campos:_wcManualCampos,resposta:texto,sites:_wcManualSites})
+        body:JSON.stringify({pesquisaId:p.id,campos:_wcManualCampos,resposta:texto,sites:_wcManualSites,rever:true})
       });
       if(!r.ok&&r.status!==202){
         let msg='';try{msg=(await r.json()).error||'';}catch(_){}
@@ -2113,7 +2327,6 @@ async function wcProcurarManualEnviar(){
     wcProcIniciarPolling(p.id);
   }catch(e){
     wcProcErro(e.message);
-    if(b){b.disabled=false;b.textContent='Guardar no catálogo';}
   }
 }
 
@@ -2164,12 +2377,14 @@ function wcFabAcao(tipo){
 
    NÃO é um caminho de escrita novo: cada vinho da resposta colada entra
    pela EXACTA MESMA porta da pesquisa manual de cima — `pesquisa_criar` +
-   `catalogo-info.ts` com `resposta` no corpo — só que chamada uma vez por
-   vinho, em vez de uma vez só. Isso quer dizer força 3, `juntar` campo a
-   campo, e o Produtor de fora (é identidade, não ficha — por isso não
-   está nas opções de campo aqui, só o que já está em `WC_CAMPOS`). Um
-   atalho que escrevesse direto na `ficha` a partir do JSON colado, sem
-   passar por ali, era a porta dos fundos que a app inteira evita.
+   `catalogo-info.ts` com `resposta` (e `rever`) no corpo — só que chamada
+   uma vez por vinho, em vez de uma vez só. E revê-se da mesma maneira:
+   vinho a vinho, no ecrã da Garrafeira (`wcRevisaoCorpo`), e só o que
+   ficar marcado entra, pela `pesquisa_aplicar`. O Produtor fica de fora
+   (é identidade, não ficha — por isso não está nas opções de campo aqui,
+   só o que já está em `WC_CAMPOS`). Um atalho que escrevesse direto na
+   `ficha` a partir do JSON colado, sem passar por ali, era a porta dos
+   fundos que a app inteira evita.
 
    O "id" de cada vinho viaja no prompt e tem de voltar na resposta — é
    como se sabe a que vinho corresponde cada objeto sem depender da ordem
@@ -2196,9 +2411,9 @@ function wcLoteTopo(){
   if(m)m.scrollTop=0;
 }
 function wcLotePassos(n){
-  return `<div class="lote-passos">${['Vinhos','Campos','Prompt'].map((p,i)=>{
+  return `<div class="lote-passos">${['Vinhos','Campos','Prompt','Rever'].map((p,i)=>{
     const cls=i+1===n?' on':(i+1<n?' feito':'');
-    return `<span class="lote-passo${cls}"><i>${i+1<n?'✓':i+1}</i>${esc(p)}</span>`;
+    return `<span class="lote-passo${cls}"><i>${i+1<n?'✓':i+1}</i><b>${esc(p)}</b></span>`;
   }).join('')}</div>`;
 }
 
@@ -2466,8 +2681,8 @@ function wcLoteGerarPrompt(){
         <li>Cola-o num assistente de IA <strong>com pesquisa na internet ligada</strong> —
           quanto mais capaz o modelo, melhor costuma ser o resultado.</li>
         <li>Copia a resposta toda (o JSON) e cola-a aqui em baixo.</li>
-        <li>Guarda: cada vinho entra pelo mesmo caminho de uma pesquisa manual
-          (<strong>força 3</strong>), um a um.</li>
+        <li>A seguir vês, vinho a vinho, o que muda e escolhes o que guardar —
+          <strong>nada é gravado antes disso</strong>.</li>
       </ol>
       <label>Prompt a copiar</label>
       <textarea id="lote-prompt" rows="6" readonly onclick="this.select()">${esc(txt)}</textarea>
@@ -2479,7 +2694,7 @@ function wcLoteGerarPrompt(){
     <div id="lote-progresso"></div>
     <div class="macoes fim">
       <button class="btn-n" onclick="wcLotePassoCampos()">‹ Voltar</button>
-      <button class="btn-prim auto" id="lote-enviar" onclick="wcLoteEnviar()">Guardar no catálogo</button>
+      <button class="btn-prim auto" id="lote-enviar" onclick="wcLoteEnviar()">Ver o que muda ›</button>
     </div>`;
   wcLoteTopo();
 }
@@ -2529,13 +2744,13 @@ async function wcLoteEnviar(){
   }
   if(erroEl)erroEl.textContent='';
   const btn=document.getElementById('lote-enviar');
-  if(btn){btn.disabled=true;btn.textContent='A guardar…';}
+  if(btn){btn.disabled=true;btn.textContent='A ler…';}
   const progEl=document.getElementById('lote-progresso');
   const porId=new Map(lista.map(r=>[Number(r&&r.id),r]));
-  const linhas=[..._wcLoteVinhos.values()].map(v=>({v,msg:'na fila'}));
+  const linhas=[..._wcLoteVinhos.values()].map(v=>({v,msg:'na fila',pesquisaId:null,res:null}));
   const pinta=()=>{
     if(!progEl)return;
-    progEl.innerHTML=`<div class="pr-manual"><label>Progresso</label>${linhas.map(l=>
+    progEl.innerHTML=`<div class="pr-manual"><label>A ler a resposta</label>${linhas.map(l=>
       `<div class="lote-prog-l"><span>${esc(l.v.nome||'(sem nome)')}</span>`+
       `<span class="wc-note">${esc(l.msg||'')}</span></div>`).join('')}</div>`;
   };
@@ -2544,20 +2759,21 @@ async function wcLoteEnviar(){
     const r=porId.get(l.v.id);
     if(!r){l.msg='não veio na resposta colada';pinta();continue;}
     if(r.encontrado===false){l.msg='não encontrado: '+(r.aviso||'sem razão indicada');pinta();continue;}
-    l.msg='a guardar…';pinta();
+    l.msg='a ler…';pinta();
     try{
       const respostaObj={encontrado:true};
       for(const k of _wcLoteCampos){
         const jk=WC_CAMPOS_JSON[k]||k;
         if(r[jk]!==undefined)respostaObj[jk]=r[jk];
       }
+      if(r.aviso)respostaObj.aviso=r.aviso;
       const p=await catRpc('pesquisa_criar',{p_vinho_id:l.v.id});
       if(!p.jaAndava){
         const resp=await fetch(FN_CATALOGO_INFO,{
           method:'POST',
           headers:{'Content-Type':'application/json',apikey:SB_KEY,
                    Authorization:'Bearer '+(_sbSession&&_sbSession.access_token)},
-          body:JSON.stringify({pesquisaId:p.id,campos:_wcLoteCampos,resposta:JSON.stringify(respostaObj)})
+          body:JSON.stringify({pesquisaId:p.id,campos:_wcLoteCampos,resposta:JSON.stringify(respostaObj),rever:true})
         });
         if(!resp.ok&&resp.status!==202){
           let msg='';try{msg=(await resp.json()).error||'';}catch(_){}
@@ -2568,17 +2784,100 @@ async function wcLoteEnviar(){
       if(res.estado==='erro'){
         l.msg=res.erro||'erro desconhecido';
       }else{
-        const props=(res.resultado&&res.resultado.propostas)||[];
-        const entraram=props.filter(x=>x.entrou).length;
-        l.msg=entraram?`${entraram} campo${entraram>1?'s':''} ${entraram>1?'entraram':'entrou'}`:'nada de novo entrou';
+        l.pesquisaId=p.id;
+        l.res=res.resultado||{};
+        const n=wcRevNovos(l.res);
+        l.msg=n?`${n} campo${n>1?'s':''} com informação nova`:'nada de novo';
       }
     }catch(e){
       l.msg=e.message;
     }
     pinta();
   }
-  if(btn){btn.disabled=false;btn.textContent='Guardar no catálogo';}
+  if(btn){btn.disabled=false;btn.textContent='Ver o que muda ›';}
+  wcLoteRever(linhas);
+}
+
+/* ── Passo 4: rever, vinho a vinho — o ecrã da Garrafeira ──
+   Guardar passa ao vinho seguinte; Saltar descarta este (não fica à espera
+   na ficha). Fechar a janela a meio deixa os que faltam por rever, cada um
+   na ficha do seu vinho — não se perde nada. No fim, o que ficou de cada um. */
+let _wcLoteRev=null;   // {fila:[linhas com proposta], i, todas:[linhas]}
+function wcLoteRever(linhas){
+  // Os que não trouxeram nada de novo não pedem decisão nenhuma.
+  linhas.filter(l=>l.pesquisaId&&!wcRevNovos(l.res)).forEach(l=>{
+    catRpc('pesquisa_aplicar',{p_id:l.pesquisaId,p_campos:[]}).catch(()=>{});
+  });
+  const fila=linhas.filter(l=>l.pesquisaId&&wcRevNovos(l.res));
+  _wcLoteRev={fila,i:0,todas:linhas};
+  if(!fila.length){wcLoteFim();return;}
+  wcLoteMostrar();
+}
+function wcLoteMostrar(){
+  const lr=_wcLoteRev, box=document.getElementById('lote-corpo');
+  if(!lr||!box)return;
+  const l=lr.fila[lr.i], ultimo=lr.i===lr.fila.length-1;
+  const sub=[l.v.produtor,l.v.ano?String(l.v.ano):''].filter(Boolean).join(' · ');
+  box.innerHTML=`${wcLotePassos(4)}
+    <div class="lote-rv-cab">
+      <span class="lote-cont">Vinho ${lr.i+1} de ${lr.fila.length}</span>
+      <div class="lote-v-nome">${esc(l.v.nome||'(sem nome)')}</div>
+      ${sub?`<div class="lote-v-sub">${esc(sub)}</div>`:''}
+    </div>
+    ${wcRevisaoCorpo(l.res,{id:'lote-rv-lista',botoes:()=>`
+      <button class="btn-prim auto" id="lote-rv-ir" onclick="wcLoteGuardar()">${ultimo?'Guardar e terminar':'Guardar e seguinte ›'}</button>
+      <button class="btn-n" onclick="wcRevTodos('lote-rv-lista',true)">Marcar tudo</button>
+      <button class="btn-n" onclick="wcLoteSaltar()">Saltar</button>`})}`;
+  wcLoteTopo();
+}
+async function wcLoteGuardar(){
+  const lr=_wcLoteRev;
+  if(!lr)return;
+  const l=lr.fila[lr.i];
+  const campos=wcRevMarcados('lote-rv-lista');
+  if(!campos.length){toast('Não marcaste nada — marca o que queres guardar, ou Saltar',1);return;}
+  const b=document.getElementById('lote-rv-ir');
+  if(b){b.disabled=true;b.textContent='A guardar…';}
+  try{
+    const r=await catRpc('pesquisa_aplicar',{p_id:l.pesquisaId,p_campos:campos});
+    l.msg=wcRevResumo(r);
+    l.feito=true;
+    wcLoteSeguinte();
+  }catch(e){
+    toast('Não foi possível guardar: '+e.message,1);
+    if(b){b.disabled=false;b.textContent=lr.i===lr.fila.length-1?'Guardar e terminar':'Guardar e seguinte ›';}
+  }
+}
+function wcLoteSaltar(){
+  const lr=_wcLoteRev;
+  if(!lr)return;
+  const l=lr.fila[lr.i];
+  l.msg='saltado — nada gravado';
+  l.feito=true;
+  catRpc('pesquisa_aplicar',{p_id:l.pesquisaId,p_campos:[]}).catch(()=>{});
+  wcLoteSeguinte();
+}
+function wcLoteSeguinte(){
+  const lr=_wcLoteRev;
+  lr.i++;
+  if(lr.i>=lr.fila.length){wcLoteFim();return;}
+  wcLoteMostrar();
+}
+/* O fim: vinho a vinho, o que ficou. É a resposta a "o que é que foi
+   atualizado?" sem ter de abrir ficha nenhuma. */
+function wcLoteFim(){
+  const lr=_wcLoteRev, box=document.getElementById('lote-corpo');
+  _wcLoteRev=null;
   wcCarregarCatalogo(true);
+  if(!lr||!box)return;
+  box.innerHTML=`${wcLotePassos(5)}
+    <div class="pr-manual"><label>O que ficou</label>${lr.todas.map(l=>
+      `<div class="lote-prog-l"><span>${esc(l.v.nome||'(sem nome)')}</span>`+
+      `<span class="wc-note">${esc(l.msg||'')}</span></div>`).join('')}</div>
+    <div class="macoes fim">
+      <button class="btn-prim auto" onclick="fecharModal('modal-lote')">Fechar</button>
+    </div>`;
+  wcLoteTopo();
 }
 
 /* ══════════════════════════════════════════════
@@ -3621,4 +3920,11 @@ function sbLogout(){
 
 /* ── INIT ──────────────────────────────────── */
 document.addEventListener('DOMContentLoaded',()=>{sbInit();});
-document.addEventListener('keydown',(e)=>{if(e.key==='Escape')wcFecharFicha();});
+/* A pesquisa vive numa janela POR CIMA da ficha: o Escape fecha essa
+   primeiro — fechar a ficha por baixo parava a espera pelo resultado. */
+document.addEventListener('keydown',(e)=>{
+  if(e.key!=='Escape')return;
+  const pr=document.getElementById('modal-procurar');
+  if(pr&&pr.classList.contains('on')){fecharModal('modal-procurar');return;}
+  wcFecharFicha();
+});
