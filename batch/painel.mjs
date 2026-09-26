@@ -202,7 +202,7 @@ a{color:var(--bd)}
     <label>Procurar: <select id="pesquisa">
       <option value="completo">Tudo — Vivino e lojas (a ficha toda)</option>
       <option value="vivino">Só o Vivino — link, nota, avaliações, imagem</option>
-      <option value="precos">Só preços — Garrafeira Nacional → Granvine → Vinha.pt</option>
+      <option value="precos">Só preços (e imagem) — Garrafeira Nacional → Granvine → Vinha.pt</option>
     </select></label>
     <button class="prim" onclick="correr('simular')">Simular</button>
     <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>

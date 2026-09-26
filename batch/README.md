@@ -78,9 +78,14 @@ No painel:
     vazia ou também tiver vindo do Vivino. Não abre as lojas (poupa uns
     30–60 s por vinho), e por isso **não mexe num preço médio que veio de
     uma loja**; os outros campos da ficha também não.
-  - **Só preços** — não abre o Vivino: Garrafeira Nacional → Granvine →
-    Vinha.pt, e pára na primeira que tenha o vinho; o preço médio fica com
-    esse.
+  - **Só preços (e imagem)** — não abre o Vivino: Garrafeira Nacional →
+    Granvine → Vinha.pt, e pára na primeira que tenha o vinho; o preço médio
+    fica com esse, e a imagem dessa loja entra se a atual estiver vazia ou
+    tiver vindo do Vivino.
+  - **A imagem**, em qualquer modo, segue a ordem das lojas (GN → Granvine
+    → Vinha.pt) e só depois o Vivino: a das lojas é mais nítida e igual de
+    vinho para vinho. Uma imagem que veio do Vivino é trocada pela da loja;
+    a vossa fotografia e a de outros sites nunca.
 - **Registo** — uma linha por vinho, enquanto corre.
 - **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
   depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e

@@ -635,7 +635,9 @@ function imagemDe(u, { vivino = false } = {}) {
   if (!u) return null;
   let url = String(u).trim();
   if (url.startsWith("//")) url = "https:" + url;
-  if (!/^https?:\/\//i.test(url) || /logo|placeholder|no[-_]?image|default|banner|share/i.test(url)) return null;
+  // Fora: logótipos e as imagens genéricas que as lojas mostram quando não
+  // têm fotografia ("sem imagem", "em breve", a imagem por omissão da loja).
+  if (!/^https?:\/\//i.test(url) || /logo|placeholder|no[-_]?(image|photo|img)|sem[-_]?(imagem|foto)|image[-_]?not|not[-_]?available|coming[-_]?soon|em[-_]?breve|default|banner|share|woocommerce-placeholder/i.test(url)) return null;
   if (vivino && !/images\.vivino\.com/i.test(url)) return null;
   return url;
 }
@@ -1137,8 +1139,10 @@ async function main() {
           try { r = await lerLoja(page, loja, v); }
           catch (e) { r = { detalhe: { loja: loja.id, erro: String(e.message || e).slice(0, 200) } }; }
           res.detalhe.lojas.push(r.detalhe);
-          if (MODO !== "precos" && r.ficha && Object.keys(r.ficha).length)
-            fichas.push({ origem: loja.origem, ficha: r.ficha, fonte: { url: r.detalhe?.escolhido?.href, titulo: loja.nome } });
+          // Só preços: da ficha da loja, só a imagem (a página já está aberta).
+          const fichaLoja = MODO === "precos" ? (r.ficha?.imagem_url ? { imagem_url: r.ficha.imagem_url } : null) : r.ficha;
+          if (fichaLoja && Object.keys(fichaLoja).length)
+            fichas.push({ origem: loja.origem, ficha: fichaLoja, fonte: { url: r.detalhe?.escolhido?.href, titulo: loja.nome } });
           if (r.bloqueado) { lojasBloqueadas.add(loja.id); console.log(`   ${loja.nome}: recusou as páginas — salto-a no resto da corrida.`); continue; }
           if (r.achado) {
             precos[loja.id] = { ...r.achado, em: hoje };
@@ -1280,20 +1284,22 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   // A ficha (castas, região, teor…): só nos campos VAZIOS — o que já lá
   // está foi escrito por alguém (ou por uma pesquisa) e uma página de loja
   // não lhe passa por cima. Cada campo vem da primeira fonte que o tem.
-  // Uma imagem que veio do Vivino segue o link validado agora: se o link
-  // antigo era de outro vinho, a garrafa também era. As outras (a nossa
-  // fotografia, a de uma loja) não se tocam.
+  // Uma imagem que veio do Vivino troca-se: pela de uma LOJA que tenha o
+  // vinho (mais nítida e padronizada — pedido do dono, 26/09/2026), ou pela
+  // do Vivino do link validado agora (se o link antigo era de outro vinho,
+  // a garrafa também era). As outras (a nossa fotografia, a de uma loja, a
+  // de outro site) não se tocam.
   const imagemDoVivino = !vazio(atual.imagem_url)
     && (/images\.vivino\.com/i.test(String(atual.imagem_url)) || /^vivino-/.test(v.origem_imagem || ""));
   for (const campo of CAMPOS_PAGINA) {
-    // Só o Vivino: da ficha, só a imagem.
-    if (MODO === "vivino" && campo !== "imagem_url") continue;
+    // Só o Vivino / só preços: da ficha, só a imagem.
+    if (MODO !== "completo" && campo !== "imagem_url") continue;
     const trocaImagem = campo === "imagem_url" && imagemDoVivino;
     if (!vazio(atual[campo]) && !trocaImagem) continue;
-    // A fotografia prefere o Vivino (a garrafa recortada, igual em todos);
-    // o resto vem pela ordem das lojas.
-    const ordem = campo === "imagem_url" ? [...fichas].sort((a, b) => /^vivino/.test(b.origem) - /^vivino/.test(a.origem)) : fichas;
-    const f = ordem.find(x => !vazio(x.ficha[campo]) && (!trocaImagem || /^vivino/.test(x.origem)));
+    // Tudo pela ordem das fontes — as lojas (GN → Granvine → Vinha.pt),
+    // depois o Vivino —, a imagem também: a das lojas é mais nítida e
+    // igual de vinho para vinho (até 26/09/2026 o Vivino vinha primeiro).
+    const f = fichas.find(x => !vazio(x.ficha[campo]));
     if (!f) continue;
     junta(campo, atual[campo] ?? null, f.ficha[campo], f.origem);
     if (f.fonte?.url && !(fontes[f.origem] || []).some(x => x.url === f.fonte.url))

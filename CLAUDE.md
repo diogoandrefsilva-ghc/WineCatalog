@@ -625,7 +625,7 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   harmonizações com comida") e ia para o texto. As notas de prova aos
   bocados (Cor/Aroma/Sabor na Vinha.pt, "Nota de prova - Aroma" na
   Granvine) juntam-se; a descrição do produto perde o HTML.
-- **A fotografia** (`imagem_url`, só se vazio) vem do Vivino primeiro — a
+- **A fotografia** (`imagem_url`, só se vazio) vinha do Vivino primeiro (até 26/09/2026 — agora das lojas, ver "Três modos") — a
   garrafa recortada de `images.vivino.com`, a mesma que a IA trazia — e
   senão da loja (JSON-LD `image` ou `og:image`, sem logótipos).
   `estagio_meses` sai do "12 meses" do estágio.
@@ -714,7 +714,14 @@ com esse (um preço antigo de uma loja que hoje não o encontrou não conta).
 **Uma imagem que veio do Vivino segue o link validado** (nos dois modos que
 abrem o Vivino): se o link antigo era de outro vinho, a garrafa também era.
 A nossa fotografia e a de uma loja nunca se trocam. A `vivino_linha` passou a
-levar `origem_preco` e `origem_imagem` para isto. `LOJAS=false` (o nome
+levar `origem_preco` e `origem_imagem` para isto.
+**E a imagem das LOJAS ganha à do Vivino** (26/09/2026, pedido do dono: é
+mais nítida e padronizada). A imagem segue a ordem do preço — GN → Granvine
+→ Vinha.pt → Vivino —, uma imagem do Vivino é trocada pela de uma loja que
+tenha o vinho, e o **Só preços** também a traz (a página da loja já está
+aberta; só a imagem, mais nada da ficha). As imagens genéricas de "sem
+imagem" das lojas ficam de fora (`imagemDe`). A foto de uma loja pode ser de
+outra colheita — aceite, como no preço. `LOJAS=false` (o nome
 antigo) continua a valer `MODO=vivino`.
 
 **A ficha que as páginas dizem** (`fichaDosPares`): fotografia, castas,
