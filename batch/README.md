@@ -85,6 +85,13 @@ No painel:
   errado mas o do catálogo ainda não foi confirmado — passam num clique
   para "Escolher no catálogo": corre-os com **Só o Vivino** e volta a
   procurar.
+- **Fichas das garrafeiras × catálogo** — o mesmo para o resto da ficha
+  (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova,
+  harmonização, resumo), **só da mesma colheita**: o que está vazio na
+  garrafeira, e o que é diferente quando o do catálogo é mais recente do que
+  a última vez que o dono gravou o vinho. Um visto por campo (e um por
+  vinho, que marca/desmarca os dele); **Corrigir os marcados** grava. A cor,
+  a fotografia da própria pessoa e as notas pessoais nunca se tocam.
 - **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho

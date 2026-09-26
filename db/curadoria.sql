@@ -505,7 +505,10 @@ DECLARE
   r     winecatalog.vinhos%ROWTYPE;
   v_res jsonb;
 BEGIN
-  IF COALESCE(auth.email(), '') = '' THEN
+  -- A service_role não tem email, e é ela que o batch do admin usa para
+  -- comparar as garrafeiras com o catálogo (`garrafeira.fichas_catalogo_rever`).
+  -- Já lê tudo de qualquer maneira; recusá-la aqui era só partir o batch.
+  IF COALESCE(auth.email(), '') = '' AND COALESCE(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Precisa de sessão iniciada.';
   END IF;
   IF COALESCE(btrim(COALESCE(p_nome,'')), '') = '' THEN RETURN NULL; END IF;

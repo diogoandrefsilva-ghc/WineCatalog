@@ -124,6 +124,18 @@ const servidor = http.createServer(async (req, res) => {
       if (aplicar && !ids?.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
       return sbRpc(res, "garrafeira", "links_vivino_rever", { p_ids: aplicar ? ids : null, p_aplicar: aplicar });
     }
+    if (req.method === "POST" && url.pathname === "/fichas") {
+      // A ficha das garrafeiras × catálogo: sem `aplicar` é só a lista; com
+      // ele, os campos marcados de cada vinho (a função volta a conferir).
+      const b = await lerCorpo(req);
+      const aplicar = b.aplicar === true;
+      const itens = Array.isArray(b.itens) ? b.itens.slice(0, 500).map(x => ({
+        vinho_id: Number(x.vinho_id),
+        campos: (Array.isArray(x.campos) ? x.campos : []).map(String).filter(c => /^[a-z_]{2,30}$/.test(c)).slice(0, 30),
+      })).filter(x => Number.isInteger(x.vinho_id) && x.vinho_id > 0 && x.campos.length) : [];
+      if (aplicar && !itens.length) return json(res, 400, { erro: "Marca pelo menos um campo." });
+      return sbRpc(res, "garrafeira", "fichas_catalogo_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar });
+    }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
       return json(res, 200, JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8")));
@@ -255,6 +267,13 @@ a{color:var(--bd)}
     <span id="garr-n" class="nota"></span>
     <button id="btn-garr" onclick="garrCorrigir()" disabled>Corrigir os marcados</button></div>
   <div id="garr-lista" style="margin-top:10px"></div>
+</div>
+<div class="card"><h2>Fichas das garrafeiras × catálogo</h2>
+  <p class="nota" style="margin:0 0 10px">O resto da ficha (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova, harmonização…), <b>só da mesma colheita</b>. Propõe o que está <b>vazio</b> na garrafeira e o catálogo tem, e o que é <b>diferente</b> quando o do catálogo é <b>mais recente</b> do que a última vez que o dono gravou o vinho. Nunca a cor (cor diferente = outro vinho, não se toca), nunca a fotografia da pessoa, e as notas pessoais nem vão ao catálogo. O link do Vivino é no cartão de cima.</p>
+  <div class="linha"><button class="prim" onclick="fichProcurar()">Procurar</button>
+    <span id="fich-n" class="nota"></span>
+    <button id="btn-fich" onclick="fichCorrigir()" disabled>Corrigir os marcados</button></div>
+  <div id="fich-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
@@ -424,6 +443,50 @@ async function garrCorrigir(){
   if(!ids.length)return alert("Marca pelo menos um vinho.");
   if(!confirm("Trocar o link do Vivino de "+ids.length+" vinho(s) nas garrafeiras pelo do catálogo?"))return;
   try{const r=await post("/garrafeiras",{ids,aplicar:true});alert(r.aplicados+" corrigido(s). Fica registado na Garrafeira (sync_log).");await garrProcurar();}
+  catch(e){alert(e.message);}
+}
+let FICH=null;
+const FICH_CAMPO={estilo:"Estilo",mencao:"Menção",classificacao:"Classificação",regiao:"Região",sub_regiao:"Sub-região",pais:"País",teor:"Teor",estagio_meses:"Estágio (meses)",estagio_texto:"Estágio",castas:"Castas",vivino_nota:"Nota Vivino",vivino_avaliacoes:"Avaliações",imagem_url:"Imagem",preco_medio:"Preço de referência",beber_de:"Beber de",beber_ate:"Beber até",notas_prova:"Notas de prova",harmonizacao:"Harmonização",ai_resumo:"Resumo"};
+const FICH_CONTA={outra_colheita:"de outra colheita (não se toca)",cor_diferente:"com cor diferente da do catálogo (não se toca)",sem_catalogo:"fora do catálogo"};
+function fichValor(c,v){
+  if(v==null||v==="")return '<span class="nota">(vazio)</span>';
+  if(Array.isArray(v))v=v.join(", ");
+  if(c==="imagem_url")return lnk(String(v));
+  const t=String(v);return t.length>90?'<span title="'+esc(t)+'">'+esc(t.slice(0,90))+'…</span>':esc(t);
+}
+async function fichProcurar(){
+  document.getElementById("fich-lista").innerHTML='<p class="nota">A comparar…</p>';
+  try{FICH=await post("/fichas",{});fichPintar();}
+  catch(e){document.getElementById("fich-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function fichPintar(){
+  const L=FICH.linhas||[],C=FICH.contagens||{};let n=0;
+  const ficam=Object.entries(FICH_CONTA).filter(([k])=>C[k]).map(([k,t])=>C[k]+" "+t).join(" · ");
+  let h=L.length?'<table><tr><th></th><th>Campo</th><th>Agora</th><th>Catálogo</th></tr>'+L.map(x=>{n+=x.campos.length;
+    return '<tr class="vinho"><td><input type="checkbox" checked onchange="fichVinho(this,'+x.vinho_id+')"></td><td colspan="3">'+esc(x.nome)+(x.ano?" "+esc(x.ano):"")+
+      ' <span class="nota" style="font-weight:400">· '+esc(x.garrafeira)+' ('+esc(x.dono)+') · catálogo #'+esc(x.catalogo_id)+'</span></td></tr>'+
+      x.campos.map(c=>'<tr class="alt"><td><input type="checkbox" class="fich-c" data-v="'+x.vinho_id+'" data-c="'+esc(c.campo)+'" checked onchange="fichMarca(this)"></td>'+
+        '<td>'+esc(FICH_CAMPO[c.campo]||c.campo)+'<br><span class="tag">'+(c.caso==="vazio"?"vazio":"mais recente")+'</span></td>'+
+        '<td><span class="antes">'+fichValor(c.campo,c.antes)+'</span></td>'+
+        '<td>'+fichValor(c.campo,c.depois)+'<br><span class="nota">'+esc(c.origem||"")+(c.em?" · "+esc(String(c.em).slice(0,10)):"")+'</span></td></tr>').join("");}).join("")+'</table>'
+    :'<p class="nota">Nada a acertar.</p>';
+  if(ficam)h+='<p class="nota">Ficam como estão: '+esc(ficam)+'.</p>';
+  if((FICH.erros||[]).length)h='<p class="nota" style="color:var(--er)">Não gravou: '+FICH.erros.map(e=>esc(e.nome)+" ("+esc(e.erro)+")").join("; ")+'</p>'+h;
+  document.getElementById("fich-lista").innerHTML=h;
+  document.getElementById("fich-n").textContent=n+" campo"+(n===1?"":"s")+" em "+L.length+" vinho"+(L.length===1?"":"s");
+  document.getElementById("btn-fich").disabled=!L.length;
+}
+function fichMarca(el){el.closest("tr").classList.toggle("off",!el.checked);}
+function fichVinho(el,id){document.querySelectorAll('.fich-c[data-v="'+id+'"]').forEach(c=>{c.checked=el.checked;c.closest("tr").classList.toggle("off",!el.checked);});el.closest("tr").classList.toggle("off",!el.checked);}
+async function fichCorrigir(){
+  const por={};document.querySelectorAll(".fich-c:checked").forEach(c=>{(por[c.dataset.v]=por[c.dataset.v]||[]).push(c.dataset.c);});
+  const itens=Object.entries(por).map(([v,campos])=>({vinho_id:+v,campos}));
+  const n=itens.reduce((a,x)=>a+x.campos.length,0);
+  if(!n)return alert("Marca pelo menos um campo.");
+  if(!confirm("Trazer do catálogo "+n+" campo(s) em "+itens.length+" vinho(s) das garrafeiras?"))return;
+  try{const r=await post("/fichas",{itens,aplicar:true});
+    alert(r.aplicados+" campo(s) em "+r.vinhos_aplicados+" vinho(s). Fica registado na Garrafeira (sync_log)."+((r.erros||[]).length?" Não gravou "+r.erros.length+" — ver a lista.":""));
+    const erros=r.erros||[];await fichProcurar();if(erros.length){FICH.erros=erros;fichPintar();}}
   catch(e){alert(e.message);}
 }
 const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];

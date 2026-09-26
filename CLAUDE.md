@@ -122,7 +122,8 @@ Cada uma custou um erro.
    Vivino nas garrafeiras** (ver "Links do Vivino nas garrafeiras"). Só no
    PC do admin, com a service role; ele vê o vinho, a garrafeira e o dono
    — "não há segredos numa correção que melhora a informação" (o dono das
-   apps). Nenhuma app ganha com isto uma porta nova.
+   apps). Nenhuma app ganha com isto uma porta nova. O mesmo vale para o
+   resto da ficha ("Fichas das garrafeiras × catálogo").
 3. **A `pontuacaoAprox` da WineSelection NUNCA entra.** É uma estimativa de
    memória do modelo, sem pesquisa. A `forca()` devolve 0 para ela.
 4. **O "barato/justo/caro" também não entra**, por outra razão: não é do
@@ -894,6 +895,24 @@ entretanto não se aplica) e cada troca fica no `garrafeira.sync_log`
 `/wines/<nº>` e o `/Wines/<nome>` das pesquisas de memória, três Sobroso sem
 número, um "Graham's Vintage Port" dentro do link de um Crasto Touriga
 Nacional — e 2 por confirmar.
+
+**Fichas das garrafeiras × catálogo** (26/09/2026, pedido do dono). A
+mesma ideia para o resto da ficha, num cartão ao lado:
+`garrafeira.fichas_catalogo_rever` (fonte: `db/migracao-fichas-catalogo.sql`
+no repo Garrafeira) compara cada vinho pela MESMA `winecatalog.comparar` do
+"≠ catálogo" da app e propõe, **só da mesma colheita**: o campo vazio na
+garrafeira que o catálogo tem (`vazio`), e o diferente quando o do catálogo
+é **mais recente** do que a última gravação daquele vinho pelo dono
+(`mais_recente` — a garrafeira não tem data por campo; se o dono mexeu
+depois, fica o dele). Textos e rótulo incluídos, por decisão do dono. Fora:
+a **cor** (cor diferente = outro vinho, e o vinho inteiro fica de fora), o
+link do Vivino (o cartão de cima), a imagem de quem tem fotografia SUA; as
+notas pessoais e o preço de compra nem estão na ficha que atravessa.
+Escreve pela `garrafeira.escrever_do_catalogo`, a MESMA do botão da app
+(`aplicar_do_catalogo`), sem carimbar `atualizado_em`. A `comparar` passou
+a aceitar a `service_role` (não tem email; era o "Precisa de sessão
+iniciada"). A 1.ª comparação: 115 campos em 31 vinhos, 18 de outra
+colheita.
 
 **Os termos do Vivino proíbem a recolha automática** — decisão consciente
 do dono das apps, para umas dezenas de páginas de cada vez do seu próprio
