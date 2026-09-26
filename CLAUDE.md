@@ -804,7 +804,11 @@ quais trocar): a `vivino_catalogo` leva o `imagem_url` e o `imagem_de`
 painel mostra a garrafa antes do nome e filtra por origem. Como o script
 só troca imagens do Vivino, há o visto **"trocar a imagem destes, venha de
 onde vier"** (`TROCAR_IMAGEM`, só com vinhos escolhidos, nunca na fila):
-troca também a de outro site — a nossa fotografia nunca.
+troca também a de outro site — a nossa fotografia nunca. E **os preços**:
+a mesma função leva o `precos` (cada sítio, com colheita e data), o
+`preco_medio` e a `origem_preco`; o painel mostra-os numa coluna, com o
+que ficou como preço médio a negrito (★), e uma linha "médio" quando ele
+veio de fora das lojas e do Vivino (uma garrafeira, `reposto`…).
 
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à

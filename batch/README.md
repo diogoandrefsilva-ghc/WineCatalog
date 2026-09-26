@@ -64,7 +64,10 @@ No painel:
   - **Enriquecer** — grava logo no catálogo.
 - **Escolher no catálogo** — a lista dos vinhos do catálogo, com a
   **miniatura da imagem** de cada um (e de onde veio: Vivino, loja, vossa,
-  outro site; "✕" se já não abre), procura e filtros (imagem por origem ou
+  outro site; "✕" se já não abre), **os preços de cada sítio** (GN,
+  Granvine, Vinha.pt, Vivino — o que é o preço médio a negrito com ★; se o
+  preço médio veio de outro sítio, uma linha "médio" diz de onde; passa o
+  rato para ver o nome na loja, a colheita e a data), procura e filtros (imagem por origem ou
   sem imagem, sem preço, nunca verificados, link do Vivino suspeito). Com
   **"trocar a imagem destes, venha de onde vier"** ligado, os escolhidos
   ficam com a imagem da primeira loja que os tenha (ou do Vivino), mesmo a

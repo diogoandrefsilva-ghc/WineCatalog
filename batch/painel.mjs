@@ -183,7 +183,9 @@ h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
 label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;vertical-align:middle}
 .mini{width:44px;text-align:center}.mini img{width:40px;height:54px;object-fit:contain;display:block;margin:0 auto;background:#faf7f4;border-radius:4px}
 .mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
-.mini small{display:block;font-size:10px;color:var(--mu);margin-top:2px}.mini small.v{color:var(--er)}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
+.mini small{display:block;font-size:10px;color:var(--mu);margin-top:2px}.mini small.v{color:var(--er)}
+.prc{font-size:11.5px;line-height:1.35;white-space:nowrap;color:var(--mu)}.prc a{color:inherit;text-decoration:none}.prc a:hover{text-decoration:underline}
+.prc .l{display:inline-block;width:78px}.prc .n{color:#bbb}.prc .med{color:var(--bd);font-weight:700}.prc .med .l:after{content:" ★"}.prc .out{color:var(--bd);font-weight:700}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
 #novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
 input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
@@ -261,6 +263,27 @@ function catVisiveis(){
     return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
 }
 function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
+// Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
+// vai a negrito com ★. Se o preço médio veio de outro sítio (uma garrafeira,
+// uma pesquisa, reposto à mão), aparece numa linha à parte a dizer de onde.
+const LOJAS_P=[["garrafeira_nacional","GN","loja-garrafeira-nacional"],["granvine","Granvine","loja-granvine"],["vinha","Vinha.pt","loja-vinha"],["vivino","Vivino","vivino-pagina"]];
+const eur=n=>(Math.round(Number(n)*100)/100).toFixed(2).replace(".",",")+" €";
+function precosHTML(v){
+  const ps=v.precos&&typeof v.precos==="object"?v.precos:{};
+  const origem=String(v.origem_preco||"");
+  let usada=false;
+  const linhas=LOJAS_P.map(([k,rot,o])=>{
+    const p=ps[k];
+    if(!p||p.preco==null)return '<div class="n"><span class="l">'+rot+'</span>—</div>';
+    const med=origem===o||(k==="vivino"&&/^vivino-/.test(origem));
+    if(med)usada=true;
+    const tit=[p.nome,p.colheita?"colheita "+p.colheita:"",p.em?"lido a "+p.em:""].filter(Boolean).join(" · ");
+    const val=p.url?'<a href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(tit)+'">'+eur(p.preco)+'</a>':'<span title="'+esc(tit)+'">'+eur(p.preco)+'</span>';
+    return '<div class="'+(med?"med":"")+'"><span class="l">'+rot+'</span>'+val+(p.colheita&&v.ano&&Number(p.colheita)!==Number(v.ano)?' <span title="outra colheita">('+esc(p.colheita)+')</span>':'')+'</div>';
+  });
+  if(v.preco_medio!=null&&!usada)linhas.push('<div class="out" title="o preço médio veio daqui"><span class="l">médio</span>'+eur(v.preco_medio)+' <span style="font-weight:400">('+esc(origem||"?")+')</span></div>');
+  return '<div class="prc">'+linhas.join("")+'</div>';
+}
 const IMG_DE={vivino:"Vivino",loja:"loja",nossa:"vossa",outro:"outro site"};
 function miniatura(v){
   if(!v.imagem_url)return '<span class="sem">sem</span><small>&nbsp;</small>';
@@ -273,7 +296,8 @@ function pintarCatalogo(){
   const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
     '<td class="mini">'+miniatura(v)+'</td>'+
     '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
-    '<td class="ic">'+(v.imagem?"📷":"<span title=\'sem fotografia\'>—</span>")+' '+(v.preco?"€":"")+' '+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
+    '<td>'+precosHTML(v)+'</td>'+
+    '<td class="ic">'+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
     '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
   document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':''):'<p class="nota" style="padding:10px">Nenhum vinho com estes filtros.</p>';
   catContar();
