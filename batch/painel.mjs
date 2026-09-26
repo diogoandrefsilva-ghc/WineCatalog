@@ -278,13 +278,14 @@ function precosHTML(v){
   const linhas=LOJAS_P.map(([k,rot,o])=>{
     const p=ps[k];
     if(!p||p.preco==null)return '<div class="n"><span class="l">'+rot+'</span>—</div>';
+    if(p.retirado)return '<div title="retirado à mão na WineCatalog (Editar › Fontes de preço)"><span class="l">'+rot+'</span><s>'+eur(p.preco)+'</s></div>';
     const med=origem===o||(k==="vivino"&&/^vivino-/.test(origem));
     if(med)usada=true;
     const tit=[p.nome,p.colheita?"colheita "+p.colheita:"",p.em?"lido a "+p.em:""].filter(Boolean).join(" · ");
     const val=p.url?'<a href="'+esc(p.url)+'" target="_blank" rel="noopener noreferrer" title="'+esc(tit)+'">'+eur(p.preco)+'</a>':'<span title="'+esc(tit)+'">'+eur(p.preco)+'</span>';
     return '<div class="'+(med?"med":"")+'"><span class="l">'+rot+'</span>'+val+(p.colheita&&v.ano&&Number(p.colheita)!==Number(v.ano)?' <span title="outra colheita">('+esc(p.colheita)+')</span>':'')+'</div>';
   });
-  if(v.preco_medio!=null&&!usada)linhas.push('<div class="out" title="o preço médio veio daqui"><span class="l">médio</span>'+eur(v.preco_medio)+' <span style="font-weight:400">('+esc(origem||"?")+')</span></div>');
+  if(v.preco_medio!=null&&!usada)linhas.push('<div class="out" title="o preço de referência veio daqui"><span class="l">referência</span>'+eur(v.preco_medio)+' <span style="font-weight:400">('+esc(origem||"?")+')</span></div>');
   return '<div class="prc">'+linhas.join("")+'</div>';
 }
 const IMG_DE={vivino:"Vivino",loja:"loja",nossa:"vossa",outro:"outro site"};
