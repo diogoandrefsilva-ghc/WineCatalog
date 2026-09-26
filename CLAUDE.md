@@ -118,6 +118,11 @@ Cada uma custou um erro.
    (`db/amigos.sql`, ver a secção própria). Dentro do grupo FECHADO das
    Prendas de Anos, cada um vê que um amigo tem, bebeu, deseja ou recebeu
    um vinho — só o nome do amigo e o mínimo à volta, nunca a linha.
+   **E a segunda (26/09/2026): o batch do admin corrige os links do
+   Vivino nas garrafeiras** (ver "Links do Vivino nas garrafeiras"). Só no
+   PC do admin, com a service role; ele vê o vinho, a garrafeira e o dono
+   — "não há segredos numa correção que melhora a informação" (o dono das
+   apps). Nenhuma app ganha com isto uma porta nova.
 3. **A `pontuacaoAprox` da WineSelection NUNCA entra.** É uma estimativa de
    memória do modelo, sem pesquisa. A `forca()` devolve 0 para ela.
 4. **O "barato/justo/caro" também não entra**, por outra razão: não é do
@@ -846,6 +851,30 @@ Vivino colado em **"Sites de confiança"** deixou de ser cortado ao domínio
 (era, no browser e na função): passa inteiro, vai no prompt e **ganha** ao
 que o modelo escreveu, porque quem o colou abriu-o. **Mexer nesta regra é
 mexer nas quatro.**
+
+**Links do Vivino nas garrafeiras** (26/09/2026, pedido do dono). O
+catálogo já tinha os links corrigidos, mas as garrafeiras ficavam com os
+que lá estavam — e cada um gere a sua: um link para uma COLHEITA
+(`…/w/<nº>?year=2019`, `/pt/pt/…`) é uma escolha, não um erro. O cartão
+**"Links do Vivino nas garrafeiras"** do painel chama a
+`garrafeira.links_vivino_rever` (fonte: `db/migracao-links-vivino.sql` no
+repo **Garrafeira** — é uma função do schema de lá) e propõe só três casos:
+o da garrafeira **não tem `/w/<nº>`** (`formato_invalido`), **abre outro
+vinho** (`outro_vinho`, outro número) ou **está vazio** (`vazio`). Nunca se
+mexe num link com o MESMO número do catálogo. O vinho do catálogo acha-se
+pela mesma `achar`, sem exigir colheita (o número é do vinho, não do ano),
+e com a cor a bater — a cor ainda não está na chave. E só se o link do
+catálogo estiver **confirmado**: origem `vivino-pagina`/`catalogo-admin`, ou
+uma verificação aceite do motor browser com o mesmo número. Um link do
+catálogo que só veio de uma garrafeira não vale mais do que o de outra: esses
+ficam em **"Por confirmar"**, com um botão que os marca em "Escolher no
+catálogo" para se verificarem primeiro no Vivino. O link vai sempre na forma
+do vinho. "Corrigir os marcados" volta a correr as regras (o que mudou
+entretanto não se aplica) e cada troca fica no `garrafeira.sync_log`
+(origem `winecatalog-batch`). A 1.ª comparação deu 11 a corrigir — o
+`/wines/<nº>` e o `/Wines/<nome>` das pesquisas de memória, três Sobroso sem
+número, um "Graham's Vintage Port" dentro do link de um Crasto Touriga
+Nacional — e 2 por confirmar.
 
 **Os termos do Vivino proíbem a recolha automática** — decisão consciente
 do dono das apps, para umas dezenas de páginas de cada vez do seu próprio

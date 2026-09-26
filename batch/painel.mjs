@@ -78,6 +78,17 @@ function lerCorpo(req) {
     req.on("end", () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { falha(e); } });
   });
 }
+// Uma função do Supabase com a chave do batch; a resposta passa tal qual.
+async function sbRpc(res, schema, fn, corpo) {
+  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: "POST", body: JSON.stringify(corpo), headers: {
+    apikey: chave, Authorization: `Bearer ${chave}`,
+    "Content-Type": "application/json", "Content-Profile": schema, "Accept-Profile": schema } });
+  const tx = await r.text();
+  if (!r.ok) return json(res, 502, { erro: `Supabase ${r.status}: ${tx.slice(0, 200)}` });
+  res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+  return res.end(tx);
+}
 function json(res, cod, obj) {
   res.writeHead(cod, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(obj));
@@ -102,13 +113,16 @@ const servidor = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/catalogo") {
       // Também com o código: é a lista do catálogo, não um ficheiro nosso.
       if (req.headers["x-painel"] !== TOKEN) return json(res, 403, { erro: "código do painel inválido — recarrega a página" });
-      const r = await fetch(`${SB_URL}/rest/v1/rpc/vivino_catalogo`, { method: "POST", body: "{}", headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY || "", Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY || ""}`,
-        "Content-Type": "application/json", "Content-Profile": "winecatalog", "Accept-Profile": "winecatalog" } });
-      const tx = await r.text();
-      if (!r.ok) return json(res, 502, { erro: `Supabase ${r.status}: ${tx.slice(0, 200)}` });
-      res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
-      return res.end(tx);
+      return sbRpc(res, "winecatalog", "vivino_catalogo", {});
+    }
+    if (req.method === "POST" && url.pathname === "/garrafeiras") {
+      // Os links do Vivino nas garrafeiras: sem `aplicar` é só a lista; com
+      // ele, só os ids escolhidos — e a função volta a conferir as regras.
+      const b = await lerCorpo(req);
+      const aplicar = b.aplicar === true;
+      const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500) : null;
+      if (aplicar && !ids?.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
+      return sbRpc(res, "garrafeira", "links_vivino_rever", { p_ids: aplicar ? ids : null, p_aplicar: aplicar });
     }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
@@ -234,6 +248,13 @@ a{color:var(--bd)}
     <label title="Normalmente só se troca uma imagem que veio do Vivino. Ligado, os escolhidos ficam com a imagem da primeira loja que os tenha (ou do Vivino), seja qual for a que têm agora — menos a vossa fotografia."><input type="checkbox" id="cat-trocar"> trocar a imagem destes, venha de onde vier</label>
     <button class="prim" onclick="correrEscolhidos('simular')">Simular escolhidos</button>
     <button onclick="correrEscolhidos('enriquecer')">Enriquecer escolhidos</button></div>
+</div>
+<div class="card"><h2>Links do Vivino nas garrafeiras</h2>
+  <p class="nota" style="margin:0 0 10px">Compara o link de cada vinho das garrafeiras com o do catálogo. Só propõe trocar quando o da garrafeira <b>não tem o número do vinho</b> (<code>/wines/nº</code>, <code>/Wines/nome</code>…) ou <b>abre outro vinho</b>, ou quando está vazio — e só se o link do catálogo estiver confirmado (lido na página pelo script, ou escrito por ti). Um link para uma colheita do mesmo vinho fica como a pessoa o pôs.</p>
+  <div class="linha"><button class="prim" onclick="garrProcurar()">Procurar</button>
+    <span id="garr-n" class="nota"></span>
+    <button id="btn-garr" onclick="garrCorrigir()" disabled>Corrigir os marcados</button></div>
+  <div id="garr-lista" style="margin-top:10px"></div>
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
@@ -369,6 +390,40 @@ async function gravar(){
   const n=Object.values(escolhas).filter(e=>e.vinho!==false).length;
   if(!confirm("Gravar "+n+" vinho(s) desta simulação no catálogo?"))return;
   try{await post("/gravar",{nome:simNome,escolhas});comecar();}catch(e){alert(e.message);}
+}
+let GARR=null;
+const GARR_CASO={formato_invalido:"sem o nº do vinho",outro_vinho:"outro vinho",vazio:"sem link"};
+const GARR_CONTA={mesmo_vinho:"com o mesmo vinho do catálogo",catalogo_sem_link:"sem link no catálogo",sem_catalogo:"fora do catálogo",cor_diferente:"cor diferente da do catálogo (não se toca)"};
+function lnk(u){return u?'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>':'<span class="nota">(vazio)</span>';}
+async function garrProcurar(){
+  document.getElementById("garr-lista").innerHTML='<p class="nota">A comparar…</p>';
+  try{GARR=await post("/garrafeiras",{});garrPintar();}
+  catch(e){document.getElementById("garr-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function garrPintar(){
+  const L=GARR.linhas||[],P=GARR.por_confirmar||[],C=GARR.contagens||{};
+  const ficam=Object.entries(GARR_CONTA).filter(([k])=>C[k]).map(([k,t])=>C[k]+" "+t).join(" · ");
+  let h=L.length?'<table><tr><th></th><th>Vinho</th><th>Garrafeira</th><th>Agora → catálogo</th></tr>'+L.map(x=>
+    '<tr><td><input type="checkbox" class="garr-c" data-id="'+x.vinho_id+'" checked></td>'+
+    '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="tag">'+esc(GARR_CASO[x.caso]||x.caso)+'</span></td>'+
+    '<td>'+esc(x.garrafeira)+'<br><span class="nota">'+esc(x.dono)+'</span></td>'+
+    '<td><span class="antes">'+lnk(x.antes)+'</span><br>→ '+lnk(x.depois)+'<br><span class="nota">catálogo #'+x.catalogo_id+' · '+esc(x.catalogo_origem||"")+'</span></td></tr>').join("")+'</table>'
+    :'<p class="nota">Nada a corrigir.</p>';
+  if(P.length)h+='<p class="nota" style="margin-top:12px"><b>Por confirmar</b> — o link da garrafeira parece errado, mas o do catálogo ainda não foi confirmado, por isso não se mexe. Verifica primeiro estes vinhos do catálogo no Vivino:</p><table>'+P.map(x=>
+    '<tr><td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>catálogo #'+x.catalogo_id+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
+    '</table><button style="margin-top:6px" onclick="garrParaCatalogo()">Marcar estes em "Escolher no catálogo"</button>';
+  if(ficam)h+='<p class="nota">Ficam como estão: '+esc(ficam)+'.</p>';
+  document.getElementById("garr-lista").innerHTML=h;
+  document.getElementById("garr-n").textContent=L.length+" a corrigir"+(P.length?" · "+P.length+" por confirmar":"");
+  document.getElementById("btn-garr").disabled=!L.length;
+}
+function garrParaCatalogo(){for(const x of GARR.por_confirmar||[]){if(ESC.size>=50)break;ESC.add(x.catalogo_id);}pintarCatalogo();alert("Marcados em «Escolher no catálogo». Corre-os com «Só o Vivino» e volta aqui.");}
+async function garrCorrigir(){
+  const ids=[...document.querySelectorAll(".garr-c:checked")].map(c=>+c.dataset.id);
+  if(!ids.length)return alert("Marca pelo menos um vinho.");
+  if(!confirm("Trocar o link do Vivino de "+ids.length+" vinho(s) nas garrafeiras pelo do catálogo?"))return;
+  try{const r=await post("/garrafeiras",{ids,aplicar:true});alert(r.aplicados+" corrigido(s). Fica registado na Garrafeira (sync_log).");await garrProcurar();}
+  catch(e){alert(e.message);}
 }
 const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
 function novaLinha(){

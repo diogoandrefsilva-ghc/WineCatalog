@@ -74,6 +74,17 @@ No painel:
   de outro site — a vossa fotografia nunca. Marca os que
   queres (até 50) e **Simular escolhidos** / **Enriquecer escolhidos**
   correm só esses, em vez da fila.
+- **Links do Vivino nas garrafeiras** — **Procurar** compara o link de
+  cada vinho das garrafeiras de toda a gente com o do catálogo e mostra os
+  que estão errados (sem o número do vinho, ou a abrir outro vinho) ou
+  vazios, com a garrafeira, o dono e **agora → catálogo**. Só propõe o link
+  do catálogo quando ele está confirmado (lido na página pelo script, ou
+  escrito por ti); um link para uma colheita do mesmo vinho fica como está.
+  Desmarca o que não queres e **Corrigir os marcados** grava (fica no
+  registo da Garrafeira). Os **Por confirmar** — o da garrafeira parece
+  errado mas o do catálogo ainda não foi confirmado — passam num clique
+  para "Escolher no catálogo": corre-os com **Só o Vivino** e volta a
+  procurar.
 - **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
