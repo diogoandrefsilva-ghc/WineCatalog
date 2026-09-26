@@ -638,11 +638,16 @@ BEGIN
    WHERE vinho_id = p_vinho_id
    ORDER BY criado_em DESC LIMIT 1;
   IF p.id IS NULL THEN RETURN NULL; END IF;
-  IF NOT ((p.estado = 'pendente' AND p.criado_em > now() - interval '5 minutes')
-       OR (p.estado = 'concluido' AND p.resultado ->> 'rever' = 'true'
-           AND NOT p.resultado ? 'aplicadoEm'
+  -- O COALESCE é a correção de um erro: uma pesquisa da app antiga não tem
+  -- `rever`, e `NULL = 'true'` não é falso — é NULL; o `IF NOT (…)` com NULL
+  -- não entra, e a função devolvia essa pesquisa como "por rever". O ecrã
+  -- mostrava-a e a `pesquisa_aplicar` recusava ("não está à espera de
+  -- revisão"). Aconteceu no primeiro dia (26/09/2026).
+  IF NOT COALESCE((p.estado = 'pendente' AND p.criado_em > now() - interval '5 minutes')
+       OR (p.estado = 'concluido' AND COALESCE(p.resultado ->> 'rever', '') = 'true'
+           AND NOT COALESCE(p.resultado ? 'aplicadoEm', false)
            AND jsonb_array_length(COALESCE(p.resultado -> 'propostas', '[]'::jsonb)) > 0
-           AND p.fechado_em > now() - interval '7 days')) THEN
+           AND COALESCE(p.fechado_em > now() - interval '7 days', false)), false) THEN
     RETURN NULL;
   END IF;
   RETURN jsonb_build_object(

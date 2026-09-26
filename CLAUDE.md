@@ -421,7 +421,11 @@ desenho do `iaMostrarResultado` da Garrafeira:
 - **fechar a janela a meio não perde nada**: a ficha mostra "Há uma pesquisa
   por rever" (`pesquisa_por_rever`: a ÚLTIMA pesquisa do vinho, se ainda
   estiver a correr ou por rever, até 7 dias) e retoma a espera se ainda
-  estiver a correr. O Escape fecha a janela da pesquisa, não a ficha;
+  estiver a correr. O Escape fecha a janela da pesquisa, não a ficha.
+  **Uma pesquisa sem `rever` (da app antiga) nunca aparece aqui** — no
+  primeiro dia apareceu, por um `NULL = 'true'` num `IF NOT (…)` (NULL, não
+  falso), e o "Guardar" dava "não está à espera de revisão". Daí os
+  `COALESCE` da `pesquisa_por_rever` e o filtro no `wcProcRetomar`;
 - a mesma revisão serve a pesquisa **automática**, a **profunda**, a
   **manual** (o texto colado sobrevive a um erro) e o **lote**.
 

@@ -1945,7 +1945,11 @@ async function wcProcRetomar(id){
       wcProcIniciarPolling(p.id);
       return;
     }
-    _wcRev={pesquisaId:p.id,vinhoId:id,res:p.resultado||{}};
+    // Só o que está mesmo à espera de revisão: uma pesquisa da app antiga
+    // (sem `rever`) já gravou o que tinha a gravar, e a `pesquisa_aplicar`
+    // recusá-la-ia — mostrá-la era oferecer um "Guardar" que não guarda.
+    if(!(p.resultado&&p.resultado.rever)||p.resultado.aplicadoEm)return;
+    _wcRev={pesquisaId:p.id,vinhoId:id,res:p.resultado};
     wcProcLembrete();
   }catch(_){ /* é um lembrete — a ficha abre na mesma */ }
 }
