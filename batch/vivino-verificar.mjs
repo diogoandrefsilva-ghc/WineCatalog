@@ -473,6 +473,8 @@ function castasBatem(v, titulo) {
 async function verificar(page, v) {
   const det = {};
   let estado = null, nomePagina = null, proposta = null;
+  // Os do Vivino que o admin já recusou para este vinho não voltam.
+  const recusados = new Set((Array.isArray(v.recusados) ? v.recusados : []).map(String));
 
   if (v.vivino_url && pareceVivino(v.vivino_url) && !/\s/.test(v.vivino_url)) {
     const a = await abrir(page, comAno(v.vivino_url, v.ano));
@@ -485,7 +487,7 @@ async function verificar(page, v) {
       const txt = `${nomePagina || ""} ${a.info.titulo || ""} ${a.final.replace(/[-/]/g, " ")}`;
       const p = parecenca(v, txt);
       det.atual.parecenca = Math.round(p * 100) / 100;
-      if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "")) {
+      if (p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "") && !recusados.has(idDoVinho(a.final))) {
         estado = "certo";
         det._preco = precoDaPagina(a.info, a.final, { vivino: true });
         det._ficha = fichaDosPares(a.info, { vivino: true });
@@ -532,6 +534,11 @@ async function verificar(page, v) {
         candidatos = candidatos.concat(novos).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
           || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
       } catch (e) { det.procura.serper = { erro: String(e.message || e).slice(0, 200) }; }
+    }
+    if (recusados.size) {
+      const antes = candidatos.length;
+      candidatos = candidatos.filter(c => !recusados.has(idDoVinho(c.vivino_url)));
+      if (candidatos.length < antes) det.recusados_saltados = antes - candidatos.length;
     }
     let melhor = candidatos.find(c => c.cor_bate && c.nome_bate && c.parecenca >= LIMIAR);
     const parecidos = candidatos.filter(c => c.cor_bate && c.parecenca >= LIMIAR);
@@ -1339,9 +1346,10 @@ async function aplicarPlano(pl, quem = QUEM) {
   }
   // Só preços: o Vivino não foi aberto, não há verificação a registar.
   if (pl.estado === "precos") return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
-  // E a verificação fica registada sem ação, e não como "aceite".
+  // E a verificação fica RECUSADA, e não "aceite": é isso que impede o
+  // mesmo link de voltar a ser proposto para este vinho (`recusados`).
   await rpc("vivino_gravar", { p_vinho_id: pl.id, p_res: pl.registo, p_execucao: EXECUCAO,
-    p_revisao: recusouLink && pl.revisao === "aceite" ? "sem_acao" : pl.revisao });
+    p_revisao: recusouLink && pl.revisao === "aceite" ? "recusado" : pl.revisao });
   return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
 }
 

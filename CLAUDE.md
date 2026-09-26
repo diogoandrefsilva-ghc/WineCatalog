@@ -746,7 +746,13 @@ já (`aplicarPlano`) e o Simular escreve em `batch/simulacoes/*.json`
 o script com `APLICAR=<ficheiro>` — grava exatamente o que se viu, sem
 voltar a abrir páginas. Um link novo desmarcado leva atrás a nota, as
 avaliações e o preço do Vivino lidos nessa página (eram de outro vinho), e
-a verificação fica `sem_acao`. O painel só escuta em 127.0.0.1, confere o
+a verificação fica `recusado` — e um link recusado **não volta a ser
+proposto** para aquele vinho: a `vivino_linha` leva os `recusados` (os
+`/w/<nº>` das verificações recusadas, incluindo as de "Deixar como está" em
+Alertas) e o script salta-os. Nasceu do "Grande Piano Grande Reserva", que
+não está no Vivino: a procura dava sempre o "Piano Grande Reserva" (outro
+vinho — o "Grande" do nome é genérico e não conta), e ficava à espera de o
+voltar a pôr em cada corrida. O painel só escuta em 127.0.0.1, confere o
 `Host` e exige num cabeçalho um código aleatório de cada arranque: outro
 site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o

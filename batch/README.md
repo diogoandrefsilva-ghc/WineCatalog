@@ -87,7 +87,9 @@ No painel:
   carrega em **Gravar selecionados**. Grava exatamente o que viste, sem
   voltar a abrir página nenhuma; o que desmarcaste fica escrito no ficheiro.
   Desmarcar um link novo do Vivino desmarca também a nota e as avaliações
-  lidas nessa página — eram desse link.
+  lidas nessa página — eram desse link. E fica lembrado: esse link **não
+  volta a ser proposto** para aquele vinho (nem os de "Deixar como está"
+  em Alertas).
 
 Tudo o que é gravado (pelas duas vias) fica em **Alertas › Alterações ao
 catálogo** na app, com "Repor".

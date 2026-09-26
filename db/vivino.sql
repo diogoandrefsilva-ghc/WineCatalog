@@ -294,6 +294,15 @@ AS $$
     -- de loja não se toca, e só se troca uma imagem que também veio do Vivino.
     'origem_preco', v.origens -> 'preco_medio' ->> 'o',
     'origem_imagem', v.origens -> 'imagem_url' ->> 'o',
+    -- Os vinhos do Vivino que o admin já disse que NÃO são este (uma
+    -- verificação recusada): o script não os volta a propor. O "Grande
+    -- Piano Grande Reserva" não está no Vivino, e a procura dava sempre o
+    -- "Piano Grande Reserva", que é outro vinho (26/09/2026).
+    'recusados', COALESCE((
+      SELECT jsonb_agg(DISTINCT substring(vv.proposta ->> 'vivino_url' FROM '/w/(\d+)'))
+        FROM winecatalog.vivino_verificacoes vv
+       WHERE vv.vinho_id = v.id AND vv.revisao = 'recusado'
+         AND vv.proposta ->> 'vivino_url' ~ '/w/\d+'), '[]'::jsonb),
     'ficha', v.ficha);
 $$;
 
@@ -408,7 +417,9 @@ BEGIN
   -- Bloqueado ou erro não é uma resposta sobre o vinho: não fica à espera
   -- de decisão, e o vinho volta a entrar numa próxima noite.
   IF p_res ->> 'estado' IN ('bloqueado','erro') THEN v_rev := 'sem_acao'; END IF;
-  IF p_revisao IN ('aceite','sem_acao','pendente') AND p_res ->> 'estado' NOT IN ('bloqueado','erro') THEN
+  -- 'recusado': o admin desmarcou o link na revisão da simulação — fica
+  -- lembrado, e esse link não volta a ser proposto para este vinho.
+  IF p_revisao IN ('aceite','sem_acao','pendente','recusado') AND p_res ->> 'estado' NOT IN ('bloqueado','erro') THEN
     v_rev := p_revisao;
   END IF;
 
@@ -422,8 +433,8 @@ BEGIN
     (v.id, p_execucao, CASE WHEN p_res ? 'url_antes' THEN p_res ->> 'url_antes' ELSE v.ficha ->> 'vivino_url' END,
      p_res ->> 'estado',
      p_res ->> 'nome_pagina', v_prop, p_res -> 'candidatos', p_res -> 'detalhe', v_rev,
-     CASE WHEN v_rev = 'aceite' THEN now() END,
-     CASE WHEN v_rev = 'aceite' THEN 'script' END)
+     CASE WHEN v_rev IN ('aceite','recusado') THEN now() END,
+     CASE v_rev WHEN 'aceite' THEN 'script' WHEN 'recusado' THEN 'admin (na revisão da simulação)' END)
   RETURNING id INTO v_id;
 
   v_fila := COALESCE((SELECT valor::jsonb FROM winecatalog.config WHERE chave = 'vivino_fila'), '[]');
