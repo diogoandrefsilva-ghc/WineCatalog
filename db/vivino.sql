@@ -599,6 +599,15 @@ BEGIN
       'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
       'tipo', v.ficha ->> 'tipo', 'regiao', v.ficha ->> 'regiao',
       'imagem', v.ficha ? 'imagem_url', 'preco', v.ficha ? 'preco_medio', 'vivino', v.ficha ? 'vivino_url',
+      -- A imagem em si (o painel mostra-a em miniatura, para se escolher a
+      -- olho quais trocar) e de onde veio: do Vivino, de uma loja, a nossa
+      -- fotografia (o bucket winecatalog-rotulos) ou outro site.
+      'imagem_url', v.ficha ->> 'imagem_url',
+      'imagem_de', CASE WHEN COALESCE(v.ficha ->> 'imagem_url', '') = '' THEN NULL
+                        WHEN v.ficha ->> 'imagem_url' ~* 'images\.vivino\.com' OR v.origens -> 'imagem_url' ->> 'o' ~ '^vivino-' THEN 'vivino'
+                        WHEN v.ficha ->> 'imagem_url' ~* 'winecatalog-rotulos' THEN 'nossa'
+                        WHEN v.ficha ->> 'imagem_url' ~* '(garrafeiranacional\.com|granvine\.com|vinha\.pt)' OR v.origens -> 'imagem_url' ->> 'o' ~ '^loja-' THEN 'loja'
+                        ELSE 'outro' END,
       -- O formato do link: 'ok' (/<nome>/w/<nº>, limpo), 'por_limpar' (tem o
       -- número do vinho mas também país/língua/?year= — funciona, e o script
       -- arruma-o quando passa), 'invalido' (sem /w/<nº>: /wines/<nº> é UMA

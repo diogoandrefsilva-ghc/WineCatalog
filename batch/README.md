@@ -62,8 +62,13 @@ No painel:
   - **Simular** — lê tudo e não grava nada. Guarda uma simulação em
     `batch/simulacoes/` (fica só no teu computador);
   - **Enriquecer** — grava logo no catálogo.
-- **Escolher no catálogo** — a lista dos vinhos do catálogo, com procura e
-  filtros (sem fotografia, sem preço, nunca verificados, link do Vivino suspeito). Marca os que
+- **Escolher no catálogo** — a lista dos vinhos do catálogo, com a
+  **miniatura da imagem** de cada um (e de onde veio: Vivino, loja, vossa,
+  outro site; "✕" se já não abre), procura e filtros (imagem por origem ou
+  sem imagem, sem preço, nunca verificados, link do Vivino suspeito). Com
+  **"trocar a imagem destes, venha de onde vier"** ligado, os escolhidos
+  ficam com a imagem da primeira loja que os tenha (ou do Vivino), mesmo a
+  de outro site — a vossa fotografia nunca. Marca os que
   queres (até 50) e **Simular escolhidos** / **Enriquecer escolhidos**
   correm só esses, em vez da fila.
 - **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou

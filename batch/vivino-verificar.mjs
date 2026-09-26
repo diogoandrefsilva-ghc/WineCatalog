@@ -59,6 +59,7 @@ const MODO = ["completo", "vivino", "precos"].includes(process.env.MODO) ? proce
   : process.env.LOJAS === "false" ? "vivino" : "completo";
 // As lojas só no motor browser (no PC).
 const LOJAS_LIGADAS = MODO !== "vivino";
+const TROCAR_IMAGEM = process.env.TROCAR_IMAGEM === "true";
 const QUEM = MOTOR === "serper" ? "script Serper (GitHub Actions)" : "script no PC (Vivino e lojas)";
 
 // Entre páginas: devagar de propósito. São poucas dezenas por noite.
@@ -1321,10 +1322,14 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   // de outro site) não se tocam.
   const imagemDoVivino = !vazio(atual.imagem_url)
     && (/images\.vivino\.com/i.test(String(atual.imagem_url)) || /^vivino-/.test(v.origem_imagem || ""));
+  // TROCAR_IMAGEM (painel, só com vinhos escolhidos à mão): troca-se também
+  // a que veio de outro sítio — o admin olhou para ela e quer outra. A
+  // vossa fotografia (o bucket winecatalog-rotulos) nunca.
+  const trocaForcada = TROCAR_IMAGEM && !vazio(atual.imagem_url) && !/winecatalog-rotulos/.test(String(atual.imagem_url));
   for (const campo of CAMPOS_PAGINA) {
     // Só o Vivino / só preços: da ficha, só a imagem.
     if (MODO !== "completo" && campo !== "imagem_url") continue;
-    const trocaImagem = campo === "imagem_url" && imagemDoVivino;
+    const trocaImagem = campo === "imagem_url" && (imagemDoVivino || trocaForcada);
     if (!vazio(atual[campo]) && !trocaImagem) continue;
     // Tudo pela ordem das fontes — as lojas (GN → Granvine → Vinha.pt),
     // depois o Vivino —, a imagem também: a das lojas é mais nítida e

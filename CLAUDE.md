@@ -798,6 +798,13 @@ Vivino suspeito** — o `link` da `vivino_catalogo` é `ok` (`/<nome>/w/<nº>`),
 script arruma-o quando passa) ou `invalido` (sem `/w/<nº>` — `/wines/<nº>`
 é uma colheita, `/Wines/<nome>` não existe). Só o `invalido` conta como
 suspeito: eram 24 a 25/09/2026 (e 79 por limpar).
+**As imagens em miniatura** (26/09/2026, pedido do dono: escolher a olho
+quais trocar): a `vivino_catalogo` leva o `imagem_url` e o `imagem_de`
+(`vivino` · `loja` · `nossa` — o bucket `winecatalog-rotulos` · `outro`), o
+painel mostra a garrafa antes do nome e filtra por origem. Como o script
+só troca imagens do Vivino, há o visto **"trocar a imagem destes, venha de
+onde vier"** (`TROCAR_IMAGEM`, só com vinhos escolhidos, nunca na fila):
+troca também a de outro site — a nossa fotografia nunca.
 
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à

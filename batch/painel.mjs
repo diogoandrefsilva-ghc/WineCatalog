@@ -33,7 +33,7 @@ function modoPesquisa(x) { return ["completo", "vivino", "precos"].includes(x) ?
 function correr(modo, opcoes) {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
-  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO;
+  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO; delete env.TROCAR_IMAGEM;
   if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
   else if (modo === "novo") {
     // Vinho novo: sempre SIMULAÇÃO — só nasce no catálogo ao gravá-la.
@@ -46,6 +46,9 @@ function correr(modo, opcoes) {
     // Escolhidos na lista do catálogo: só esses, em vez da fila.
     const ids = (Array.isArray(opcoes.ids) ? opcoes.ids : []).map(x => parseInt(x, 10)).filter(x => x > 0).slice(0, 50);
     if (ids.length) env.IDS = ids.join(",");
+    // Escolhidos a olho pela imagem: pode trocar-se também a que não veio do
+    // Vivino (nunca a vossa fotografia). Só com escolhidos, nunca na fila.
+    if (ids.length && opcoes.trocarImagem === true) env.TROCAR_IMAGEM = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
   }
   corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null };
@@ -177,7 +180,10 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
 h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
 .linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
-label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
+label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;vertical-align:middle}
+.mini{width:44px;text-align:center}.mini img{width:40px;height:54px;object-fit:contain;display:block;margin:0 auto;background:#faf7f4;border-radius:4px}
+.mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
+.mini small{display:block;font-size:10px;color:var(--mu);margin-top:2px}.mini small.v{color:var(--er)}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
 #novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
 input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
@@ -213,13 +219,14 @@ a{color:var(--bd)}
 <div class="card"><h2>Escolher no catálogo</h2>
   <p class="nota" style="margin:0 0 10px">Marca os vinhos que queres tratar (até 50) e corre só esses — em vez da fila.</p>
   <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
-    <label><input type="checkbox" id="cat-semimg" onchange="pintarCatalogo()"> sem fotografia</label>
+    <label>Imagem: <select id="cat-img" onchange="pintarCatalogo()"><option value="">todas</option><option value="sem">sem imagem</option><option value="vivino">do Vivino</option><option value="loja">de uma loja</option><option value="outro">de outro site</option><option value="nossa">fotografia vossa</option></select></label>
     <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
     <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label>
     <label title="Sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe"><input type="checkbox" id="cat-link" onchange="pintarCatalogo()"> link do Vivino suspeito</label></div>
-  <div id="cat-lista" style="max-height:380px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
+  <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
   <div class="linha" style="margin-top:10px"><span id="cat-n" class="nota">0 escolhidos</span>
     <button onclick="catMarcarVisiveis()">Marcar os que se veem</button><button onclick="catLimpar()">Limpar</button>
+    <label title="Normalmente só se troca uma imagem que veio do Vivino. Ligado, os escolhidos ficam com a imagem da primeira loja que os tenha (ou do Vivino), seja qual for a que têm agora — menos a vossa fotografia."><input type="checkbox" id="cat-trocar"> trocar a imagem destes, venha de onde vier</label>
     <button class="prim" onclick="correrEscolhidos('simular')">Simular escolhidos</button>
     <button onclick="correrEscolhidos('enriquecer')">Enriquecer escolhidos</button></div>
 </div>
@@ -249,13 +256,22 @@ async function carregarCatalogo(){
 const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
 function catVisiveis(){
   const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
-  const si=document.getElementById("cat-semimg").checked,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
+  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
   return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
-    return q.every(p=>t.includes(p))&&(!si||!v.imagem)&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
+    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
+}
+function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
+const IMG_DE={vivino:"Vivino",loja:"loja",nossa:"vossa",outro:"outro site"};
+function miniatura(v){
+  if(!v.imagem_url)return '<span class="sem">sem</span><small>&nbsp;</small>';
+  const u=esc(v.imagem_url);
+  return '<a href="'+u+'" target="_blank" rel="noopener noreferrer" title="'+u+'"><img src="'+u+'" loading="lazy" referrerpolicy="no-referrer" alt="" onerror="semImg(this)"></a>'+
+    '<small class="'+(v.imagem_de==="vivino"?"v":"")+'">'+esc(IMG_DE[v.imagem_de]||"")+'</small>';
 }
 function pintarCatalogo(){
   const l=catVisiveis();
   const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
+    '<td class="mini">'+miniatura(v)+'</td>'+
     '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
     '<td class="ic">'+(v.imagem?"📷":"<span title=\'sem fotografia\'>—</span>")+' '+(v.preco?"€":"")+' '+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
     '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
@@ -269,7 +285,7 @@ function catContar(){document.getElementById("cat-n").textContent=ESC.size+" esc
 async function correrEscolhidos(modo){
   if(!ESC.size)return alert("Marca pelo menos um vinho.");
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,pesquisa:document.getElementById("pesquisa").value});comecar();}catch(e){alert(e.message);}
+  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar();}catch(e){alert(e.message);}
 }
 async function correr(modo){
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo, sem simular primeiro?"))return;
