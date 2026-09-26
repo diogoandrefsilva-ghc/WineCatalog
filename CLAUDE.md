@@ -857,7 +857,12 @@ verifica-se outra vez o vinho que ficou.
 
 O link proposto é sempre o do VINHO (`https://www.vivino.com/<nome>/w/<nº>`),
 sem país, língua, `?year=` nem `?srsltid=` do Google — é o que não muda e
-abre em qualquer sítio.
+abre em qualquer sítio. **Com uma exceção (26/09/2026, pedido do dono): um link com o mesmo
+número e o `?year=` da colheita do vinho fica como está** (`linkDaColheita`)
+— "…/w/76439?year=2016" num Mouchão 2016 é mais preciso do que o genérico, e
+trocá-lo era uma proposta que não corrigia nada. A proposta passa a ser o
+link de agora (a verificação fica sem ação). Sem colheita no catálogo, ou
+com o ano de outra, continua o genérico.
 
 **E à entrada também (25/09/2026): um link fora deste formato já não
 entra.** O script corrigia os links partidos, mas as pesquisas continuavam

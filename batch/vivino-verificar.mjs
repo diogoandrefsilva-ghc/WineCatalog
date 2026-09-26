@@ -752,6 +752,13 @@ function semOutraColheita(v, proposta, det, nome, final) {
   det._preco = null;
   det.outra_colheita = mostrada;
 }
+function anoDoLink(url) {
+  try { return new URL(url).searchParams.get("year") || null; } catch { return null; }
+}
+function linkDaColheita(atual, proposto, ano) {
+  return !!(ano && atual && idDoVinho(atual) && idDoVinho(atual) === idDoVinho(proposto)
+    && anoDoLink(atual) === String(ano));
+}
 function comAno(url, ano) {
   const limpo = urlLimpo(url);
   if (!limpo) return url;
@@ -1362,6 +1369,13 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
   // é o Editar da app. Entra na criação (vivino_novo), não pela aplicar_fontes.
   if (v.novo && !v.id && !v.novo.produtor && res.proposta?.produtor_pagina)
     alteracoes.push({ campo: "produtor", antes: null, depois: res.proposta.produtor_pagina, origem: "vivino-pagina", aplicar: true, identidade: true });
+  // Um link da MESMA colheita do vinho, com o mesmo número, não se troca pelo
+  // genérico (26/09/2026, pedido do dono): "…/w/76439?year=2016" num vinho de
+  // 2016 é mais preciso do que "…/w/76439". Nem pela língua ("/en/"). A
+  // proposta passa a ser o link de agora — e a verificação fica sem ação.
+  // Num vinho SEM colheita, ou com o ano de outra, continua o genérico.
+  if (res.proposta?.vivino_url && linkDaColheita(v.vivino_url, res.proposta.vivino_url, v.ano))
+    res = { ...res, proposta: { ...res.proposta, vivino_url: v.vivino_url } };
   let aplicado = false;
   if (res.proposta && res.proposta.vivino_url) {
     aplicado = true;
@@ -1507,7 +1521,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).
