@@ -17,6 +17,7 @@ import { readdir, readFile, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { compararComAgora } from "./vivino-verificar.mjs";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 // A chave para a lista do catálogo (o script lê-a sozinho, pelo --env-file).
@@ -89,6 +90,33 @@ async function sbRpc(res, schema, fn, corpo) {
   res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   return res.end(tx);
 }
+async function sbDados(schema, fn, corpo) {
+  const chave = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: "POST", body: JSON.stringify(corpo), headers: {
+    apikey: chave, Authorization: `Bearer ${chave}`,
+    "Content-Type": "application/json", "Content-Profile": schema, "Accept-Profile": schema } });
+  const tx = await r.text();
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${tx.slice(0, 200)}`);
+  return tx ? JSON.parse(tx) : null;
+}
+// Uma simulação por gravar é comparada com a BD de AGORA: o admin pode ter
+// corrigido um vinho à mão depois de simular. Cada alteração leva `agora` e
+// `desde` (igual · mudou · ja — ver `compararComAgora`). Só na resposta: o
+// ficheiro fica como a simulação o escreveu.
+async function comAgora(sim) {
+  if (sim.revista) return sim;
+  const ids = [...new Set((sim.vinhos || []).map(v => Number(v.id)).filter(n => Number.isInteger(n) && n > 0))];
+  try {
+    const fichas = {};
+    for (let i = 0; i < ids.length; i += 50)
+      for (const l of (await sbDados("winecatalog", "vivino_estes", { p_ids: ids.slice(i, i + 50) })) || [])
+        fichas[l.id] = l.ficha || {};
+    for (const v of sim.vinhos || []) if (v.id && fichas[v.id]) compararComAgora(v, fichas[v.id]);
+  } catch (e) {
+    sim.agora_erro = String(e.message || e);
+  }
+  return sim;
+}
 function json(res, cod, obj) {
   res.writeHead(cod, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(obj));
@@ -143,7 +171,7 @@ const servidor = http.createServer(async (req, res) => {
     }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
-      return json(res, 200, JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8")));
+      return json(res, 200, await comAgora(JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8"))));
     }
     if (req.method === "POST" && url.pathname === "/correr") {
       const b = await lerCorpo(req);
@@ -233,7 +261,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;colo
 td{padding:6px;border-bottom:1px solid var(--bo);vertical-align:top;word-break:break-word}
 tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.alt.dim td{opacity:.45}
 .antes{color:var(--mu);text-decoration:line-through}.seta{color:var(--mu);padding:0 4px}
-.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#f1e7d6;color:#7a5a17;font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#f1e7d6;color:#7a5a17;font-weight:600}.tag.mudou{background:#f6dcdc;color:#8a1f2d}
 a{color:var(--bd)}
 </style></head><body>
 <header><h1>🍷 Vinhos — Vivino e lojas</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
@@ -387,7 +415,7 @@ async function listarSims(abrirPrimeira){
 function valor(c,x){
   if(x==null)return"<i>vazio</i>";
   if(Array.isArray(x))return esc(x.join(", "));
-  if(typeof x==="object")return Object.entries(x).map(([k,o])=>esc(k.replace("_"," "))+" "+(o&&o.url?'<a href="'+esc(o.url)+'" target="_blank">'+esc(o.preco)+" €</a>":esc(o&&o.preco))+(o&&o.colheita?" ("+esc(o.colheita)+")":"")).join("<br>");
+  if(typeof x==="object")return Object.entries(x).map(([k,o])=>esc(k.replace("_"," "))+" "+(o&&o.url?'<a href="'+esc(o.url)+'" target="_blank">'+esc(o.preco)+" €</a>":esc(o&&o.preco))+(o&&o.colheita?" ("+esc(o.colheita)+")":"")+(o&&o.retirado?" (retirada)":"")).join("<br>");
   const t=String(x);return /^https?:/.test(t)?'<a href="'+esc(t)+'" target="_blank">'+esc(t.replace(/^https?:\\/\\/(www\\.)?/,""))+'</a>':esc(t)+(c==="preco_medio"?" €":"");
 }
 async function abrirSim(){
@@ -397,17 +425,32 @@ async function abrirSim(){
   const rows=[];
   (sim.vinhos||[]).forEach((v,i)=>{
     rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">'+(v.id?"#"+esc(v.id):'<span class="tag">novo</span>')+" "+esc(v.nome)+(v.produtor&&!v.id?' <span class="nota">· '+esc(v.produtor)+'</span>':"")+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">'+(v.id?"— nada a mudar; só regista a verificação":"— não se encontrou nada: é criado só com o que escreveste")+'</span>':"")+'</td></tr>');
-    (v.alteracoes||[]).forEach((a,j)=>rows.push('<tr class="alt'+(a.aplicar===false?' off':'')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(a.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td><span class="antes">'+valor(a.campo,a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+'</td><td class="nota">'+esc(a.origem)+'</td></tr>'));
+    (v.alteracoes||[]).forEach((a,j)=>{
+      // Comparado com a BD de agora (o servidor): "ja" — já lá está, não há
+      // nada a fazer; "mudou" — foi corrigido depois de simular: mostra-se
+      // o valor de AGORA → o da simulação, desmarcado, e decide-se.
+      const ja=a.desde==="ja",mudou=a.desde==="mudou",liga=a.aplicar!==false&&!ja&&!mudou;
+      rows.push('<tr class="alt'+(ja?' dim':liga?'':' off')+'"><td style="padding-left:22px"><input type="checkbox" data-v="'+i+'" data-c="'+j+'" data-campo="'+esc(a.campo)+'" data-o="'+esc(a.origem)+'"'+(ja?' data-ja="1" disabled':mudou?' data-mudou="1"':'')+(liga?" checked":"")+' onchange="marca(this)"></td><td>'+esc(a.campo)+'</td><td>'+
+        (ja?valor(a.campo,a.depois)+' <span class="tag">já está assim na BD</span>'
+          :'<span class="antes">'+valor(a.campo,mudou?a.agora:a.antes)+'</span><span class="seta">→</span>'+valor(a.campo,a.depois)+
+           (mudou?'<br><span class="tag mudou">mudou desde a simulação</span> <span class="nota">na simulação era: '+valor(a.campo,a.antes)+'</span>':''))+
+        '</td><td class="nota">'+esc(a.origem)+'</td></tr>');
+    });
   });
   t.innerHTML=rows.length?'<table><tr><th></th><th>Campo</th><th>Antes → depois</th><th>Origem</th></tr>'+rows.join("")+'</table>':'<p class="nota">Simulação vazia.</p>';
   document.getElementById("btn-gravar").disabled=!rows.length||!!sim.revista;
   if(sim.revista)t.insertAdjacentHTML("afterbegin",'<p class="nota">Esta simulação já foi gravada ('+esc(sim.revista)+').</p>');
+  else if(sim.agora_erro)t.insertAdjacentHTML("afterbegin",'<p class="nota"><b>Não consegui reler a BD</b> ('+esc(sim.agora_erro)+'): o "antes" é o do dia da simulação.</p>');
+  else{const n=(sim.vinhos||[]).reduce((s,v)=>s+(v.alteracoes||[]).filter(a=>a.desde==="mudou").length,0);
+    if(n)t.insertAdjacentHTML("afterbegin",'<p class="nota"><b>'+n+' campo(s) mudaram na BD desde a simulação</b> — ficam desmarcados, com o valor de agora à esquerda. Marca os que queres trocar pelo da simulação.</p>');}
+  // Um link desmarcado leva atrás o que se leu na página dele (como no marca()).
+  document.querySelectorAll('#tabela input[data-campo="vivino_url"]:not(:checked):not([data-ja])').forEach(el=>marca(el));
 }
 function marca(el){el.closest("tr").classList.toggle("off",!el.checked);
-  if(el.dataset.c==null)document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-c]').forEach(c=>{c.disabled=!el.checked;c.closest("tr").classList.toggle("dim",!el.checked);});
+  if(el.dataset.c==null)document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-c]:not([data-ja])').forEach(c=>{c.disabled=!el.checked;c.closest("tr").classList.toggle("dim",!el.checked);});
   // Sem o link novo, o que se leu na página dele também não entra (o script faz o mesmo).
-  if(el.dataset.campo==="vivino_url")document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-o^="vivino-"]').forEach(c=>{
-    if(c!==el){c.checked=el.checked;c.disabled=!el.checked;c.closest("tr").classList.toggle("off",!el.checked);}});}
+  if(el.dataset.campo==="vivino_url")document.querySelectorAll('input[data-v="'+el.dataset.v+'"][data-o^="vivino-"]:not([data-ja])').forEach(c=>{
+    if(c!==el){c.checked=el.checked&&!c.dataset.mudou;c.disabled=!el.checked;c.closest("tr").classList.toggle("off",!c.checked);}});}
 async function gravar(){
   const escolhas={};
   document.querySelectorAll("#tabela input[type=checkbox]").forEach(c=>{const i=c.dataset.v;escolhas[i]=escolhas[i]||{campos:{}};

@@ -128,6 +128,12 @@ No painel:
   lidas nessa página — eram desse link. E fica lembrado: esse link **não
   volta a ser proposto** para aquele vinho (nem os de "Deixar como está"
   em Alertas).
+  **O "antes" é o de AGORA, não o do dia da simulação**: ao abrir, o painel
+  relê cada vinho na BD. Se corrigiste um campo à mão entretanto, aparece
+  **mudou desde a simulação** — o teu valor → o da simulação, desmarcado:
+  marca-o só se quiseres trocar. Se já puseste o mesmo valor que a
+  simulação propõe, fica cinzento ("já está assim na BD") e não se grava.
+  Uma fonte de preço que retiraste depois de simular continua retirada.
 
 Tudo o que é gravado (pelas duas vias) fica em **Alertas › Alterações ao
 catálogo** na app, com "Repor".

@@ -1440,7 +1440,9 @@ function planoDoVinho(v, res, precos, precosMudaram, escolha, fichas = []) {
 async function aplicarPlano(pl, quem = QUEM) {
   // Um vinho NOVO nasce aqui, e só aqui: depois de o admin rever a
   // simulação. Se entretanto alguém o criou, usa-se o que já existe.
-  const recusouLink0 = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false);
+  // Um link que JÁ ESTÁ na BD (`ja`, ver `compararComAgora`) não foi recusado:
+  // só não há nada a escrever — o que se leu na página dele continua a valer.
+  const recusouLink0 = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false && !a.ja);
   const prodPagina = (pl.alteracoes || []).find(a => a.campo === "produtor" && a.identidade && a.aplicar !== false && !recusouLink0);
   if (!pl.id && pl.novo) {
     const r = await rpc("vivino_novo", { p_nome: pl.novo.nome, p_produtor: pl.novo.produtor || prodPagina?.depois || "",
@@ -1451,7 +1453,7 @@ async function aplicarPlano(pl, quem = QUEM) {
   if (!pl.id) throw new Error("vinho sem id");
   // Um link novo desmarcado na revisão leva atrás o que se leu NA PÁGINA
   // dele (a nota, as avaliações, o preço do Vivino): eram de outro vinho.
-  const recusouLink = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false);
+  const recusouLink = (pl.alteracoes || []).some(a => a.campo === "vivino_url" && a.aplicar === false && !a.ja);
   const doVivino = a => /^vivino-/.test(a.origem);
   const porOrigem = {};
   for (const a of pl.alteracoes || []) {
@@ -1501,6 +1503,56 @@ async function gravarSimulacao(vinhos) {
   return `simulacoes/${nome}`;
 }
 
+// ── A BD mudou desde a simulação? ─────────────────────────────────────
+// Uma simulação guarda o "antes" do dia em que correu, e entre simular e
+// gravar o admin pode ter corrigido o vinho à mão (26/09/2026, pedido do
+// dono). Para cada alteração, o valor de AGORA (`agora`) e o que isso quer
+// dizer (`desde`): "igual" — ninguém mexeu; "mudou" — alguém pôs outro
+// valor, e a revisão do painel pergunta (agora → simulação, desmarcado);
+// "ja" — já está o que a simulação propõe, não há nada a fazer.
+// `canon` escreve um valor sempre da mesma maneira (as chaves por ordem: o
+// jsonb do Postgres reordena-as), para o "é igual?" não depender disso.
+function canon(x) {
+  if (Array.isArray(x)) return "[" + x.map(canon).join(",") + "]";
+  if (x && typeof x === "object")
+    return "{" + Object.keys(x).sort().map(k => JSON.stringify(k) + ":" + canon(x[k])).join(",") + "}";
+  return JSON.stringify(x ?? null);
+}
+function compararComAgora(pl, ficha) {
+  for (const a of pl.alteracoes || []) {
+    if (a.identidade) continue;
+    const agora = (ficha || {})[a.campo] ?? null;
+    a.agora = agora;
+    a.desde = canon(agora) === canon(a.depois) ? "ja" : canon(agora) === canon(a.antes ?? null) ? "igual" : "mudou";
+  }
+  return pl;
+}
+// Ao gravar: relê o vinho. O que já lá está não se volta a escrever (senão
+// a origem de uma correção à mão passava a ser a do script), e uma fonte de
+// preço RETIRADA depois de simular continua retirada — a simulação montou o
+// `precos` antes disso, e sem isto a entrada voltava. O que "mudou" e ficou
+// marcado na revisão foi o admin a dizer que sim: grava-se.
+function ajustarAoAgora(pl, ficha) {
+  compararComAgora(pl, ficha);
+  const precosAgora = (ficha || {}).precos && typeof ficha.precos === "object" ? ficha.precos : {};
+  const retiradas = Object.keys(precosAgora).filter(k => precosAgora[k] && precosAgora[k].retirado);
+  const avisos = [];
+  for (const a of pl.alteracoes || []) {
+    if (a.identidade) continue;
+    if (a.desde === "ja") { a.aplicar = false; a.ja = true; avisos.push(`${a.campo} já está`); continue; }
+    if (a.aplicar === false) continue;
+    if (a.campo === "precos" && retiradas.length && a.depois && typeof a.depois === "object") {
+      a.depois = { ...a.depois };
+      for (const k of retiradas) a.depois[k] = precosAgora[k];
+    }
+    if (a.campo === "preco_medio") {
+      const fonte = LOJAS.find(l => l.origem === a.origem)?.id || (/^vivino-/.test(a.origem) ? "vivino" : null);
+      if (fonte && retiradas.includes(fonte)) { a.aplicar = false; avisos.push(`preco_medio de ${fonte} (fonte retirada)`); }
+    }
+  }
+  return avisos;
+}
+
 // ── Gravar uma simulação já revista (o painel do vinhos.bat) ──────────
 async function aplicarSimulacao(fich) {
   const { readFile } = await import("node:fs/promises");
@@ -1510,6 +1562,13 @@ async function aplicarSimulacao(fich) {
   let ok = 0, falhou = 0;
   for (const pl of vinhos) {
     try {
+      if (pl.id) {
+        const [linha] = await rpc("vivino_estes", { p_ids: [pl.id] }) || [];
+        if (linha && Number(linha.id) === Number(pl.id)) {
+          const avisos = ajustarAoAgora(pl, linha.ficha);
+          if (avisos.length) console.log(`#${pl.id} ${pl.nome}: fica o que está na BD — ${avisos.join(", ")}`);
+        }
+      }
       const n = await aplicarPlano(pl, "script no PC (simulação revista)");
       console.log(`#${pl.id} ${pl.nome} → ${n ? n + " campo(s)" : "só a verificação"}`);
       ok++;
@@ -1521,7 +1580,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { canon, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

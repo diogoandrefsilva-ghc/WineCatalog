@@ -818,7 +818,22 @@ proposto** para aquele vinho: a `vivino_linha` leva os `recusados` (os
 Alertas) e o script salta-os. Nasceu do "Grande Piano Grande Reserva", que
 não está no Vivino: a procura dava sempre o "Piano Grande Reserva" (outro
 vinho — o "Grande" do nome é genérico e não conta), e ficava à espera de o
-voltar a pôr em cada corrida. O painel só escuta em 127.0.0.1, confere o
+voltar a pôr em cada corrida.
+**Uma simulação é comparada com a BD de AGORA** (26/09/2026, pedido do
+dono): entre simular e gravar o admin pode ter corrigido o vinho à mão, e
+o "antes" do ficheiro é o do dia em que correu. Ao abrir uma simulação, o
+painel relê cada vinho (`vivino_estes`) e o `compararComAgora` diz de cada
+alteração se ninguém mexeu (`igual`), se já está o que ela propõe (`ja` —
+fica cinzenta e não se grava: reescrevê-la trocava a origem de uma correção
+à mão pela do script) ou se **mudou** — aparece **agora → simulação**
+(C → B, com o "na simulação era" ao lado), desmarcada, e é o admin que
+decide. Sem isto, nos campos voláteis (força 3 contra 3) o valor escrito à
+mão depois de simular era tapado sem ninguém perguntar. Ao gravar, o
+script volta a reler (`ajustarAoAgora`): o que já lá está não se escreve,
+um link que já lá está não conta como recusado, e uma fonte de preço
+**retirada** depois de simular continua retirada (o `precos` da simulação
+foi montado antes; o preço de referência dessa fonte também não entra).
+O painel só escuta em 127.0.0.1, confere o
 `Host` e exige num cabeçalho um código aleatório de cada arranque: outro
 site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
