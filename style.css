@@ -694,3 +694,13 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .hist-antes{color:var(--mu);text-decoration:line-through;text-decoration-color:rgba(0,0,0,.25)}
 .hist-seta{color:var(--mu)}
 .hist-repor{margin-top:6px;font-size:12px;padding:4px 10px}
+/* Na ficha: atrás do botão (.pv-btn), um bloco por dia, também fechado */
+.hist-dias{margin-top:8px;display:flex;flex-direction:column;gap:6px}
+.hist-dia{border:1px solid var(--bo);border-radius:10px;background:var(--card);min-width:0}
+.hist-dia-btn{width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;
+  padding:9px 12px;cursor:pointer;text-align:left;color:var(--tx);font-size:12.5px}
+.hist-dia-t{flex:1;min-width:0}
+.hist-dia-n{color:var(--mu)}
+.hist-dia-c{display:block;margin-top:2px;font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-dia-seta{color:var(--wine);flex-shrink:0}
+.hist-dia-det{padding:0 12px;border-top:1px solid var(--bo)}

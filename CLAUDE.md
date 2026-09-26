@@ -976,6 +976,12 @@ catálogo** (as últimas de todos). **"Repor o valor de antes"**
 agora ainda é o que aquela alteração pôs — senão apagava uma mudança mais
 recente. A identidade não se repõe daqui (mexe na chave: é o Editar).
 O registo começa a 25/09/2026; o que mudou antes só se vê no `origens`.
+**Na ficha fica dobrado** (26/09/2026, pedido do dono: uma corrida do
+script escreve quinze campos de uma vez e a lista corrida enchia o ecrã):
+um botão "Ver o histórico · N alterações em D dias" e, lá dentro, um bloco
+por DIA, também fechado, com os campos mexidos numa linha
+(`wcHistFichaHTML`). Um dia só abre já aberto. O que está aberto vive em
+memória e só para o mesmo vinho — sobrevive ao refrescar do "Repor".
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
