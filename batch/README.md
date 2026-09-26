@@ -78,6 +78,12 @@ No painel:
   mais vinhos que ainda não estão no catálogo, e **Procurar (simular)**. O
   script procura cada um no Vivino e nas lojas e deixa uma simulação: o vinho
   só é criado quando a gravares. Se já existir, enriquece o que lá está.
+  Em **Links (opcional)** podes colar os endereços que já tens (Vivino,
+  Garrafeira Nacional, Granvine, Vinha.pt — separados por espaço): o script
+  abre-os diretamente em vez de procurar, e o nome não os recusa (só a cor e
+  a colheita contam). O do Vivino tem de ser o de um vinho (`/w/<nº>`). Sem
+  produtor, propõe o que a página do Vivino diz (a adega) — aparece na
+  simulação e só entra se o deixares marcado.
 - **Procurar** (no cartão Correr; vale para Simular/Enriquecer, para os
   escolhidos no catálogo e para o vinho novo):
   - **Tudo** — Vivino e lojas, a ficha toda (só preenche campos vazios).

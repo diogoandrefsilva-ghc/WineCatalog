@@ -126,6 +126,9 @@ const servidor = http.createServer(async (req, res) => {
       const vinhos = (Array.isArray(b.vinhos) ? b.vinhos : []).slice(0, 20).map(x => ({
         nome: String(x.nome || "").trim().slice(0, 150), produtor: String(x.produtor || "").trim().slice(0, 150),
         ano: /^\d{4}$/.test(String(x.ano || "")) ? +x.ano : null, tipo: CORES.includes(x.tipo) ? x.tipo : null,
+        // Os links colados: só endereços http(s), até 6. Qual é de que sítio
+        // decide-o o script (linksDoVinho).
+        links: (String(x.links || "").match(/https?:\/\/[^\s,;<>"']+/gi) || []).slice(0, 6).map(u => u.slice(0, 500)),
       })).filter(x => x.nome);
       if (!vinhos.length) return json(res, 400, { erro: "Escreve pelo menos um nome." });
       if (vinhos.some(x => !x.tipo)) return json(res, 400, { erro: "Escolhe a cor de cada vinho — é ela que separa o tinto do branco com o mesmo nome." });
@@ -234,7 +237,7 @@ a{color:var(--bd)}
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
-  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th></th></tr></table>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
   <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
     <button class="prim" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
 </div>
@@ -373,13 +376,15 @@ function novaLinha(){
   tr.innerHTML='<td><input class="n-nome" placeholder="ex.: Quinta do Crasto Reserva Vinhas Velhas"></td><td><input class="n-prod"></td>'+
     '<td style="width:80px"><input class="n-ano" inputmode="numeric" maxlength="4"></td>'+
     '<td style="width:130px"><select class="n-cor"><option value="">— cor —</option>'+CORES.map(c=>"<option>"+c+"</option>").join("")+'</select></td>'+
+    '<td><input class="n-links" placeholder="cola aqui o link do Vivino, da loja…"></td>'+
     '<td style="width:30px"><button title="Tirar" onclick="this.closest(\\'tr\\').remove()">✕</button></td>';
   document.getElementById("novos").appendChild(tr);
 }
 async function procurarNovos(){
   const vinhos=[...document.querySelectorAll("#novos tr")].slice(1).map(tr=>({
     nome:tr.querySelector(".n-nome").value.trim(),produtor:tr.querySelector(".n-prod").value.trim(),
-    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value})).filter(x=>x.nome);
+    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value,
+    links:tr.querySelector(".n-links").value.trim()})).filter(x=>x.nome);
   if(!vinhos.length)return alert("Escreve pelo menos um nome.");
   if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
   if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");

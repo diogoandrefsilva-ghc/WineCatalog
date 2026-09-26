@@ -762,6 +762,19 @@ não, o plano vai sem id e com `novo`, e a linha só nasce ao gravar, pela
 como `catalogo-admin`, é o admin a dizê-la). Só no catálogo, nunca numa
 garrafeira: a Garrafeira já pergunta ao catálogo antes de gastar IA, por
 isso um vinho enriquecido aqui chega lá de graça quando alguém o juntar.
+**Links colados no vinho novo** (26/09/2026, pedido do dono): um campo
+"Links (opcional)" ao lado do produtor — o produtor fica, porque é
+identidade (a `achar` e as regras de nome usam-no). `linksDoVinho` separa
+por domínio: o do Vivino (só `/w/<nº>`, pelo `urlLimpo`) abre-se direto
+(`vivino_confiado`: o nome não o recusa, a cor e a colheita sim — a mesma
+ideia dos "Sites de confiança" das pesquisas); os das lojas vão direto à
+página do produto (`links_lojas`, sem procura nem regras de nome, e sem a
+trava do triplo do preço); o resto fica de lado e o registo diz qual. E
+**sem produtor, propõe-se a adega da página do Vivino** (`produtorDaPagina`:
+a marca do JSON-LD, senão o link `/wineries/`), como alteração de
+`identidade` — só num vinho que ainda NÃO existe (num que existe é o
+Editar), entra na `vivino_novo` e não na `aplicar_fontes`, e cai se o link
+do Vivino for desmarcado.
 
 **No PC corre-se pelo `vinhos.bat` → `painel.mjs`** (25/09/2026, a pedido
 do dono): `git pull`, e um painel local (`127.0.0.1:8787`, sem
