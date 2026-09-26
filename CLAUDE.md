@@ -46,7 +46,7 @@ tudo o que aqui está foi pago com um erro.
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
   (o bucket das fotografias) → `vivino.sql` (a verificação dos links do
   Vivino e dos preços) → `historico.sql` (o histórico campo a campo) → `amigos.sql` (as marcas
-  dos amigos na WineSelection) (+ `README.md`
+  dos amigos na WineSelection) → `nomes.sql` (os nomes sem CAPS LOCK) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -1031,6 +1031,37 @@ um botão "Ver o histórico · N alterações em D dias" e, lá dentro, um bloco
 por DIA, também fechado, com os campos mexidos numa linha
 (`wcHistFichaHTML`). Um dia só abre já aberto. O que está aberto vive em
 memória e só para o mesmo vinho — sobrevive ao refrescar do "Repor".
+
+### Os nomes sem CAPS LOCK — *uma regra, dois triggers* (26/09/2026)
+Os rótulos lidos por fotografia escrevem como o rótulo está impresso:
+"HERDADE DO SOBROSO RESERVA TINTO", "PÊRA-MANCA VINHO TINTO" com o produtor
+"CARTUXA". A regra do dono das apps: Herdades, Montes, Quintas… sempre com
+maiúscula; o "do", o "da", o "de" sempre em minúsculas. É a
+`winecatalog.nome_proprio` (`db/nomes.sql`), aplicada ao nome e ao produtor
+por um trigger BEFORE na `winecatalog.vinhos` **e** na `garrafeira.vinhos`
+(migração 20 da Garrafeira, que chama a MESMA função — duas cópias da regra
+divergiam, e o mesmo vinho ficava escrito de duas maneiras). Na tabela e
+não nas portas, pela razão do histórico: a porta que se esquecesse era um
+buraco calado. (A `normalizar_regiao` foi pelo outro caminho e tem de ser
+chamada à mão em cada porta.)
+- **O difícil é saber quando NÃO mexer**: o catálogo tem siglas a sério
+  ("CARM — Casa Agrícola…", "SIVIPA — …", "Mal Acompanhado JCA", "Douro
+  DOC"). Uma palavra em maiúsculas sozinha num nome normal fica — é quase
+  sempre sigla. Muda se tiver outra em maiúsculas ao lado, se for a única
+  do nome (com 4 letras ou mais: "CARTUXA" muda, "JCA" não), ou se for uma
+  palavra genérica ("… Reserva TINTO": a `generico` dos Duplicados, mais as
+  vazias e as de casa da `tokens`). As da lista `siglas` (DOC, LBV, VT…) e
+  os números romanos nunca. Tudo em minúsculas ("valedevila") passa a
+  maiúsculas iniciais. O "d'" a meio fica pequeno ("Leo d'Honor", "Clefs
+  d'Or").
+- **A chave não muda**: a `tokens` já passava tudo a minúsculas.
+- **Não se contorna**: escrever um nome em maiúsculas de propósito volta a
+  dar o nome arrumado. Se uma sigla verdadeira for comida (duas seguidas
+  fora da lista, ou uma sozinha como nome inteiro), acrescenta-se à
+  `siglas` — não se desliga o trigger.
+- A correção do que lá estava (9 linhas no catálogo, 9 vinhos em três
+  garrafeiras) ficou no histórico (quem: "correção: nomes em maiúsculas") e
+  no `garrafeira.sync_log` (`nome_capitalizado`).
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
