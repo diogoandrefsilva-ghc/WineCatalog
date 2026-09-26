@@ -280,7 +280,7 @@ const WC_CAMPOS=[
   ['teor','Teor alcoólico'],['estagio_meses','Estágio (meses)'],
   ['estagio_texto','Estágio'],
   ['vivino_nota','Nota Vivino'],['vivino_avaliacoes','Avaliações Vivino'],
-  ['vivino_url','Vivino'],['preco_medio','Preço de mercado'],
+  ['vivino_url','Vivino'],['preco_medio','Preço de referência'],
   ['beber_de','Beber de'],['beber_ate','Beber até'],
   ['notas_prova','Notas de prova'],['harmonizacao','Harmonização'],
   ['ai_resumo','Resumo'],['imagem_url','Imagem']
@@ -431,7 +431,7 @@ const WC_FAIXAS=[['<15','menos de 15 €'],['15-30','15 – 30 €'],['30-60','3
 /* Chave, ícone e nome de cada campo da FITA. Os ícones são os mesmos da
    Garrafeira (`F_CAMPOS`), de propósito: quem anda nas duas apps não
    aprende duas maneiras de dizer "Região". */
-const WC_GRUPOS=[['tipos','🍷','Tipo'],['regioes','🗺️','Região'],['castas','🍇','Castas'],['precos','💶','Preço médio']];
+const WC_GRUPOS=[['tipos','🍷','Tipo'],['regioes','🗺️','Região'],['castas','🍇','Castas'],['precos','💶','Preço de referência']];
 let _wcFiltros={tipos:[],regioes:[],castas:[],precos:[]};
 let _wcFacetas=null;
 /* O PAINEL É PROGRESSIVO, como o da Garrafeira. Era tudo ou nada: aberto,
@@ -1055,7 +1055,7 @@ const WC_EDIT=[
   ['vivino_nota','Nota Vivino (0-5)','num'],
   ['vivino_avaliacoes','Avaliações Vivino','int'],
   ['vivino_url','URL do Vivino','txt'],
-  ['preco_medio','Preço de mercado (€)','num'],
+  ['preco_medio','Preço de referência (€)','num'],
   ['beber_de','Beber de (ano)','int'],
   ['beber_ate','Beber até (ano)','int'],
   ['notas_prova','Notas de prova','area'],
@@ -1275,6 +1275,7 @@ function wcAbrirEditar(){
   <div class="divi"></div>
   ${wcCamposEditHTML('ed-',ficha,origens)}
   ${wcPrecosEditHTML(ficha.precos,ficha.preco_medio)}`;
+  _wcRefAuto=null;
 
   /* A identidade fica atrás de um interruptor, e não por timidez: mexer no
      nome muda a CHAVE, que é o que faz duas linhas serem a mesma. Aberto
@@ -1327,19 +1328,68 @@ function wcPrecosEditHTML(precos,medio){
     return `<label class="ed-check"><input type="checkbox" class="ed-preco-ret" data-loja="${esc(l)}"
         ${x.retirado?'checked':''} onchange="wcPrecoRetirarMudou()">
       Retirar ${x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t}${
-        isFinite(m)&&m>0&&Math.abs(pr-m)<0.005?' <span class="wc-note">(é o preço médio)</span>':''}</label>`;
+        isFinite(m)&&m>0&&Math.abs(pr-m)<0.005?' <span class="wc-note">(é o preço de referência)</span>':''}</label>`;
   }).join('')}
-  <p class="wc-note ed-oculto" id="ed-preco-aviso">O <strong>preço médio</strong> veio de uma fonte
-    que retiraste — corrige-o ou esvazia-o lá em cima.</p></div>`;
+  <p class="wc-note ed-oculto" id="ed-preco-aviso"></p></div>`;
 }
+/* De que fonte veio o preço de referência (`preco_medio`): pela ORIGEM que
+   o script lhe carimbou (`loja-granvine` → granvine, `vivino-*` → vivino),
+   e, sem essa, pelo valor igual ao de uma loja. `null` = veio de outro lado
+   (uma pesquisa, uma correção à mão) e retirar uma loja não lhe mexe. */
+const WC_PRECO_PRIORIDADE=['garrafeira_nacional','granvine','vinha','vivino'];
+function wcFonteDoPrecoRef(ficha,origens){
+  const precos=(ficha||{}).precos||{}, m=Number((ficha||{}).preco_medio);
+  if(!(m>0))return null;
+  const o=String(((origens||{}).preco_medio||{}).o||'');
+  const pelaOrigem=o.startsWith('loja-')?o.slice(5).replace(/-/g,'_'):o.startsWith('vivino-')?'vivino':null;
+  if(pelaOrigem&&precos[pelaOrigem])return pelaOrigem;
+  if(pelaOrigem||o==='catalogo-admin'||o==='catalogo-pesquisa')return null;
+  return WC_PRECO_PRIORIDADE.find(l=>precos[l]&&Math.abs(Number(precos[l].preco)-m)<0.005)||null;
+}
+/* Retirar a fonte de onde veio o preço de referência deixa-o órfão. Diz-se
+   já qual passa a ser — a primeira que sobra pela MESMA ordem do script
+   (GN → Granvine → Vinha.pt → Vivino) — e põe-se no campo, à vista, para
+   se guardar com o resto. Sem nenhuma, o campo fica vazio e diz-se que o
+   vinho fica sem preço de referência. Desmarcar repõe o que lá estava.
+   Se o admin escreveu outro valor à mão no campo, não se lhe toca. */
+let _wcRefAuto=null;
 function wcPrecoRetirarMudou(){
-  const precos=((_wcFicha||{}).ficha||{}).precos||{};
+  const v=_wcFicha||{}, ficha=v.ficha||{}, precos=ficha.precos||{};
   const el=document.getElementById('ed-preco_medio');
-  const m=el?parseFloat(String(el.value).replace(',','.')):NaN;
-  const bate=[...document.querySelectorAll('.ed-preco-ret')].some(c=>c.checked&&
-    isFinite(m)&&Math.abs(Number((precos[c.dataset.loja]||{}).preco)-m)<0.005);
   const a=document.getElementById('ed-preco-aviso');
-  if(a)a.classList.toggle('ed-oculto',!bate);
+  const fonte=wcFonteDoPrecoRef(ficha,v.origens);
+  if(!el||!a||!fonte)return;
+  const orig=ficha.preco_medio==null?'':String(ficha.preco_medio);
+  const atual=String(el.value).trim();
+  const meu=atual===orig||(_wcRefAuto!=null&&atual===_wcRefAuto);
+  const ret=new Set([...document.querySelectorAll('.ed-preco-ret')].filter(c=>c.checked).map(c=>c.dataset.loja));
+  if(!ret.has(fonte)){
+    if(meu&&atual!==orig)el.value=orig;
+    _wcRefAuto=null;
+    a.classList.add('ed-oculto');
+    return;
+  }
+  const nova=WC_PRECO_PRIORIDADE.concat(Object.keys(precos).filter(l=>!WC_PRECO_PRIORIDADE.includes(l)))
+    .find(l=>!ret.has(l)&&precos[l]&&!precos[l].retirado&&Number(precos[l].preco)>0);
+  const nome=l=>esc(WC_LOJAS_NOMES[l]||l);
+  if(!meu){
+    a.innerHTML=`O preço de referência vinha de <strong>${nome(fonte)}</strong>, mas escreveste outro à
+      mão — fica o teu.`;
+  }else if(nova){
+    const x=precos[nova];
+    _wcRefAuto=String(x.preco);
+    el.value=_wcRefAuto;
+    a.innerHTML=`O preço de referência vinha de <strong>${nome(fonte)}</strong>. Passa a ser
+      <strong>${esc(eurFmt(x.preco))}</strong>, de <strong>${nome(nova)}</strong>${
+      x.colheita?` (colheita ${esc(String(x.colheita))})`:''} — a seguinte pela ordem
+      Garrafeira Nacional → Granvine → Vinha.pt → Vivino.`;
+  }else{
+    _wcRefAuto='';
+    el.value='';
+    a.innerHTML=`O preço de referência vinha de <strong>${nome(fonte)}</strong> e não sobra mais
+      nenhuma fonte: o vinho fica <strong>sem preço de referência</strong>.`;
+  }
+  a.classList.remove('ed-oculto');
 }
 /* O `precos` inteiro de volta, com a marca posta ou tirada; `undefined`
    quando nada mudou — a `editar` já não escreve o que é igual, mas assim
