@@ -346,7 +346,7 @@ label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;ver
 .mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
 .mini small{display:block;font-size:10px;color:var(--mu);margin-top:2px}.mini small.v{color:var(--er)}
 .prc{font-size:11.5px;line-height:1.35;white-space:nowrap;color:var(--mu)}.prc a{color:inherit;text-decoration:none}.prc a:hover{text-decoration:underline}
-.prc .l{display:inline-block;width:78px}.prc .n{color:#bbb}.prc .med{color:var(--bd);font-weight:700}.prc .med .l:after{content:" ★"}.prc .out{color:var(--bd);font-weight:700}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}
+.prc .l{display:inline-block;width:78px}.prc .n{color:#bbb}.prc .med{color:var(--bd);font-weight:700}.prc .med .l:after{content:" ★"}.prc .out{color:var(--bd);font-weight:700}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}.ic.datas div{line-height:1.35}.ic.datas .ord{color:var(--bd);font-weight:700}
 #novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
 input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
@@ -376,16 +376,19 @@ a{color:var(--bd)}
 <main>
 <section class="tab" id="t-info">
 <div class="card" id="c-escolher"><h2>Escolher os vinhos a enriquecer ou corrigir</h2>
-  <p class="nota" style="margin:0">Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois marcas <b>à mão</b> na lista, <b>todos</b> os que passam, ou <b>alguns ao acaso</b> entre eles. Corre só o que estiver marcado — até 50 de cada vez.</p>
+  <p class="nota" style="margin:0">Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois ordenas a lista e marcas <b>à mão</b>, <b>os primeiros</b> pela ordem (os alterados há mais tempo, os criados há menos…), <b>alguns ao acaso</b>, ou <b>todos</b> os que passam. Corre só o que estiver marcado — até 50 de cada vez.</p>
   <div class="passo"><span class="num">1</span>Critério <span class="nota" id="cat-passam"></span></div>
   <div class="filtros"><input type="search" id="cat-q" placeholder="procurar por nome, produtor, região, cor, ano…" oninput="pintarCatalogo()">
     <span id="cat-filtros" class="filtros"></span>
     <button onclick="catLimparFiltros()">Limpar filtros</button></div>
   <div class="passo"><span class="num">2</span>Escolha</div>
-  <div class="linha"><button onclick="catMarcarVisiveis()">Marcar todos os que passam</button>
+  <div class="linha"><label>Ordenar por <select id="cat-ordem" onchange="catOrdem()"></select></label></div>
+  <div class="linha" style="margin-top:8px"><label>Quantos <input type="number" id="cat-quantos" min="1" max="50" value="10"></label>
+    <button onclick="catPrimeiros()" title="Os primeiros da lista, pela ordem escolhida em cima — troca a escolha de agora">⬆ Os primeiros</button>
     <span class="ou">ou</span>
-    <button onclick="catSortear()" title="Troca a escolha de agora por estes">🎲 Sortear</button><input type="number" id="cat-acaso" min="1" max="50" value="10"><span class="ou">ao acaso entre os que passam</span>
-    <span class="ou">ou marca-os à mão na lista.</span></div>
+    <button onclick="catSortear()" title="Troca a escolha de agora por estes">🎲 Ao acaso</button>
+    <span class="ou">entre os que passam, ou</span>
+    <button onclick="catMarcarVisiveis()">Marcar todos os que passam</button></div>
   <div class="linha" style="margin-top:8px"><span id="cat-n" class="conta">0 escolhidos</span>
     <label><input type="checkbox" id="cat-so" onchange="pintarCatalogo()"> ver só os escolhidos</label>
     <button onclick="catLimpar()">Limpar a escolha</button></div>
@@ -523,10 +526,51 @@ function catContagens(){
     sel.classList.toggle("ativo",!!sel.value);
   }
 }
-// A lista: os que passam os filtros, ou só os escolhidos (pela ordem em que correm).
+// As ordens da lista (27/09/2026, pedido do dono). "Alterado" é a última
+// mudança na linha (o "atualizado_em" ou o histórico, o mais recente dos
+// dois); "criado" é quando nasceu. Um vinho sem o valor vai para o fim — menos
+// em "verificados há mais tempo", em que "nunca" vem primeiro (a ordem da
+// antiga fila). Empates ficam por nome. A escolha fica neste browser.
+const data=x=>{const t=x?Date.parse(x):NaN;return Number.isNaN(t)?null:t;};
+const numero=x=>x==null||x===""||Number.isNaN(Number(x))?null:Number(x);
+const ORDENS=[
+  {id:"nome",rot:"Nome (A → Z)"},
+  {id:"alterado-",rot:"Alterados há menos tempo",g:"Datas",k:v=>data(v.alterado),desc:1,col:"alterado"},
+  {id:"alterado+",rot:"Alterados há mais tempo",g:"Datas",k:v=>data(v.alterado),col:"alterado"},
+  {id:"criado-",rot:"Criados há menos tempo",g:"Datas",k:v=>data(v.criado),desc:1,col:"criado"},
+  {id:"criado+",rot:"Criados há mais tempo",g:"Datas",k:v=>data(v.criado),col:"criado"},
+  {id:"visto+",rot:"Verificados há mais tempo (nunca primeiro)",g:"Datas",k:v=>v.visto?data(v.visto):-Infinity,col:"visto"},
+  {id:"visto-",rot:"Verificados há menos tempo",g:"Datas",k:v=>data(v.visto),desc:1,col:"visto"},
+  {id:"campos+",rot:"Menos informação primeiro",g:"Outras",k:v=>numero(v.campos)},
+  {id:"preco-",rot:"Preço de referência — mais caros primeiro",g:"Outras",k:v=>numero(v.preco_medio),desc:1},
+  {id:"preco+",rot:"Preço de referência — mais baratos primeiro",g:"Outras",k:v=>numero(v.preco_medio)},
+  {id:"ano-",rot:"Colheita — mais recentes primeiro",g:"Outras",k:v=>numero(v.ano),desc:1},
+];
+function ordensHTML(){
+  const g={};for(const o of ORDENS)(g[o.g||""]=g[o.g||""]||[]).push(o);
+  document.getElementById("cat-ordem").innerHTML=Object.entries(g).map(([n,l])=>{
+    const ops=l.map(o=>'<option value="'+o.id+'">'+esc(o.rot)+'</option>').join("");
+    return n?'<optgroup label="'+esc(n)+'">'+ops+'</optgroup>':ops;}).join("");
+  let guardada=null;try{guardada=localStorage.getItem("painel_ordem");}catch{}
+  if(ORDENS.some(o=>o.id===guardada))document.getElementById("cat-ordem").value=guardada;
+}
+const ordemAtual=()=>ORDENS.find(o=>o.id===document.getElementById("cat-ordem").value)||ORDENS[0];
+function ordenar(l){
+  const o=ordemAtual();if(!o.k)return l;
+  return l.map(v=>[v,o.k(v)]).sort(([,a],[,b])=>{
+    if(a==null||b==null)return a==null&&b==null?0:a==null?1:-1;
+    return (a<b?-1:a>b?1:0)*(o.desc?-1:1);}).map(x=>x[0]);
+}
+function catOrdem(){try{localStorage.setItem("painel_ordem",document.getElementById("cat-ordem").value);}catch{}pintarCatalogo();}
+// Os escolhidos pela ordem da lista — é por ela que correm.
+function escolhidosPelaOrdem(){
+  const l=ordenar(CAT.filter(v=>ESC.has(v.id))).map(v=>v.id);
+  return l.concat([...ESC].filter(id=>!l.includes(id)));
+}
+// A lista: os que passam os filtros, ou só os escolhidos — pela ordem escolhida.
 function catVisiveis(){
-  if(document.getElementById("cat-so").checked){const por=new Map(CAT.map(v=>[v.id,v]));return [...ESC].map(id=>por.get(id)).filter(Boolean);}
-  return catPool();
+  if(document.getElementById("cat-so").checked)return ordenar(CAT.filter(v=>ESC.has(v.id)));
+  return ordenar(catPool());
 }
 async function carregarCatalogo(){
   try{const r=await fetch("/catalogo",{headers:{"X-Painel":TOKEN}});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);CAT=j;pintarCatalogo();}
@@ -562,8 +606,18 @@ function miniatura(v){
   return '<a href="'+u+'" target="_blank" rel="noopener noreferrer" title="'+u+'"><img src="'+u+'" loading="lazy" referrerpolicy="no-referrer" alt="" onerror="semImg(this)"></a>'+
     '<small class="'+(v.imagem_de==="vivino"?"v":"")+'">'+esc(IMG_DE[v.imagem_de]||"")+'</small>';
 }
+const DMA=new Intl.DateTimeFormat("pt-PT",{day:"2-digit",month:"2-digit",year:"2-digit"});
+const DMAH=new Intl.DateTimeFormat("pt-PT",{dateStyle:"short",timeStyle:"short"});
+function dataCurta(x,rot,sem,ord){
+  const t=data(x);
+  return '<div'+(ord?' class="ord"':'')+(t!=null?' title="'+esc(rot+" "+DMAH.format(t))+'"':'')+'>'+(t!=null?esc(rot+" "+DMA.format(t)):esc(sem))+'</div>';
+}
+function datasHTML(v,col){
+  return dataCurta(v.alterado,"alterado","",col==="alterado")+dataCurta(v.criado,"criado","",col==="criado")+dataCurta(v.visto,"visto","nunca visto",col==="visto");
+}
 function pintarCatalogo(){
   catContagens();
+  const col=ordemAtual().col;
   const so=document.getElementById("cat-so").checked,pool=catPool(),l=catVisiveis();
   const ligados=FILTROS.filter(valorF).length+(palavras("cat-q").length?1:0);
   document.getElementById("cat-passam").textContent=ligados?"— "+pool.length+" de "+CAT.length+" vinhos passam":"— sem filtros: o catálogo todo ("+CAT.length+" vinhos)";
@@ -572,30 +626,35 @@ function pintarCatalogo(){
     '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+(v.pedido?' <span class="tag" title="pedido na app, com «🍷 Verificar no Vivino»">🍷 pedido</span>':'')+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
     '<td>'+precosHTML(v)+'</td>'+
     '<td class="ic">'+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
-    '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
+    '<td class="ic datas">'+datasHTML(v,col)+'</td></tr>');
   document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':'')
     :'<p class="nota" style="padding:10px">'+(so?"Ainda não escolheste nenhum vinho.":"Nenhum vinho com estes filtros.")+'</p>';
   catContar();
 }
 function catMarca(id,el){if(el.checked){if(ESC.size>=50){el.checked=false;return alert("Até 50 de cada vez.");}ESC.add(id);}else ESC.delete(id);el.closest("tr").classList.toggle("sel",el.checked);catContar();}
 function catMarcarVisiveis(){
-  const pool=catPool();let fora=0;
+  const pool=ordenar(catPool());let fora=0;
   for(const v of pool){if(ESC.has(v.id))continue;if(ESC.size>=50){fora++;continue;}ESC.add(v.id);}
   pintarCatalogo();
   if(fora)alert("Só cabem 50 de cada vez — ficaram de fora "+fora+". Afina os filtros, ou sorteia.");
 }
 // Ao acaso entre os que passam os filtros: troca a escolha de agora e mostra
 // só os sorteados, para se ver o que vai correr (e desmarcar algum).
-function catSortear(){
-  const pool=catPool();
-  if(!pool.length)return alert("Nenhum vinho passa os filtros.");
-  const n=Math.min(pool.length,Math.max(1,Math.min(50,parseInt(document.getElementById("cat-acaso").value,10)||10)));
-  if(ESC.size&&!confirm("Trocar os "+ESC.size+" escolhidos por "+n+" ao acaso?"))return;
-  const a=pool.slice();
-  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
-  ESC.clear();for(const v of a.slice(0,n))ESC.add(v.id);
+const quantos=max=>Math.min(max,Math.max(1,Math.min(50,parseInt(document.getElementById("cat-quantos").value,10)||10)));
+function catTrocarEscolha(l,como){
+  if(!l.length)return alert("Nenhum vinho passa os filtros.");
+  const n=quantos(l.length);
+  if(ESC.size&&!confirm("Trocar os "+ESC.size+" escolhidos por "+n+" "+como+"?"))return;
+  ESC.clear();for(const v of l.slice(0,n))ESC.add(v.id);
   document.getElementById("cat-so").checked=true;
   pintarCatalogo();
+}
+// Os primeiros da lista, pela ordem escolhida ("os 10 alterados há mais tempo").
+function catPrimeiros(){catTrocarEscolha(ordenar(catPool()),"— os primeiros pela ordem da lista");}
+function catSortear(){
+  const a=catPool().slice();
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  catTrocarEscolha(a,"ao acaso");
 }
 function catLimpar(){ESC.clear();document.getElementById("cat-so").checked=false;pintarCatalogo();}
 function catLimparFiltros(){document.getElementById("cat-q").value="";for(const f of FILTROS)document.getElementById("f-"+f.id).value="";document.getElementById("cat-so").checked=false;pintarCatalogo();}
@@ -607,7 +666,7 @@ function catContar(){
 async function correrEscolhidos(modo){
   if(!ESC.size)return alert("Escolhe primeiro os vinhos (passo 2).");
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,ids:[...ESC],pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar(true);}catch(e){alert(e.message);}
+  try{await post("/correr",{modo,ids:escolhidosPelaOrdem(),pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar(true);}catch(e){alert(e.message);}
 }
 
 // ── Registo ──
@@ -879,7 +938,7 @@ async function nomesManter(){
   const itens=nomesAManter().map(x=>({fonte:x.fonte,id:x.id}));
   if(!itens.length)return alert("Desmarca os vinhos cujo produtor deve ficar no nome (os que o perdiam da frente).");
   const prods=[...new Set(nomesAManter().map(x=>x.produtor||""))].filter(Boolean);
-  if(!confirm("Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\n\n"+prods.join("\n")))return;
+  if(!confirm("Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\\n\\n"+prods.join("\\n")))return;
   try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" produtor(es) acrescentado(s) à lista.");await nomesProcurar();
     const d=document.getElementById("nomes-manter").closest("details");if(d.open)nomesManterListar();}
   catch(e){alert(e.message);}
@@ -974,6 +1033,7 @@ async function prodTirar(chave){
 }
 
 filtrosHTML();
+ordensHTML();
 novaLinha();
 abrirTab(location.hash.slice(1));
 carregarCatalogo();

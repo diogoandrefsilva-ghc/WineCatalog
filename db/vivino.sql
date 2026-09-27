@@ -711,7 +711,14 @@ BEGIN
                    WHEN v.ficha ->> 'vivino_url' ~ '^https?://([a-z]+\.)?vivino\.com/.*/w/[0-9]+' THEN 'por_limpar'
                    ELSE 'invalido' END,
       'campos', (SELECT count(*) FROM jsonb_object_keys(v.ficha)),
-      'visto', (SELECT max(x.verificado_em) FROM winecatalog.vivino_verificacoes x WHERE x.vinho_id = v.id))
+      'visto', (SELECT max(x.verificado_em) FROM winecatalog.vivino_verificacoes x WHERE x.vinho_id = v.id),
+      -- Para ordenar a lista (27/09/2026): quando nasceu e quando mudou pela
+      -- última vez. "Mudou" é o mais recente do `atualizado_em` e do
+      -- histórico — nenhum dos dois apanha tudo (há escritas que não mexem
+      -- no `atualizado_em`, e o histórico só começa a 25/09/2026).
+      'criado', v.criado_em,
+      'alterado', GREATEST(v.atualizado_em,
+                           (SELECT max(h.quando) FROM winecatalog.alteracoes h WHERE h.vinho_id = v.id)))
       ORDER BY lower(v.nome), v.ano NULLS FIRST)
     FROM winecatalog.vinhos v
     WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)), '[]'::jsonb);

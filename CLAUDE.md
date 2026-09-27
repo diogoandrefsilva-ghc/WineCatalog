@@ -1019,11 +1019,18 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
 `#produtores`, no endereço):
 - **Informação de vinhos** — "Escolher os vinhos a enriquecer ou corrigir"
   em três passos: **1 Critério** (a procura e os filtros, cada opção com a
-  contagem feita com os OUTROS filtros, como os da app), **2 Escolha** (à
-  mão na lista, "Marcar todos os que passam", ou **🎲 Sortear N ao acaso
-  entre os que passam** — troca a escolha e mostra só os sorteados, para se
-  ver o que vai correr) e **3 Correr** (o que procurar, o "trocar a imagem"
-  e UM Simular/Enriquecer). Corre sempre `IDS=` — o `/correr` recusa sem
+  contagem feita com os OUTROS filtros, como os da app), **2 Escolha**
+  (**"Ordenar por"** — nome, alterados/criados/verificados há menos ou há
+  mais tempo, menos informação, preço de referência, colheita; fica guardada
+  no browser —, e depois à mão na lista, **"⬆ Os primeiros" N pela ordem**,
+  **"🎲 Ao acaso" N entre os que passam** — os dois trocam a escolha e
+  mostram só os escolhidos, para se ver o que vai correr — ou "Marcar todos
+  os que passam") e **3 Correr** (o que procurar, o "trocar a imagem" e UM
+  Simular/Enriquecer; corre pela ordem da lista). "Alterado" é o mais
+  recente do `atualizado_em` e do histórico (`alteracoes`): nenhum dos dois
+  apanha tudo — há escritas que não mexem no `atualizado_em`, e o histórico
+  só começa a 25/09/2026. A `vivino_catalogo` leva-o (`alterado`) com o
+  `criado`. Corre sempre `IDS=` — o `/correr` recusa sem
   vinhos escolhidos; a fila às cegas saiu do painel, e os pedidos da app
   são um filtro. Por baixo, o Registo, as Simulações, o Vinho novo (com o
   seu "Procurar:") e "As garrafeiras × o catálogo" (links e fichas);

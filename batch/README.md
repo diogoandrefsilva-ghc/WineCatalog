@@ -79,11 +79,18 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
      dias) e **pedidos na app** (os do botão "🍷 Verificar no Vivino" da
      ficha). Cada opção diz quantos vinhos há, contados com os outros
      filtros ligados. Sem filtros, escolhe-se no catálogo todo.
-  2. **Escolha** — **à mão** na lista, **Marcar todos os que passam**, ou
-     **🎲 Sortear N ao acaso entre os que passam** (troca a escolha de agora
-     e mostra só os sorteados, para veres o que vai correr e desmarcares
-     algum). **Ver só os escolhidos** mostra a escolha, pela ordem em que
-     corre. Até 50 de cada vez.
+  2. **Escolha** — primeiro **Ordenar por**: nome, alterados há menos (ou
+     mais) tempo, criados há menos (ou mais) tempo, verificados há mais
+     tempo (os nunca verificados primeiro) ou há menos, menos informação
+     primeiro, preço de referência (mais caros ou mais baratos) e colheita.
+     A última coluna da lista diz quando cada vinho foi alterado, criado e
+     verificado, com a da ordem a negrito; a ordem escolhida fica guardada
+     no browser. Depois: **à mão** na lista, **⬆ Os primeiros N** pela ordem
+     ("os 10 alterados há mais tempo"), **🎲 Ao acaso N** entre os que
+     passam, ou **Marcar todos os que passam**. Os primeiros e o acaso
+     trocam a escolha de agora e mostram só os escolhidos, para veres o que
+     vai correr e desmarcares algum. **Ver só os escolhidos** mostra a
+     escolha, pela ordem em que corre. Até 50 de cada vez.
   3. **Correr** — o que procurar (ver abaixo), **"trocar a imagem destes,
      venha de onde vier"** (os escolhidos ficam com a imagem da primeira
      loja que os tenha, ou do Vivino, mesmo a de outro site — a vossa
