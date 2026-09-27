@@ -300,10 +300,22 @@ function nomeDe(info) {
   const limpa = s => s ? s.replace(/\s*[|–-]\s*Vivino.*$/i, "").trim() : null;
   return info.ldNome || limpa(info.ogTitulo) || info.h1 || limpa(info.titulo);
 }
+const RECUSA = /just a moment|attention required|access denied|captcha|verify you are human|unusual traffic/i;
 function bloqueio(status, info) {
   if (status === 403 || status === 429) return true;
-  const t = `${info?.titulo || ""} ${info?.texto?.slice(0, 500) || ""}`;
-  return /just a moment|attention required|access denied|captcha|verify you are human|unusual traffic/i.test(t);
+  return RECUSA.test(`${info?.titulo || ""} ${info?.texto?.slice(0, 500) || ""}`);
+}
+// PORQUÊ uma loja foi dada como recusada: o "recusou as páginas" da
+// Portugal Vineyards (27/09/2026) não dizia se foi um 403, um desafio do
+// Cloudflare ou uma palavra do regex no texto de uma página normal — e
+// um falso positivo salta a loja na corrida inteira.
+function recusaDe(a, url) {
+  const t = `${a.info?.titulo || ""} ${a.info?.texto?.slice(0, 500) || ""}`;
+  const m = t.match(RECUSA);
+  return { url, http: a.status, url_final: a.final && a.final !== url ? a.final : undefined,
+    motivo: a.status === 403 || a.status === 429 ? `HTTP ${a.status}` : m ? `a página diz "${m[0]}"` : "?",
+    titulo: a.info?.titulo || undefined,
+    trecho: a.info?.texto ? a.info.texto.replace(/\s+/g, " ").trim().slice(0, 160) : undefined };
 }
 
 async function abrir(page, url) {
@@ -1010,7 +1022,7 @@ function paginaVazia(a, url) {
 // O formulário de procura da página inicial, quando nenhum endereço deu.
 async function procurarPeloFormulario(page, loja, q) {
   const a = await abrir(page, loja.casa);
-  if (bloqueio(a.status, a.info)) return { bloqueado: true, status: a.status };
+  if (bloqueio(a.status, a.info)) return { bloqueado: true, status: a.status, recusa: recusaDe(a, loja.casa) };
   const campo = await page.$('input[type="search"], input[name="q"], input[name="s"], input[name="search"], input[name="search_query"], input[placeholder*="esquis" i], input[placeholder*="rocura" i]');
   if (!campo) return { status: a.status, sem_campo: true };
   await campo.fill(q).catch(() => {});
@@ -1032,7 +1044,7 @@ async function lerLoja(page, loja, v) {
   const colado = v.links_lojas && v.links_lojas[loja.id];
   if (colado) {
     const pg = await abrir(page, colado);
-    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: { ...det, http: pg.status } };
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: { ...det, http: pg.status, recusa: recusaDe(pg, colado) } };
     const nomeP = (pg.info && (nomeDe(pg.info) || pg.info.h1)) || "";
     const pp = precoDaPagina(pg.info, colado);
     const ficha = fichaDosPares(pg.info);
@@ -1046,7 +1058,7 @@ async function lerLoja(page, loja, v) {
   const abrirEscolhido = async (b, como, aberta) => {
     let pg = aberta;
     if (!pg) { await pausa(); pg = await abrir(page, b.href); }
-    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: { ...det, recusa: recusaDe(pg, b.href) } };
     const pp = precoDaPagina(pg.info, b.href) || (numero(b.preco) ? { preco: numero(b.preco), url: b.href } : null);
     const ficha = fichaDosPares(pg.info);
     det.escolhido = { nome: b.nome, href: b.href, http: pg.status, jsonld: !!pg.info?.ldTem, como,
@@ -1067,7 +1079,7 @@ async function lerLoja(page, loja, v) {
     const novo = href.replace(caminho, caminho.replace(re, (_, antes) => `${antes}${v.ano}`));
     await pausa();
     const pg = await abrir(page, novo);
-    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: { ...det, recusa: recusaDe(pg, novo) } };
     const nomeP = nomeDoProduto(pg.info);
     const caminhoFinal = (() => { try { return new URL(pg.final).pathname; } catch { return ""; } })();
     const serve = pg.status && pg.status < 400 && caminhoFinal.includes(String(v.ano))
@@ -1093,7 +1105,7 @@ async function lerLoja(page, loja, v) {
     for (const k of ordem) {
       const url = loja.procuras[k](q);
       const a = await abrir(page, url);
-      if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { ...det, http: a.status } };
+      if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { ...det, http: a.status, recusa: recusaDe(a, url) } };
       const r = await produtosDaPagina(page, chaves);
       // Uma procura com UM resultado pode saltar direto para a página do
       // produto (outro caminho no endereço, e um preço na página): aí não há
@@ -1109,7 +1121,7 @@ async function lerLoja(page, loja, v) {
     }
     if (!itens.length && loja.casa && PROCURA_BOA[loja.id] == null) {
       const f = await procurarPeloFormulario(page, loja, q);
-      if (f.bloqueado) return { bloqueado: true, detalhe: { ...det, http: f.status } };
+      if (f.bloqueado) return { bloqueado: true, detalhe: { ...det, http: f.status, recusa: f.recusa } };
       if (!f.sem_campo) {
         const r = await produtosDaPagina(page, chaves);
         det.procuras.push({ q, formulario: true, url: f.url, itens: r.itens.length, como: r.como });
@@ -1486,7 +1498,13 @@ async function main() {
           const fichaLoja = MODO === "precos" ? (r.ficha?.imagem_url ? { imagem_url: r.ficha.imagem_url } : null) : r.ficha;
           if (fichaLoja && Object.keys(fichaLoja).length)
             fichas.push({ origem: loja.origem, ficha: fichaLoja, fonte: { url: r.detalhe?.escolhido?.href, titulo: loja.nome } });
-          if (r.bloqueado) { lojasBloqueadas.add(loja.id); console.log(`   ${loja.nome}: recusou as páginas — salto-a no resto da corrida.`); continue; }
+          if (r.bloqueado) {
+            lojasBloqueadas.add(loja.id);
+            const rc = r.detalhe?.recusa;
+            console.log(`   ${loja.nome}: recusou as páginas (${rc?.motivo || "?"}${rc?.titulo ? ` — título "${rc.titulo}"` : ""}) — salto-a no resto da corrida.`);
+            if (rc) console.log(`      ${rc.url}${rc.url_final ? ` → ${rc.url_final}` : ""}${rc.trecho ? `\n      "${rc.trecho}"` : ""}`);
+            continue;
+          }
           if (r.achado) {
             precos[loja.id] = { ...r.achado, em: hoje };
             precosMudaram = true;

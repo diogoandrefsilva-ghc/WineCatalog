@@ -746,6 +746,12 @@ chamam-se `…-large_default/…`**, e o `imagemDe` recusava tudo o que tivesse
 imagem por omissão dela). A `garrafeira.precos_lojas` percorre as lojas do
 `precos` todas, e por isso a Garrafeira recebe esta sem mudar nada lá — mas
 o nome da loja no ecrã de lá é do repo Garrafeira.
+**Na 1.ª corrida recusou as páginas** ("recusou as páginas — salto-a no resto
+da corrida"), e o registo não dizia porquê. Agora uma recusa leva a
+`recusa` no `detalhe.lojas` (`recusaDe`: o endereço, o HTTP, o título e o
+princípio do texto, e o `motivo` — `HTTP 403`/`429` ou a palavra do regex
+que apanhou) e o registo mostra-o. É o que separa um Cloudflare a sério
+(não se contorna, como no Vivino) de um falso positivo do `bloqueio`.
 
 **O que a 1.ª corrida com lojas ensinou (25/09/2026):**
 - **A casta no nome é identidade** (`castasBatem`): o "Casa Ermelinda
