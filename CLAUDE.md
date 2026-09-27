@@ -1242,10 +1242,20 @@ que ficou como preço médio a negrito (★), e uma linha "médio" quando ele
 veio de fora das lojas e do Vivino (uma garrafeira, `reposto`…).
 
 **"Abre OUTRO vinho" e a procura só dá o mesmo** (27/09/2026, o dono:
-"o primeiro vinho que sugeres é exatamente o que já lá está"). O
-"Ermelinda Freitas Syrah" tinha o link do "…Syrah Reserva": a menção não
-bate, o link é recusado, e a procura devolvia esse MESMO vinho como 1.º
-"outro resultado". Agora: o script tira dos candidatos o vinho do link atual
+"o primeiro vinho que sugeres é exatamente o que já lá está" — e "ambos
+estavam bem"). O "Ermelinda Freitas Syrah" 2021 tinha o link do "…Syrah
+Reserva", e É esse vinho: o nome do catálogo é que ficou sem o "Reserva" (o
+2022 tem-no). A menção não batia, o link era recusado, e a procura devolvia
+esse MESMO vinho como 1.º "outro resultado".
+**A menção só na página já não recusa o link que lá está** (`soMencao`), se
+tudo o resto do nome bater, a procura voltar a dar este mesmo vinho (é o
+sinal de que funcionou) e não der o vinho SEM a menção — um `melhor` sem
+palavras a mais ganha, e é o que continua a separar o "Herdade dos Grous" do
+"…Grous Reserva". Um `melhor` com palavras a mais ("Rosário Syrah") não é o
+vinho sem a menção. Só para o link que já está no catálogo, nunca para um
+link novo, e só com o nosso nome SEM menção ("Reserva" × "Grande Reserva"
+continua a recusar). O registo diz `mencao_so_na_pagina`.
+Além disso: o script tira dos candidatos o vinho do link atual
 (`det.procura.mesmo_link`; a app também, pelo `/w/<nº>`, para as verificações
 de antes), e diz PORQUE é que o link não passou (`det.atual.porque`,
 `porqueNao`: a menção, as castas, as palavras a mais…). Sem proposta, o

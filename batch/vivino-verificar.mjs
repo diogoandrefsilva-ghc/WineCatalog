@@ -451,9 +451,11 @@ async function procurar(page, v) {
 // dois lados, e não mais de uma palavra distintiva a mais no nome da página.
 // No 1.º ensaio em casa, "Quintinha da Francisca" casou com "…Grande
 // Reserva Tinto" — o motor browser só olhava para a parecença.
-function bateNome(v, nome) {
+// `semMencao`: tudo menos a menção — só para o link que JÁ está no catálogo
+// quando a página tem uma menção que o nosso nome não diz (ver `soMencao`).
+function bateNome(v, nome, semMencao) {
   const t = tituloLimpo(nome);
-  if (!mencaoBate(v, t) || !castasBatem(v, t) || castaAMais(v, t)) return false;
+  if ((!semMencao && !mencaoBate(v, t)) || !castasBatem(v, t) || castaAMais(v, t)) return false;
   // As castas da nossa FICHA não contam como palavras a mais (o "Casa de
   // Canhotos" é o "…Canhotos Alvarinho" porque a ficha diz Alvarinho). E um
   // nome com UMA palavra distintiva não aguenta nenhuma a mais: o "Quinta
@@ -561,6 +563,25 @@ async function verificar(page, v) {
   // voltava a cada corrida, com as mesmas regras a dizer o mesmo.
   const confirmados = new Set((Array.isArray(v.confirmados) ? v.confirmados : []).map(String));
   let atualId = null;
+  // O link atual falhou SÓ porque a página tem uma menção e o nosso nome
+  // não diz nenhuma: ver a seguir à procura.
+  let soMencao = null;
+  // O link atual (a página `a`) como proposta "certo": o mesmo para um link
+  // que passa as regras e para um que só falhou a menção.
+  const aceitarAtual = (a, nomePagina) => {
+    estado = "certo";
+    det._preco = precoDaPagina(a.info, a.final, { vivino: true });
+    det._ficha = fichaDosPares(a.info, { vivino: true });
+    const { nota, aval } = numerosDe(a.info);
+    proposta = { vivino_url: urlLimpo(a.info.canonico || a.info.ogUrl || a.final) || urlLimpo(a.final),
+                 vivino_nota: nota, vivino_avaliacoes: aval, nome: nomePagina, confianca: det.atual.parecenca,
+                 produtor_pagina: produtorDaPagina(a.info) };
+    // O que não se leu não entra na proposta: ficava a apagar um número
+    // que o catálogo tem só porque a página o escondeu.
+    if (nota == null) delete proposta.vivino_nota;
+    if (aval == null) delete proposta.vivino_avaliacoes;
+    semOutraColheita(v, proposta, det, nomePagina, a.final);
+  };
 
   if (v.vivino_url && pareceVivino(v.vivino_url) && !/\s/.test(v.vivino_url)) {
     const a = await abrir(page, comAno(v.vivino_url, v.ano));
@@ -581,21 +602,13 @@ async function verificar(page, v) {
       if (confiado) det.atual[v.vivino_confiado ? "colado" : "confirmado"] = true;
       if (confiado ? corBate(v, txt)
           : p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "") && !recusados.has(idDoVinho(a.final))) {
-        estado = "certo";
-        det._preco = precoDaPagina(a.info, a.final, { vivino: true });
-        det._ficha = fichaDosPares(a.info, { vivino: true });
-        const { nota, aval } = numerosDe(a.info);
-        proposta = { vivino_url: urlLimpo(a.info.canonico || a.info.ogUrl || a.final) || urlLimpo(a.final),
-                     vivino_nota: nota, vivino_avaliacoes: aval, nome: nomePagina, confianca: det.atual.parecenca,
-                     produtor_pagina: produtorDaPagina(a.info) };
-        // O que não se leu não entra na proposta: ficava a apagar um número
-        // que o catálogo tem só porque a página o escondeu.
-        if (nota == null) delete proposta.vivino_nota;
-        if (aval == null) delete proposta.vivino_avaliacoes;
-        semOutraColheita(v, proposta, det, nomePagina, a.final);
+        aceitarAtual(a, nomePagina);
       } else {
         estado = "errado";
-        det.atual.porque = porqueNao(v, nomePagina || a.info.titulo || "", txt, recusados.has(atualId));
+        const tit = nomePagina || a.info.titulo || "";
+        det.atual.porque = porqueNao(v, tit, txt, recusados.has(atualId));
+        if (p >= LIMIAR && corBate(v, txt) && !recusados.has(atualId) && !mencao(v.nome)
+            && mencao(tituloLimpo(tit)) && bateNome(v, tit, true)) soMencao = { a, nomePagina };
       }
     }
   } else {
@@ -630,15 +643,9 @@ async function verificar(page, v) {
           || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
       } catch (e) { det.procura.serper = { erro: String(e.message || e).slice(0, 200) }; }
     }
-    // O link atual já foi aberto e não passou: a procura devolvê-lo como
-    // "outro resultado" era propor o que já lá está (o "Ermelinda Freitas
-    // Syrah", 27/09/2026). Fica de fora, e o alerta diz que a procura só
-    // deu este.
-    if (atualId) {
-      const antes = candidatos.length;
-      candidatos = candidatos.filter(c => idDoVinho(c.vivino_url) !== atualId);
-      if (candidatos.length < antes) det.procura.mesmo_link = true;
-    }
+    // A procura voltou a dar o vinho do link atual? (É o sinal de que ela
+    // funcionou para este vinho — ver `soMencao`.)
+    if (atualId && candidatos.some(c => idDoVinho(c.vivino_url) === atualId)) det.procura.mesmo_link = true;
     if (recusados.size) {
       const antes = candidatos.length;
       candidatos = candidatos.filter(c => !recusados.has(idDoVinho(c.vivino_url)));
@@ -653,6 +660,28 @@ async function verificar(page, v) {
       if (melhor) det.desambiguado = "pela casta da ficha";
       else if (ambiguoPorCasta(v, parecidos.map(nomeDoLink), melhor ? nomeDoLink(melhor) : null)) det.ambiguo = parecidos.map(c => c.vivino_url);
     }
+    // Só a MENÇÃO separava o link atual do nosso vinho, e a página tem uma
+    // que o nosso nome não diz: o "Ermelinda Freitas Syrah" 2021 com o link
+    // do "…Syrah Reserva" (27/09/2026) — é o mesmo vinho; o nome do catálogo
+    // é que ficou sem o "Reserva" (o 2022 do mesmo vinho tem-no). A regra da
+    // menção existe para o "Herdade dos Grous" não ficar com o "…Grous
+    // Reserva": aí o Vivino tem o vinho SEM menção, e a procura dá-o (é o
+    // `melhor`). Por isso só se aceita o link atual quando a procura
+    // funcionou (voltou a dar este mesmo vinho) e não achou o vinho sem a
+    // menção — um `melhor` com palavras a mais não é esse ("Rosário Syrah"
+    // não é o Syrah sem o "Reserva"). Nunca para um link novo: este já cá
+    // estava.
+    if (soMencao && det.procura.mesmo_link && (!melhor || idDoVinho(melhor.vivino_url) === atualId
+        || aMaisSemAsNossasCastas(v, nomeDoLink(melhor)).length > 0)) {
+      melhor = null;
+      det.atual.mencao_so_na_pagina = mencao(tituloLimpo(soMencao.nomePagina || soMencao.a.info.titulo || ""));
+      delete det.atual.porque;
+      aceitarAtual(soMencao.a, soMencao.nomePagina);
+    }
+    // O link atual já foi aberto e não passou: a procura devolvê-lo como
+    // "outro resultado" era propor o que já lá está (o "Ermelinda Freitas
+    // Syrah", 27/09/2026). Fica fora da lista do alerta.
+    if (atualId) candidatos = candidatos.filter(c => idDoVinho(c.vivino_url) !== atualId);
     if (melhor) {
       await pausa();
       const b = await abrir(page, comAno(melhor.vivino_url, v.ano));
