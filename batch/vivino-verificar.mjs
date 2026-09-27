@@ -879,11 +879,20 @@ async function produtosDaPagina(page, chaves) {
     const n = t => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
     const limpa = t => (t || "").replace(/\s+/g, " ").trim();
     const vistos = new Map();
-    const lixo = /catalogsearch|checkout|customer|wishlist|compare|carrinho|cart|login|conta|account|pesquisa|search|\?s=|#/i;
+    // O que não é um produto (o carrinho, a conta, a procura, a página
+    // inicial) diz-se por SEGMENTO do caminho, nunca por pedaço de texto: com
+    // um /cart/ solto, o …/2018-cartuxa-tinto.html da GN era lixo, e a Cartuxa
+    // nunca aparecia em loja nenhuma (27/09/2026).
+    const LIXO = new Set(["catalogsearch", "checkout", "customer", "wishlist", "compare", "product_compare",
+      "carrinho", "cart", "login", "conta", "account", "my-account", "minha-conta", "finalizar-compra", "pesquisa", "search"]);
+    const lixo = href => {
+      try { const c = new URL(href).pathname.toLowerCase(); return c === "/" || c.split("/").some(s => LIXO.has(s)); }
+      catch { return true; }
+    };
     const cartoes = ".product-item, li.product, .product-item-info, .product-card, .product-miniature, article.product, .product, .grid-product, .card-wrapper";
     const add = (el, cartao) => {
       const href = (el.href || "").split(/[?#]/)[0];
-      if (!href || vistos.has(href) || lixo.test(href) || new URL(href).host !== location.host) return;
+      if (!href || vistos.has(href) || lixo(href) || new URL(href).host !== location.host) return;
       const nomeEl = cartao.querySelector("a.product-item-link, .product-item-name, .product-name, .product-title, .woocommerce-loop-product__title, .card__heading, h2, h3") || el;
       const nome = limpa(nomeEl.innerText || el.innerText || el.getAttribute("title"));
       if (!nome || nome.length > 160) return;
@@ -908,6 +917,15 @@ async function produtosDaPagina(page, chaves) {
     }
     return { itens: [...vistos.values()].slice(0, 15), como };
   }, chaves).catch(() => ({ itens: [], como: "erro" }));
+}
+
+// Uma procura sem produtos: o que a página era. A Granvine passou a meio
+// de duas corridas (27/09/2026) a responder 200 sem produto nenhum, durante
+// horas e para todos os vinhos, e o `bloqueio` não a reconheceu; sem o
+// título e o princípio do texto não se sabe se é uma recusa ou outra coisa.
+function paginaVazia(a, url) {
+  return { final: a.final && a.final !== url ? a.final : undefined, titulo: a.info?.titulo || undefined,
+    trecho: a.info?.texto ? a.info.texto.replace(/\s+/g, " ").trim().slice(0, 160) : undefined, erro: a.erro || undefined };
 }
 
 // O formulário de procura da página inicial, quando nenhum endereço deu.
@@ -956,7 +974,7 @@ async function lerLoja(page, loja, v) {
       // Os primeiros nomes que a loja mostrou: é o que diz porque é que
       // nenhum passou nas regras de nome (a Carvalhas teve 4 e nenhum).
       det.procuras.push({ q, url, http: a.status, itens: r.itens.length, como: r.como,
-        nomes: r.itens.slice(0, 6).map(it => it.nome) });
+        nomes: r.itens.slice(0, 6).map(it => it.nome), ...(r.itens.length ? {} : paginaVazia(a, url)) });
       if (r.itens.length) { itens = r.itens; como = r.como; PROCURA_BOA[loja.id] = k; break; }
       if (ordem.length > 1) await pausa();
     }
