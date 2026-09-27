@@ -779,6 +779,24 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   e quem os escreveu (uma pesquisa de memória) inventou o número. O script
   apanhou-os todos, que é para isso que abre a página.
 
+**O Cartuxa (27/09/2026):**
+- **A região do próprio vinho não é uma palavra a mais** (`palavrasDaRegiao`,
+  dentro da `aMais`). O Vivino escreve "Cartuxa Évora Colheita Tinto", o
+  catálogo "Cartuxa Colheita Tinto" com Évora na ficha — e com uma palavra
+  distintiva só ("Cartuxa", que não aguenta nenhuma a mais) o link certo
+  (`/w/76431`) ia para Alertas como "abre OUTRO vinho", nas duas colheitas.
+  Contam como nossas as palavras da região e da sub-região da FICHA e, num
+  vinho do Alentejo (ou de Évora, que é Alentejo), as sub-regiões DOC dele
+  (`SUBREGIOES`). Só no "a mais": a parecença não muda, e o "Cartuxa Foral de
+  Évora" continua a ser outro vinho (o "Foral"). Conferido nos títulos que o
+  script já tinha visto: só os Cartuxa mudam.
+- **Uma verificação nova fecha as que estavam por decidir para o mesmo
+  vinho** (`vivino_gravar`, ficam `sem_acao` com "script (verificação mais
+  recente)"): foi feita com as regras de agora. Bloqueado ou erro não fecha.
+- E é o exemplo da nota a dobrar: o 2018 tinha 4,3 com **77 469** avaliações
+  na nota da colheita — era a de todas as colheitas (77 657 no Vivino); a de
+  2018 é 4,3 com 5 836. O 2020 (2 274) já era a da colheita.
+
 **Três modos de procurar** (`MODO`, escolhido no painel; 26/09/2026, pelo
 dono). **Tudo** (`completo`): Vivino e lojas, a ficha toda. **Só o Vivino**
 (`vivino`): o link, a nota, as avaliações e a imagem — e nada mais da ficha.
