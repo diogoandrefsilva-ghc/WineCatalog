@@ -32,9 +32,11 @@
 // pergunta se hoje é dia), LIMITE (nº de vinhos; vazio = o das
 // Definições), ENSAIO=true (não grava nada), EXECUCAO (o id do run),
 // IDS=1,2,3 (só estes vinhos, escolhidos no painel), NOVO=[…] (vinhos novos),
-// APLICAR=<ficheiro> (grava uma simulação revista).
+// APLICAR=<ficheiro> (grava uma simulação revista), PARAR=<ficheiro> (o
+// botão "Parar" do painel: se o ficheiro existir, pára entre dois vinhos).
 // =====================================================================
 import { pathToFileURL } from "node:url";
+import { existsSync } from "node:fs";
 
 const SB_URL = process.env.SUPABASE_URL || "https://gjweqwfbnkgnibhajldc.supabase.co";
 const SB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -66,6 +68,13 @@ const QUEM = MOTOR === "serper" ? "script Serper (GitHub Actions)" : "script no 
 const PAUSA_MIN = +(process.env.PAUSA_MIN ?? 4000), PAUSA_MAX = +(process.env.PAUSA_MAX ?? 7000);
 // Duas recusas seguidas = o Vivino não nos quer hoje. Parar em vez de insistir.
 const MAX_BLOQUEIOS = 2;
+// O "Parar" do painel (27/09/2026, pedido do dono): o painel cria este
+// ficheiro e o script vê-o ENTRE dois vinhos — nunca a meio de um, que ficava
+// com o Vivino lido e as lojas por ler. Um ficheiro e não um sinal: no
+// Windows, matar o processo não deixa o script acabar, e a simulação dos
+// vinhos já tratados perdia-se com ele.
+const PARAR = process.env.PARAR || "";
+function pedidoParar() { try { return !!PARAR && existsSync(PARAR); } catch { return false; } }
 
 // ── Supabase ──────────────────────────────────────────────────────────
 async function rpc(fn, args) {
@@ -1241,9 +1250,20 @@ async function main() {
   const simulacao = [];
   const lojasBloqueadas = new Set();
   let bloqueios = 0;
+  const total = plano.vinhos.length;
+  const parar = i => {
+    if (!pedidoParar()) return false;
+    console.log(`Parado a pedido: ficam os ${i} de ${total} vinho(s) já tratados.`);
+    resumo.parado = `${i} de ${total}`;
+    return true;
+  };
   try {
     for (const [i, v] of plano.vinhos.entries()) {
+      if (i > 0 && parar(i)) break;
       if (i > 0) await (MOTOR === "serper" ? new Promise(r => setTimeout(r, 700)) : pausa());
+      if (i > 0 && parar(i)) break;
+      // O progresso, numa linha que o painel lê para a barra ("[3/20] …").
+      console.log(`[${i + 1}/${total}] ${v.id ? "#" + v.id : "NOVO"} ${v.nome}${v.ano && !String(v.nome).includes(String(v.ano)) ? " " + v.ano : ""}`);
       let res;
       try {
         res = MODO === "precos" && MOTOR === "browser" ? { estado: "precos", detalhe: {} }
@@ -1673,7 +1693,8 @@ async function aplicarSimulacao(fich) {
   const vinhos = (sim.vinhos || []).filter(p => p && p.aplicar !== false);
   console.log(`A gravar ${vinhos.length} vinho(s) da simulação ${fich} (${(sim.vinhos || []).length - vinhos.length} desligado(s))`);
   let ok = 0, falhou = 0;
-  for (const pl of vinhos) {
+  for (const [i, pl] of vinhos.entries()) {
+    console.log(`[${i + 1}/${vinhos.length}] ${pl.id ? "#" + pl.id : "NOVO"} ${pl.nome}`);
     try {
       if (pl.id) {
         const [linha] = await rpc("vivino_estes", { p_ids: [pl.id] }) || [];
