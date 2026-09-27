@@ -187,6 +187,38 @@ const servidor = http.createServer(async (req, res) => {
       if (aplicar && !itens.length) return json(res, 400, { erro: "Marca pelo menos um campo." });
       return sbRpc(res, "garrafeira", "fichas_catalogo_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar });
     }
+    if (req.method === "POST" && url.pathname === "/produtores") {
+      // Os produtores oficiais (db/produtores.sql): a lista com as sugestões,
+      // confirmar um oficial com as suas grafias, "são diferentes", tirar
+      // uma grafia. Quem decide é sempre o admin; as funções voltam a conferir.
+      const b = await lerCorpo(req);
+      const txt = (x, n = 200) => String(x ?? "").trim().slice(0, n);
+      if (b.acao === "listar") {
+        return json(res, 200, {
+          sugestoes: await sbDados("winecatalog", "produtores_sugestoes", {}),
+          oficiais: await sbDados("winecatalog", "produtores_listar", {}),
+        });
+      }
+      if (b.acao === "definir") {
+        const grafias = (Array.isArray(b.grafias) ? b.grafias : []).map(g => txt(g)).filter(Boolean).slice(0, 30);
+        if (!txt(b.oficial)) return json(res, 400, { erro: "Falta o nome oficial." });
+        return sbRpc(res, "winecatalog", "produtor_definir", { p_oficial: txt(b.oficial), p_grafias: grafias });
+      }
+      if (b.acao === "diferentes") return sbRpc(res, "winecatalog", "produtores_diferentes", { p_a: txt(b.a), p_b: txt(b.b) });
+      if (b.acao === "tirar") return sbRpc(res, "winecatalog", "produtor_tirar_variante", { p_chave: txt(b.chave) });
+      return json(res, 400, { erro: "acao" });
+    }
+    if (req.method === "POST" && url.pathname === "/nomes") {
+      // A regra do nome (db/nomes-normalizar.sql): sem `aplicar` é a simulação
+      // de tudo; com ele, só os itens escolhidos (a função recalcula a regra).
+      const b = await lerCorpo(req);
+      const aplicar = b.aplicar === true;
+      const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 1000)
+        .map(x => ({ fonte: x.fonte === "garrafeira" ? "garrafeira" : "catalogo", id: Number(x.id) }))
+        .filter(x => Number.isInteger(x.id) && x.id > 0);
+      if (aplicar && !itens.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
+      return sbRpc(res, "winecatalog", "nomes_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar });
+    }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
       return json(res, 200, await comAgora(JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8"))));
@@ -340,6 +372,20 @@ a{color:var(--bd)}
     <span id="fich-n" class="nota"></span>
     <button id="btn-fich" onclick="fichCorrigir()" disabled>Corrigir os marcados</button></div>
   <div id="fich-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+</div>
+<div class="card"><h2>Produtores</h2>
+  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados da app.</p>
+  <div class="linha"><button class="prim" onclick="prodProcurar()">Procurar</button><span id="prod-n" class="nota"></span></div>
+  <div id="prod-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+  <details style="margin-top:10px"><summary class="nota">Produtores oficiais já definidos</summary><div id="prod-oficiais" style="margin-top:6px"></div></details>
+</div>
+<div class="card"><h2>Nomes dos vinhos</h2>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome só sai quando a cor entrar na chave (fase 4) — por agora vês como ficará. Os avisos são para decidires à mão, no Editar.</p>
+  <div class="linha"><button class="prim" onclick="nomesProcurar()">Simular</button>
+    <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label>
+    <span id="nomes-n" class="nota"></span>
+    <button id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button></div>
+  <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
@@ -603,6 +649,107 @@ async function fichCorrigir(){
   try{const r=await post("/fichas",{itens,aplicar:true});
     alert(r.aplicados+" campo(s) em "+r.vinhos_aplicados+" vinho(s). Fica registado na Garrafeira (sync_log)."+((r.erros||[]).length?" Não gravou "+r.erros.length+" — ver a lista.":""));
     const erros=r.erros||[];await fichProcurar();if(erros.length){FICH.erros=erros;fichPintar();}}
+  catch(e){alert(e.message);}
+}
+let PROD=null;
+// As sugestões vêm aos pares; juntam-se em grupos (os três Carlos Alonso
+// num só) para se escolher o oficial uma vez. Os pares ficam guardados para
+// o "são diferentes", que só faz sentido entre dois.
+function prodGrupos(pares){
+  const pai={},ref=x=>pai[x]===undefined?(pai[x]=x):(pai[x]===x?x:(pai[x]=ref(pai[x])));
+  const info={};
+  for(const p of pares){for(const s of [p.a,p.b])info[s.produtor]=s;const ra=ref(p.a.produtor),rb=ref(p.b.produtor);if(ra!==rb)pai[ra]=rb;}
+  const g={};for(const n of Object.keys(info))(g[ref(n)]=g[ref(n)]||[]).push(info[n]);
+  return Object.values(g).map(l=>l.sort((x,y)=>(y.catalogo+y.garrafeiras)-(x.catalogo+x.garrafeiras)))
+    .map(l=>({grafias:l,pares:pares.filter(p=>l.some(s=>s.produtor===p.a.produtor))}))
+    .sort((a,b)=>a.grafias[0].produtor.localeCompare(b.grafias[0].produtor,"pt"));
+}
+async function prodProcurar(){
+  document.getElementById("prod-lista").innerHTML='<p class="nota">A procurar…</p>';
+  try{PROD=await post("/produtores",{acao:"listar"});prodPintar();}
+  catch(e){document.getElementById("prod-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function prodPintar(){
+  const G=prodGrupos(PROD.sugestoes||[]);
+  document.getElementById("prod-n").textContent=G.length+" grupo"+(G.length===1?"":"s")+" por decidir";
+  document.getElementById("prod-lista").innerHTML=G.length?G.map((g,i)=>{
+    const oficial=g.grafias.find(s=>s.oficial)?.oficial||"";
+    return '<div class="prod-g" data-i="'+i+'" style="border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px">'+
+      g.grafias.map((s,j)=>'<div class="linha" style="gap:8px;margin:2px 0">'+
+        '<label title="Esta grafia é este produtor"><input type="checkbox" class="prod-inc" data-p="'+esc(s.produtor)+'" checked></label>'+
+        '<label><input type="radio" name="prod-of-'+i+'" value="'+esc(s.produtor)+'"'+((oficial?s.produtor===oficial:j===0)?" checked":"")+'> <b>'+esc(s.produtor)+'</b></label>'+
+        '<span class="nota">'+s.catalogo+' no catálogo · '+s.garrafeiras+' nas garrafeiras'+(s.oficial?' · já é de <b>'+esc(s.oficial)+'</b>':'')+'</span></div>').join("")+
+      '<div class="linha" style="gap:8px;margin-top:6px"><label><input type="radio" name="prod-of-'+i+'" value="__outro"> outro nome:</label>'+
+        '<input class="prod-outro" placeholder="nome oficial" style="padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit">'+
+        '<button class="prim" onclick="prodJuntar('+i+')">Juntar</button>'+
+        (g.pares.length===1&&!g.pares[0].mesmaChave?'<button onclick="prodDiferentes('+i+',0)">São diferentes</button>':'')+
+        '</div>'+(g.pares.length>1?'<div class="nota" style="margin-top:6px">Se algum par não for o mesmo produtor: '+g.pares.map((p,k)=>p.mesmaChave?'':
+          '<a href="#" onclick="prodDiferentes('+i+','+k+');return false">'+esc(p.a.produtor)+' ≠ '+esc(p.b.produtor)+'</a>').filter(Boolean).join(" · ")+'</div>':'')+'</div>';
+  }).join(""):'<p class="nota">Nada por decidir.</p>';
+  PROD._grupos=G;
+  const O=PROD.oficiais||[];
+  document.getElementById("prod-oficiais").innerHTML=O.length?'<table><tr><th>Oficial</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td><b>'+esc(p.nome)+'</b></td><td>'+
+    (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+'</td></tr>').join("")+'</table>'
+    :'<p class="nota">Ainda nenhum.</p>';
+}
+async function prodJuntar(i){
+  const el=document.querySelector('.prod-g[data-i="'+i+'"]'),g=PROD._grupos[i];
+  const esc_=el.querySelector('input[name="prod-of-'+i+'"]:checked');
+  let oficial=esc_?esc_.value:"";if(oficial==="__outro")oficial=el.querySelector(".prod-outro").value.trim();
+  const grafias=[...el.querySelectorAll(".prod-inc:checked")].map(c=>c.dataset.p);
+  if(!oficial)return alert("Escolhe o nome oficial.");
+  if(grafias.filter(x=>x!==oficial).length<1&&grafias.length<2&&oficial===grafias[0])return alert("Marca pelo menos duas grafias.");
+  const tot=g.grafias.filter(s=>grafias.includes(s.produtor)).reduce((a,s)=>a+s.catalogo+s.garrafeiras,0);
+  if(!confirm('Passar a "'+oficial+'" as grafias: '+grafias.join(" · ")+'?\\n\\n'+tot+' vinho(s) no catálogo e nas garrafeiras ficam com este nome.'))return;
+  try{const r=await post("/produtores",{acao:"definir",oficial,grafias});
+    const d=r.duplicados||[];
+    alert('"'+r.oficial+'": '+r.catalogo+' vinho(s) no catálogo e '+r.garrafeiras+' nas garrafeiras.'+
+      (d.length?'\\n\\nFicaram por mexer '+d.length+', porque já existe o mesmo vinho e colheita com o nome oficial — junta-os nos Duplicados da app:\\n'+d.map(x=>'#'+x.id+' '+x.nome+(x.ano?' '+x.ano:'')+' → #'+x.com).join("\\n"):''));
+    await prodProcurar();}
+  catch(e){alert(e.message);}
+}
+async function prodDiferentes(i,k){
+  const p=PROD._grupos[i].pares[k];
+  if(!confirm('"'+p.a.produtor+'" e "'+p.b.produtor+'" são produtores diferentes? O par não volta a ser sugerido.'))return;
+  try{await post("/produtores",{acao:"diferentes",a:p.a.produtor,b:p.b.produtor});await prodProcurar();}catch(e){alert(e.message);}
+}
+async function prodTirar(chave){
+  if(!confirm("Deixar de trocar esta grafia pelo nome oficial? O que já foi corrigido fica como está."))return;
+  try{await post("/produtores",{acao:"tirar",chave});await prodProcurar();}catch(e){alert(e.message);}
+}
+let NOMES=null;
+const NOMES_MUD={ano:"colheita",produtor:"produtor"};
+async function nomesProcurar(){
+  document.getElementById("nomes-lista").innerHTML='<p class="nota">A simular…</p>';
+  try{NOMES=await post("/nomes",{});nomesPintar();}
+  catch(e){document.getElementById("nomes-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function nomesMuda(x){return x.novo_nome!==x.nome||String(x.novo_ano??"")!==String(x.ano??"");}
+function nomesPintar(){
+  if(!NOMES)return;
+  const so=document.getElementById("nomes-so").checked;
+  const L=(NOMES.linhas||[]).filter(x=>!so||nomesMuda(x));
+  const n=L.filter(nomesMuda).length;
+  document.getElementById("nomes-n").textContent=n+" a mudar agora · "+(NOMES.linhas||[]).length+" com alguma coisa";
+  document.getElementById("btn-nomes").disabled=!n;
+  document.getElementById("nomes-lista").innerHTML=L.length?'<table><tr><th></th><th>Onde</th><th>Agora</th><th>Fica</th></tr>'+L.map(x=>{
+    const m=nomesMuda(x);
+    const cor=x.nome_sem_cor&&x.nome_sem_cor!==x.novo_nome?'<br><span class="nota">sem a cor (fase 4): '+esc(x.nome_sem_cor)+'</span>':'';
+    const av=(x.avisos||[]).length?'<br><span class="tag">'+x.avisos.map(esc).join(' · ')+'</span>':'';
+    const mud=(x.mudancas||[]).map(k=>'<span class="tag">'+esc(NOMES_MUD[k]||k)+'</span>').join(' ');
+    return '<tr'+(m?'':' class="off"')+'><td>'+(m?'<input type="checkbox" class="nomes-c" data-f="'+x.fonte+'" data-id="'+x.id+'" checked>':'')+'</td>'+
+      '<td>'+(x.fonte==="catalogo"?'catálogo #'+x.id:esc(x.garrafeira||"garrafeira")+'<br><span class="nota">'+esc(x.dono||"")+'</span>')+'</td>'+
+      '<td><span class="antes">'+esc(x.nome)+'</span>'+(x.ano?' · '+esc(x.ano):'')+'<br><span class="nota">'+esc(x.produtor||"(sem produtor)")+' · '+esc(x.tipo||"sem cor")+'</span></td>'+
+      '<td><b>'+esc(x.novo_nome)+'</b>'+(x.novo_ano?' · '+esc(x.novo_ano):'')+' '+mud+cor+av+'</td></tr>';}).join("")+'</table>'
+    :'<p class="nota">Nada a mudar.</p>';
+}
+async function nomesAplicar(){
+  const itens=[...document.querySelectorAll(".nomes-c:checked")].map(c=>({fonte:c.dataset.f,id:+c.dataset.id}));
+  if(!itens.length)return alert("Marca pelo menos um vinho.");
+  if(!confirm("Aplicar o nome novo a "+itens.length+" vinho(s)? Fica no histórico do catálogo e no registo da Garrafeira."))return;
+  try{const r=await post("/nomes",{itens,aplicar:true});const d=r.duplicados||[];
+    alert(r.catalogo+" no catálogo e "+r.garrafeiras+" nas garrafeiras."+(d.length?"\\n\\nFicaram por mexer "+d.length+" do catálogo, porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos Duplicados da app:\\n"+d.map(x=>"#"+x.id+" "+x.nome+(x.ano?" "+x.ano:"")+" → #"+x.com).join("\\n"):""));
+    await nomesProcurar();}
   catch(e){alert(e.message);}
 }
 const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];

@@ -3097,6 +3097,83 @@ function wcParHTML(p){
   </div>`;
 }
 
+/* ── PRODUTORES OFICIAIS (27/09/2026, db/produtores.sql) ──
+   O mesmo produtor escrito de várias maneiras. As sugestões vêm aos pares
+   (grafias em que as palavras de uma estão todas na outra) e juntam-se em
+   grupos para se escolher o oficial uma vez. Confirmar corrige o catálogo e
+   todas as garrafeiras; um vinho que fique com a chave de outro que já
+   existe não se mexe e aparece aqui em cima, nos Duplicados. O mesmo ecrã
+   está no painel do PC (batch/painel.mjs). */
+let _wcProd=null;
+function wcProdGrupos(pares){
+  const pai={},ref=x=>pai[x]===undefined?(pai[x]=x):(pai[x]===x?x:(pai[x]=ref(pai[x])));
+  const info={};
+  for(const p of pares){for(const s of [p.a,p.b])info[s.produtor]=s;const ra=ref(p.a.produtor),rb=ref(p.b.produtor);if(ra!==rb)pai[ra]=rb;}
+  const g={};for(const n of Object.keys(info))(g[ref(n)]=g[ref(n)]||[]).push(info[n]);
+  return Object.values(g).map(l=>l.sort((x,y)=>(y.catalogo+y.garrafeiras)-(x.catalogo+x.garrafeiras)))
+    .map(l=>({grafias:l,pares:pares.filter(p=>l.some(s=>s.produtor===p.a.produtor))}))
+    .sort((a,b)=>a.grafias[0].produtor.localeCompare(b.grafias[0].produtor,'pt'));
+}
+async function wcProdCarregar(){
+  const box=document.getElementById('prod-lista');
+  if(!box)return;
+  box.innerHTML='<p class="wc-note">A procurar…</p>';
+  try{
+    const [sug,ofi]=await Promise.all([catRpc('produtores_sugestoes'),catRpc('produtores_listar')]);
+    _wcProd={grupos:wcProdGrupos(sug||[]),oficiais:ofi||[]};
+    wcProdPintar();
+  }catch(e){box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;}
+}
+function wcProdPintar(){
+  const G=_wcProd.grupos,O=_wcProd.oficiais;
+  const grupos=G.length?G.map((g,i)=>{
+    const oficial=(g.grafias.find(s=>s.oficial)||{}).oficial||'';
+    const dif=g.pares.filter(p=>!p.mesmaChave);
+    return `<div class="prod-g" data-i="${i}">
+      ${g.grafias.map((s,j)=>`<div class="prod-l">
+        <input type="checkbox" class="prod-inc" data-p="${esc(s.produtor)}" checked title="Esta grafia é este produtor">
+        <label><input type="radio" name="prod-of-${i}" value="${esc(s.produtor)}"${(oficial?s.produtor===oficial:j===0)?' checked':''}>
+          <span><strong>${esc(s.produtor)}</strong><small>${s.catalogo} no catálogo · ${s.garrafeiras} nas garrafeiras${s.oficial?` · já é de <strong>${esc(s.oficial)}</strong>`:''}</small></span></label>
+      </div>`).join('')}
+      <div class="prod-l"><label><input type="radio" name="prod-of-${i}" value="__outro"> outro nome:</label>
+        <input type="text" class="prod-outro" placeholder="nome oficial"></div>
+      <div class="prod-acoes"><button class="btn-prim auto" onclick="wcProdJuntar(${i})">Juntar</button>
+        ${dif.map(p=>`<button class="btn-n" onclick="wcProdDiferentes(${i},${g.pares.indexOf(p)})">${g.pares.length>1?`${esc(p.a.produtor)} ≠ ${esc(p.b.produtor)}`:'Não são o mesmo'}</button>`).join('')}</div>
+    </div>`;}).join(''):'<p class="wc-note">Nada por decidir.</p>';
+  const ofi=O.length?`<details style="margin-top:10px"><summary class="wc-note">Produtores oficiais já definidos (${O.length})</summary>
+    ${O.map(p=>`<div class="prod-ofi"><strong>${esc(p.nome)}</strong> <span class="wc-note">${(p.variantes||[]).map(v=>`${esc(v.escrito)} <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="wcProdTirar('${escJs(v.chave)}');return false">✕</a>`).join(' · ')}</span></div>`).join('')}
+  </details>`:'';
+  document.getElementById('prod-lista').innerHTML=grupos+ofi;
+}
+async function wcProdJuntar(i){
+  const el=document.querySelector(`.prod-g[data-i="${i}"]`),g=_wcProd.grupos[i];
+  const r_=el.querySelector(`input[name="prod-of-${i}"]:checked`);
+  let oficial=r_?r_.value:'';if(oficial==='__outro')oficial=el.querySelector('.prod-outro').value.trim();
+  const grafias=[...el.querySelectorAll('.prod-inc:checked')].map(c=>c.dataset.p);
+  if(!oficial)return toast('Escolhe o nome oficial.',1);
+  if(grafias.filter(x=>x!==oficial).length<1)return toast('Marca pelo menos uma grafia além do nome oficial.',1);
+  const tot=g.grafias.filter(s=>grafias.includes(s.produtor)).reduce((a,s)=>a+s.catalogo+s.garrafeiras,0);
+  if(!confirm(`Passar a “${oficial}” as grafias: ${grafias.join(' · ')}?\n\n${tot} vinho(s) no catálogo e nas garrafeiras ficam com este nome.`))return;
+  try{
+    const r=await catRpc('produtor_definir',{p_oficial:oficial,p_grafias:grafias});
+    const d=r.duplicados||[];
+    toast(`“${r.oficial}” ✓ ${r.catalogo} no catálogo · ${r.garrafeiras} nas garrafeiras`);
+    if(d.length)alert(`Ficaram por mexer ${d.length}, porque já existe o mesmo vinho e colheita com o nome oficial — junta-os aqui nos Duplicados:\n`+d.map(x=>`#${x.id} ${x.nome}${x.ano?' '+x.ano:''} → #${x.com}`).join('\n'));
+    wcProdCarregar();wcCarregarDuplicados();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+async function wcProdDiferentes(i,k){
+  const p=_wcProd.grupos[i].pares[k];
+  if(!confirm(`“${p.a.produtor}” e “${p.b.produtor}” são produtores diferentes? O par não volta a ser sugerido.`))return;
+  try{await catRpc('produtores_diferentes',{p_a:p.a.produtor,p_b:p.b.produtor});wcProdCarregar();}
+  catch(e){toast('Erro: '+e.message,1);}
+}
+async function wcProdTirar(chave){
+  if(!confirm('Deixar de trocar esta grafia pelo nome oficial? O que já foi corrigido fica como está.'))return;
+  try{await catRpc('produtor_tirar_variante',{p_chave:chave});wcProdCarregar();}
+  catch(e){toast('Erro: '+e.message,1);}
+}
+
 async function wcFundir(idDe,idPara){
   if(!confirm('Fundir as duas linhas numa só?\n\nOs campos da outra passam para esta (respeitando a força de cada um), a outra fica estacionada — não se apaga — e isto dá para desfazer.'))return;
   try{
