@@ -1370,7 +1370,11 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    Garrafeira grava o nome do catálogo quando o vinho novo vem de um
    candidato. E os três ecrãs dizem o vinho da mesma maneira (o dono das
    apps): o **nome** grande, a **cor** em itálico logo a seguir, o
-   **produtor** em itálico por baixo (na grelha, a cor por baixo do nome).
+   **produtor** em itálico por baixo. Revisto a 27/09/2026 (`wcMetaHTML`,
+   igual ao `vinhoMetaHTML` da Garrafeira): na lista, o nome seguido de
+   [cor] · [região] · [ano] na mesma linha (o nome quebra, já não corta com
+   reticências) e o produtor por baixo; na grelha, o nome, depois cor ·
+   região · ano, depois o produtor.
 
 **O nome completo** (27/09/2026, o dono das apps): ao lado do oficial, que
 é curto e é o que entra no vinho e na chave ("Quinta Nova", "Carlos
