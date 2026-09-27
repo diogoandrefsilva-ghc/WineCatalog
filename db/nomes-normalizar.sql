@@ -13,11 +13,10 @@
 --     gama, cor ou casta ("Cartuxa Colheita", "Morais Rocha Reserva",
 --     "Herdade do Sobroso Reserva"), fica: esse vinho CHAMA-SE pelo nome do
 --     produtor. É a `generico` dos Duplicados que diz o que "se aguenta";
---   · a COR no fim do nome ("… Tinto", "… Vinho Tinto") também sai — mas
---     ainda NÃO se aplica: a cor está dentro da chave pelo nome, e o "Papa
---     Figos Tinto" e o "Papa Figos Branco" sem cor no nome passavam a ser a
---     mesma chave. Aplica-se com a fase 4 (a cor passa a ser um campo da
---     chave, obrigatório). Até lá, a simulação mostra-a à parte.
+--   · a COR no fim do nome ("… Tinto", "… Vinho Tinto") também sai, se for
+--     a do vinho. Esperou pela fase 4 (`cor-na-chave.sql`): antes, a cor
+--     estava dentro da chave pelo nome, e o "Papa Figos Tinto" e o "Papa
+--     Figos Branco" sem cor no nome passavam a ser a mesma chave.
 -- O que é duvidoso não muda sozinho: a cor a meio do nome ("Tapada do
 -- Chaves Tinto Reserva"), um ano no nome diferente da colheita, uma cor
 -- no nome diferente da do vinho. Aparece como aviso.
@@ -32,8 +31,8 @@
 -- NADA É AUTOMÁTICO AINDA. `nomes_rever` sem `p_aplicar` é a SIMULAÇÃO (o
 -- painel do PC mostra-a, o admin valida); com ele, aplica só as linhas
 -- escolhidas, no catálogo e em todas as garrafeiras (decisão do dono),
--- com histórico e `garrafeira.sync_log` (acao `nome_normalizado`). O
--- trigger que aplica a regra a cada escrita futura entra com a fase 4.
+-- com histórico e `garrafeira.sync_log` (acao `nome_normalizado`). As
+-- escritas FUTURAS passam pela regra no trigger (`identidade`, fase 4).
 -- =====================================================================
 
 -- Uma palavra para comparar: sem acentos, minúsculas, só letras e números.
@@ -46,8 +45,9 @@ AS $$
 $$;
 
 -- ---------------------------------------------------------------------
--- A REGRA. Devolve o nome novo (ano e produtor aplicados), o ano novo, o
--- nome que ficará quando a cor sair (fase 4), o que mudou e os avisos.
+-- A REGRA. Devolve o nome novo (ano, cor e produtor aplicados), o ano
+-- novo, o que mudou e os avisos. `nome_sem_cor` ficou igual ao `nome`
+-- desde a fase 4 (era a pré-visualização da cor a sair).
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.nome_normal(p_nome text, p_produtor text, p_tipo text, p_ano integer)
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -69,7 +69,6 @@ DECLARE
   k        integer;
   ok       boolean;
   resto    text[];
-  sem_cor  text[];
   cor_fim  text;
   regioes  text[] := ARRAY['douro','duriense','alentejo','alentejano','dao','bairrada','tejo','lisboa',
                            'setubal','peninsula','minho','verde','verdes','madeira','porto','algarve',
@@ -96,7 +95,24 @@ BEGIN
     END IF;
   END LOOP;
 
-  -- 2. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e as
+  -- 2. A COR no fim (e o "Vinho" antes dela), se for a do vinho. Antes do
+  -- produtor: "Cartuxa Tinto" sem a cor é "Cartuxa", e é esse que tem de
+  -- se aguentar sozinho no passo seguinte.
+  n := COALESCE(array_length(w, 1), 0);
+  IF n > 1 AND winecatalog.palavra_norm(w[n]) = ANY(cores) THEN
+    cor_fim := winecatalog.palavra_norm(w[n]);
+    IF tipo_n = '' OR tipo_n = cor_fim OR (tipo_n = 'rose' AND cor_fim = 'rosado') THEN
+      w := w[1:n-1];
+      IF array_length(w, 1) > 1 AND winecatalog.palavra_norm(w[array_length(w,1)]) = 'vinho' THEN
+        w := w[1:array_length(w,1)-1];
+      END IF;
+      mud := array_append(mud, 'cor');
+    ELSE
+      avisos := array_append(avisos, format('a cor no nome (%s) não é a do vinho (%s)', w[n], p_tipo));
+    END IF;
+  END IF;
+
+  -- 3. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e as
   -- variantes da oficial. Fica a mais comprida que case palavra a palavra.
   cand := ARRAY[COALESCE(p_produtor,''), COALESCE(winecatalog.produtor_oficial(p_produtor),'')];
   cand := cand || COALESCE((SELECT array_agg(pv.escrito)
@@ -104,7 +120,6 @@ BEGIN
                               JOIN winecatalog.produtores p ON p.id = pv.produtor_id
                              WHERE p.nome = winecatalog.produtor_oficial(p_produtor)), ARRAY[]::text[]);
   FOREACH c IN ARRAY cand LOOP
-    -- o parêntesis do produtor é uma nota, não faz parte do nome
     cw := regexp_split_to_array(btrim(regexp_replace(regexp_replace(c, '\s*\([^)]*\)', ' ', 'g'), '\s+', ' ', 'g')), ' ');
     CONTINUE WHEN cw IS NULL OR array_length(cw, 1) IS NULL OR cw[1] = '';
     CONTINUE WHEN array_length(cw, 1) >= array_length(w, 1);
@@ -116,12 +131,7 @@ BEGIN
   END LOOP;
   IF melhor > 0 THEN
     resto := w[melhor+1:];
-    -- um separador solto à frente ("Carm — Reserva") sai com o produtor
     WHILE array_length(resto, 1) > 0 AND winecatalog.palavra_norm(resto[1]) = '' LOOP resto := resto[2:]; END LOOP;
-    -- "Aguentar-se sozinho" é ter uma palavra que não seja gama, cor, casta
-    -- (a `generico`), nem REGIÃO: "Quinta da Carolina Douro" não é o
-    -- "Douro", e "Quinta das Bágeiras Reserva Bairrada" não é o "Reserva
-    -- Bairrada". Nem "preta"/"branca" das castas de dois nomes.
     IF EXISTS (SELECT 1 FROM unnest(winecatalog.tokens(array_to_string(resto, ' '))) t
                 WHERE NOT winecatalog.generico(t) AND t <> ALL (regioes)) THEN
       w := resto;
@@ -129,30 +139,16 @@ BEGIN
     END IF;
   END IF;
 
-  -- 3. A COR (só se calcula; aplica-se na fase 4). No fim, e o "Vinho" antes dela.
-  sem_cor := w;
-  n := COALESCE(array_length(w, 1), 0);
-  IF n > 1 AND winecatalog.palavra_norm(w[n]) = ANY(cores) THEN
-    cor_fim := winecatalog.palavra_norm(w[n]);
-    IF tipo_n = '' OR tipo_n = cor_fim OR (tipo_n = 'rose' AND cor_fim = 'rosado') THEN
-      sem_cor := w[1:n-1];
-      IF array_length(sem_cor, 1) > 1 AND winecatalog.palavra_norm(sem_cor[array_length(sem_cor,1)]) = 'vinho' THEN
-        sem_cor := sem_cor[1:array_length(sem_cor,1)-1];
-      END IF;
-    ELSE
-      avisos := array_append(avisos, format('a cor no nome (%s) não é a do vinho (%s)', w[n], p_tipo));
-    END IF;
-  END IF;
-  FOR i IN 1..COALESCE(array_length(sem_cor, 1), 0) - 1 LOOP
-    IF winecatalog.palavra_norm(sem_cor[i]) = ANY(cores) AND i > 1 THEN
-      avisos := array_append(avisos, format('"%s" a meio do nome', sem_cor[i]));
+  FOR i IN 2..COALESCE(array_length(w, 1), 0) - 1 LOOP
+    IF winecatalog.palavra_norm(w[i]) = ANY(cores) THEN
+      avisos := array_append(avisos, format('"%s" a meio do nome', w[i]));
     END IF;
   END LOOP;
 
   RETURN jsonb_build_object(
     'nome', array_to_string(w, ' '),
     'ano', v_ano,
-    'nome_sem_cor', array_to_string(sem_cor, ' '),
+    'nome_sem_cor', array_to_string(w, ' '),   -- igual ao nome desde a fase 4
     'mudancas', to_jsonb(mud),
     'avisos', to_jsonb(avisos));
 END;
@@ -203,16 +199,14 @@ BEGIN
     IF p_aplicar THEN
       escolhe := COALESCE(p_itens, '[]'::jsonb) @> jsonb_build_array(jsonb_build_object('fonte', 'catalogo', 'id', r.id));
       CONTINUE WHEN NOT escolhe OR (v_nome = r.nome AND v_ano IS NOT DISTINCT FROM r.ano);
-      v_base  := winecatalog.chave_base(v_nome, r.produtor);
-      v_chave := v_base || '|' || COALESCE(v_ano::text, '');
+      v_chave := winecatalog.chave(v_nome, r.produtor, v_ano, r.tipo);
       IF EXISTS (SELECT 1 FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id) THEN
         v_dup := v_dup || jsonb_build_object('id', r.id, 'nome', r.nome, 'ano', r.ano,
                    'com', (SELECT o.id FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id));
         CONTINUE;
       END IF;
       UPDATE winecatalog.vinhos
-         SET nome = v_nome, ano = v_ano, chave = v_chave, chave_base = v_base,
-             chave_nome = winecatalog.chave_nome(v_nome, v_ano), base_nome = winecatalog.base_nome(v_nome)
+         SET nome = v_nome, ano = v_ano   -- o trigger recalcula as chaves
        WHERE id = r.id;
       n_cat := n_cat + 1;
     ELSE

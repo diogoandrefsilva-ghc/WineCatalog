@@ -289,6 +289,12 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .cat-ano{font-family:'Inter',sans-serif;font-size:11.5px;font-weight:600;color:var(--mu)}
 .cat-sub{font-size:11.5px;color:var(--mu);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cat-sub em{font-style:normal}
+/* A cor e o produtor em itálico, mais pequenos (fase 4 dos nomes). */
+.cat-cor,.cat-cor-l,.cat-prod,.cat-prod-i,.mhero-cor,.mhero-p{font-family:'Playfair Display',serif;font-style:italic;font-weight:400}
+.cat-cor{font-size:12.5px;color:var(--mu)}
+.cat-prod{font-size:12.5px;color:var(--mu);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-cor-l{font-size:11.5px;color:var(--mu);margin-top:1px}
+.mhero-cor{font-size:14px;color:rgba(255,255,255,.75)}
 .cat-lado{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0}
 /* A garrafa da linha: a mesma moldura de papel da capa da ficha, em
    pequeno. `overflow:hidden` porque a fotografia entra por cima do

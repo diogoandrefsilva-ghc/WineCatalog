@@ -762,15 +762,19 @@ function wcPrecoTxt(p){
    que se escolhe um — a nota e o preço. O número de campos e a bola da
    força saíram daqui de propósito: são sobre a QUALIDADE DO REGISTO, não
    sobre o vinho, e essa conversa é da ficha (secção "Proveniência"). */
+/* O NOME É O VINHO; a cor e o produtor são campos à parte (fase 4 dos
+   nomes) e dizem-se como tal — o mesmo desenho da Garrafeira: a cor em
+   itálico logo a seguir ao nome, o produtor em itálico por baixo. */
 function wcLinhaHTML(v){
-  const sub=[v.produtor,v.regiao].filter(Boolean).join(' · ');
+  const sub=v.regiao||'';
   const castas=Array.isArray(v.castas)?v.castas.join(', '):'';
   const cor=WC_VIDRO[v.tipo]||'#8a7a7d';
   const preco=wcPrecoTxt(v.preco);
   return `<div class="cat-row" onclick="wcVerFicha(${v.id})">
     ${wcMiniGarrafa(v,'cat-g')}
     <div class="cat-main">
-      <div class="cat-nome">${esc(v.nome||'(sem nome)')}${v.ano?` <span class="cat-ano">${esc(String(v.ano))}</span>`:''}</div>
+      <div class="cat-nome">${esc(v.nome||'(sem nome)')}${v.tipo?` <span class="cat-cor">${esc(v.tipo)}</span>`:''}${v.ano?` <span class="cat-ano">${esc(String(v.ano))}</span>`:''}</div>
+      ${v.produtor?`<div class="cat-prod">${esc(v.produtor)}</div>`:''}
       <div class="cat-sub">${v.tipo?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(sub||'—')}</div>
       ${castas?`<div class="cat-castas">${esc(castas)}</div>`:''}
     </div>
@@ -782,12 +786,12 @@ function wcLinhaHTML(v){
 }
 
 function wcCartaoHTML(v){
-  const sub=[v.produtor,v.regiao].filter(Boolean).join(' · ');
   const preco=wcPrecoTxt(v.preco);
   return `<div class="cat-cartao" onclick="wcVerFicha(${v.id})">
     ${wcMiniGarrafa(v,'cat-g gr')}
     <div class="cat-nome">${esc(v.nome||'(sem nome)')}</div>
-    <div class="cat-sub">${esc(sub||'—')}${v.ano?' · '+esc(String(v.ano)):''}</div>
+    ${v.tipo?`<div class="cat-cor-l">${esc(v.tipo)}</div>`:''}
+    <div class="cat-sub">${[v.produtor?`<span class="cat-prod-i">${esc(v.produtor)}</span>`:'',esc(v.regiao||''),v.ano?esc(String(v.ano)):''].filter(Boolean).join(' · ')||'—'}</div>
     <div class="cat-cartao-n">
       ${wcNotaLinhaHTML(v)}
       ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}
@@ -962,7 +966,7 @@ function wcFichaHTML(v){
   const tipo=String(ficha.tipo||'');
   const castas=Array.isArray(ficha.castas)?ficha.castas:[];
   const img=String(ficha.imagem_url||'').trim();
-  const origem=[v.produtor,ficha.regiao,ficha.sub_regiao].filter(Boolean).map(esc).join(' · ');
+  const origem=[v.produtor?`<i class="mhero-p">${esc(v.produtor)}</i>`:'',esc(ficha.regiao||''),esc(ficha.sub_regiao||'')].filter(Boolean).join(' · ');
   const jan=wcJanelaTxt(ficha.beber_de,ficha.beber_ate);
   const nv=wcNotaVivinoFicha(ficha);
   /* A que se mostra leva a colheita ou "todas as colheitas" quando as duas
@@ -978,8 +982,8 @@ function wcFichaHTML(v){
         ${isAdmin()?'<i class="mhero-lapis">✏️</i>':''}
       </div>
       <div class="mhero-tx">
-        <div class="mhero-k">${esc([tipo,ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
-        <h3>${esc(v.nome||'(sem nome)')}</h3>
+        <div class="mhero-k">${esc([ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
+        <h3>${esc(v.nome||'(sem nome)')}${tipo?` <span class="mhero-cor">${esc(tipo)}</span>`:''}</h3>
         <div class="mhero-s"><span class="mhero-o">${origem||'<em>sem produtor nem região</em>'}${origem&&v.ano?' · ':''}</span>${v.ano?`<b>${esc(String(v.ano))}</b>`:''}</div>
         ${nv?`<span class="mhero-n" title="${esc(wcNotaVivinoTitulo(nv,v.ano))}">★ ${esc(nv.nota.toFixed(2))} Vivino${nv.aval?` · ${esc(nFmt(nv.aval))}`:''}${esc(nvDe)}</span>`:''}
         ${jan?`<span class="mhero-n">${esc(jan)}</span>`:''}

@@ -46,7 +46,11 @@ tudo o que aqui está foi pago com um erro.
   `functions.sql` → `policies.sql` → `admin_pass_temp.sql` → `imagens.sql`
   (o bucket das fotografias) → `vivino.sql` (a verificação dos links do
   Vivino e dos preços) → `historico.sql` (o histórico campo a campo) → `amigos.sql` (as marcas
-  dos amigos na WineSelection) → `nomes.sql` (os nomes sem CAPS LOCK) (+ `README.md`
+  dos amigos na WineSelection) → `nomes.sql` (os nomes sem CAPS LOCK) →
+  `produtores.sql` → `nomes-normalizar.sql` → **`cor-na-chave.sql`** (a cor na
+  chave e a `identidade`: a versão que vale da chave, da `achar`, da
+  `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
+  marcadas como substituídas) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -81,7 +85,9 @@ a quem herdasse a Garrafeira poder sobre uma tabela que também serve a
 WineSelection.
 
 ## A REGRA QUE SEGURA TUDO O RESTO: uma cópia só não pode divergir
-**`db/catalogo.sql` é a FONTE DE VERDADE do catálogo.** Não há cópia em
+**`db/catalogo.sql` é a FONTE DE VERDADE do catálogo** — com a chave e as
+funções que a usam na versão de `db/cor-na-chave.sql` desde a fase 4 dos
+nomes (as de lá valem; as antigas ficaram marcadas "SUBSTITUÍDA"). Não há cópia em
 lado nenhum: a tabela `vinhos`, a chave (`tokens`/`chave_base`/`chave`/
 `base_nome`/`chave_nome`/`achar`), a `forca()`, a `volatil()` e as três
 funções que as Edge Functions chamam (`juntar`/`procurar`/`procurar_lote`)
@@ -1220,12 +1226,17 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    cartão "Nomes dos vinhos" do painel); com ele aplica só o que o admin
    marcou, no catálogo (chaves recalculadas, colisões para os Duplicados) e
    nas garrafeiras (`sync_log`, acao `nome_normalizado`).
-4. **A cor na chave** (a "mudança da cor na chave", abaixo em "O que
-   falta"): a cor passa a campo da chave e obrigatória. Só depois disto a cor
-   sai do nome — antes, o "Papa Figos Tinto" e o "Papa Figos Branco" sem a
-   cor no nome eram a mesma chave. É também aí que a regra do nome passa a
-   um trigger (cada escrita futura), e que a Garrafeira grava o nome do
-   catálogo quando o vinho vem de um candidato.
+4. **A cor na chave — FEITA** (`db/cor-na-chave.sql`, ver "A cor na
+   chave" abaixo). A cor é um campo da chave e obrigatória; a cor no fim do
+   nome sai; e a regra do nome passou a um trigger: a `identidade` arruma
+   cada escrita futura (aqui e na Garrafeira, migração 24) — **só quando o
+   nome é escrito** (um vinho novo, ou o nome mudado). Mudar o produtor, a
+   cor ou o ano recalcula as chaves sem mexer no nome: os nomes que já cá
+   estavam continuam a ser a simulação do painel, vista pelo admin. A
+   Garrafeira grava o nome do catálogo quando o vinho novo vem de um
+   candidato. E os três ecrãs dizem o vinho da mesma maneira (o dono das
+   apps): o **nome** grande, a **cor** em itálico logo a seguir, o
+   **produtor** em itálico por baixo (na grelha, a cor por baixo do nome).
 
 **Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
 produtor no mesmo saco de palavras. Mudam as chaves só-do-nome
@@ -1587,7 +1598,29 @@ de cada app antes de assumir que a que está calada está bem.**
 
 ## O que falta, e porque não está feito
 
-### A mudança da cor na chave (decidida, não feita)
+### A cor na chave — FEITA (27/09/2026, `db/cor-na-chave.sql`)
+O que está a seguir é o plano como foi decidido; o que ficou feito:
+- `vinhos.cor` (tinto · branco · rose · espumante · frisante · licoroso),
+  do `tipo` da ficha ou, sem ele, da cor escrita no nome (e aí o `tipo` entra
+  na ficha com força 0). As palavras de cor saem das chaves (`tokens_id`) se
+  sobrar alguma coisa ("Monte Branco" continua "branco"). A `chave` única é
+  nome+produtor | ano | cor;
+- a **`identidade`** é a única conta disto (nome arrumado, produtor oficial,
+  ano, cor e as quatro chaves); o trigger `vinhos_nomes` usa-a, e se as
+  chaves novas forem de OUTRA linha ficam as de antes (vai aos Duplicados),
+  nunca um erro a meio de uma escrita;
+- a `achar` casa pelo nome/ano como antes e pela cor com o **coringa**; a
+  `procurar` (e o lote: `cor` ou `tipo` em cada pedido) e a `comparar` (o
+  `tipo` da ficha de quem pergunta) passam a cor; a `criar` recusa sem cor;
+  a `editar` não deixa apagar a cor e confere a chave quando ela muda;
+- as chaves de todas as linhas foram recalculadas
+  (`cor_na_chave_recalcular`, com a `alias` e a `distintos` a acompanhar):
+  214 mudaram; três colisões eram fundidos (respondem pela alvo) e uma é um
+  duplicado a sério — o "Quinta dos Sentidos Tinto" × "Quinta dos Sentidos",
+  à espera nos Duplicados (os pares com a mesma chave de nome e cor
+  compatível vêm primeiro na lista, e duas cores diferentes nunca são par).
+
+O plano, como foi decidido:
 Tirar a cor do NOME e passá-la a um lugar próprio da chave, vindo da coluna
 `tipo`. Hoje "tinto"/"branco"/"rose" ficam dentro da chave, e por isso um
 vinho gravado como nome "Papa Figos" + tipo Branco **não encontra** o "Papa
@@ -1601,7 +1634,7 @@ qualquer uma, duas cores conhecidas e diferentes nunca casam — e isto é
 e sem o coringa a mudança partia as consultas das cartas; (3) com a cor
 desconhecida e as duas versões no catálogo, **mostram-se as duas**.
 
-**Porque não está feito:** aplicá-la é, em si, uma fusão em massa — mudar o
+**Porque esperou** (fica pela história): aplicá-la é, em si, uma fusão em massa — mudar o
 `chave_base` obriga a recalcular as 162 linhas e desta vez as colisões são
 o objetivo, não um acidente. Faz-se com a lista de pares à frente e um
 "sim" por par, ou seja **depois** do ecrã de Duplicados existir (existe

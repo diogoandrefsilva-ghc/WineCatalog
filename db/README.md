@@ -35,6 +35,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 10. db/nomes.sql           (os nomes sem CAPS LOCK — depois do catalogo.sql e do historico.sql)
 11. db/produtores.sql      (os produtores oficiais — depois do nomes.sql; a tabela e a chave estão no catalogo.sql)
 12. db/nomes-normalizar.sql (a regra do nome e a simulação — depois do produtores.sql)
+13. db/cor-na-chave.sql    (fase 4: a cor na chave, a `identidade` e o trigger dos nomes — depois do nomes-normalizar.sql;
+                            substitui a chave, a achar, a juntar, a procurar, a criar, a editar, a comparar, a colheitas e a candidatos;
+                            no fim recalcula as chaves de todas as linhas. Na Garrafeira, a seguir: migracao-cor-na-chave.sql)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

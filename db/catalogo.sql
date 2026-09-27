@@ -337,6 +337,8 @@ GRANT EXECUTE ON FUNCTION winecatalog.produtor_oficial(text) TO authenticated, s
 -- E O PRODUTOR ENTRA PELO NOME OFICIAL (27/09/2026, ver `produtores` acima).
 -- Por isso deixou de ser IMMUTABLE: lê uma tabela. Nenhum índice nem coluna
 -- gerada usa isto — as chaves guardam-se em colunas, escritas por quem grava.
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.chave_base(p_nome text, p_produtor text)
   RETURNS text LANGUAGE sql STABLE
   SET search_path TO 'winecatalog', 'public'
@@ -348,6 +350,8 @@ AS $$
     ), '-');
 $$;
 
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.chave(p_nome text, p_produtor text, p_ano integer)
   RETURNS text LANGUAGE sql STABLE
   SET search_path TO 'winecatalog', 'public'
@@ -384,6 +388,8 @@ $$;
 -- por si não é identidade nenhuma, e deixá-lo casar dava o "Reserva" de
 -- um produtor a responder pelo "Reserva" de outro.
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.base_nome(p_nome text)
   RETURNS text LANGUAGE sql IMMUTABLE
   SET search_path TO 'winecatalog', 'public'
@@ -415,6 +421,8 @@ $$;
 --            (é o que `procurar` precisa quando o ano pedido não existe).
 -- `p_excluir` deixa de fora uma linha: é como o `procurar` vai buscar a
 -- colheita IRMÃ sem voltar a apanhar a que já tem na mão.
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 DROP FUNCTION IF EXISTS winecatalog.achar(text, text, integer, boolean);
 CREATE OR REPLACE FUNCTION winecatalog.achar(
   p_nome text, p_produtor text, p_ano integer, p_exigir_ano boolean DEFAULT true,
@@ -756,6 +764,8 @@ $$;
 -- Garrafeira, em nome de uma pessoa que não tem (nem deve ter) direito de
 -- escrita nesta tabela.
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.juntar(
   p_nome text, p_produtor text, p_ano integer,
   p_ficha jsonb, p_origem text, p_fontes jsonb DEFAULT '[]'::jsonb
@@ -894,6 +904,8 @@ $$;
 -- vêm de fora como se não estivessem lá, e quem perguntou vai à IA só por
 -- esses.
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.procurar(
   p_nome text, p_produtor text, p_ano integer, p_idade_dias integer DEFAULT 30
 ) RETURNS jsonb
@@ -1521,6 +1533,8 @@ $$;
 -- Fora ficam: pares já marcados como distintos, linhas já fundidas
 -- noutras, e colheitas diferentes (que nunca se fundem).
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.candidatos(p_limite integer DEFAULT 40)
   RETURNS jsonb
   LANGUAGE plpgsql STABLE SECURITY DEFINER

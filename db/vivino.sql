@@ -638,7 +638,7 @@ BEGIN
   IF btrim(COALESCE(r.produtor, '')) <> '' THEN
     RETURN jsonb_build_object('ok', false, 'motivo', 'já tem produtor (' || r.produtor || ') — mudá-lo é o Editar da app');
   END IF;
-  v_chave := winecatalog.chave(r.nome, v_prod, r.ano);
+  v_chave := winecatalog.chave(r.nome, v_prod, r.ano, r.cor);
   IF v_chave <> r.chave THEN
     SELECT id INTO v_outro FROM winecatalog.vinhos WHERE chave = v_chave AND id <> r.id LIMIT 1;
     IF v_outro IS NOT NULL THEN
@@ -648,10 +648,7 @@ BEGIN
   END IF;
   PERFORM set_config('winecatalog.quem', COALESCE(NULLIF(p_quem, ''), 'script'), true);
   BEGIN
-    UPDATE winecatalog.vinhos SET
-      produtor   = v_prod,
-      chave      = v_chave,
-      chave_base = winecatalog.chave_base(r.nome, v_prod)
+    UPDATE winecatalog.vinhos SET produtor = v_prod   -- o trigger recalcula as chaves
     WHERE id = r.id;
   EXCEPTION WHEN unique_violation THEN
     RETURN jsonb_build_object('ok', false, 'motivo', 'outra linha ficou com essa identidade entretanto');

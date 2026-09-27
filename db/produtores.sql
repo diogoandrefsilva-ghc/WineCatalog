@@ -213,8 +213,7 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)
      ORDER BY v.id
   LOOP
-    v_base  := winecatalog.chave_base(r.nome, v_oficial);
-    v_chave := v_base || '|' || COALESCE(r.ano::text, '');
+    v_chave := winecatalog.chave(r.nome, v_oficial, r.ano, r.cor);
     CONTINUE WHEN r.produtor = v_oficial AND r.chave = v_chave;
     IF EXISTS (SELECT 1 FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id) THEN
       v_dup := v_dup || jsonb_build_object('id', r.id, 'nome', r.nome, 'produtor', r.produtor, 'ano', r.ano,
@@ -222,7 +221,7 @@ BEGIN
       CONTINUE;
     END IF;
     UPDATE winecatalog.vinhos
-       SET produtor = v_oficial, chave = v_chave, chave_base = v_base
+       SET produtor = v_oficial   -- o trigger recalcula as chaves
      WHERE id = r.id;
     n_cat := n_cat + 1;
   END LOOP;

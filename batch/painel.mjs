@@ -380,7 +380,7 @@ a{color:var(--bd)}
   <details style="margin-top:10px"><summary class="nota">Produtores oficiais já definidos</summary><div id="prod-oficiais" style="margin-top:6px"></div></details>
 </div>
 <div class="card"><h2>Nomes dos vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome só sai quando a cor entrar na chave (fase 4) — por agora vês como ficará. Os avisos são para decidires à mão, no Editar.</p>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
   <div class="linha"><button class="prim" onclick="nomesProcurar()">Simular</button>
     <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label>
     <span id="nomes-n" class="nota"></span>
@@ -718,7 +718,7 @@ async function prodTirar(chave){
   try{await post("/produtores",{acao:"tirar",chave});await prodProcurar();}catch(e){alert(e.message);}
 }
 let NOMES=null;
-const NOMES_MUD={ano:"colheita",produtor:"produtor"};
+const NOMES_MUD={ano:"colheita",produtor:"produtor",cor:"cor"};
 async function nomesProcurar(){
   document.getElementById("nomes-lista").innerHTML='<p class="nota">A simular…</p>';
   try{NOMES=await post("/nomes",{});nomesPintar();}
@@ -734,13 +734,12 @@ function nomesPintar(){
   document.getElementById("btn-nomes").disabled=!n;
   document.getElementById("nomes-lista").innerHTML=L.length?'<table><tr><th></th><th>Onde</th><th>Agora</th><th>Fica</th></tr>'+L.map(x=>{
     const m=nomesMuda(x);
-    const cor=x.nome_sem_cor&&x.nome_sem_cor!==x.novo_nome?'<br><span class="nota">sem a cor (fase 4): '+esc(x.nome_sem_cor)+'</span>':'';
     const av=(x.avisos||[]).length?'<br><span class="tag">'+x.avisos.map(esc).join(' · ')+'</span>':'';
     const mud=(x.mudancas||[]).map(k=>'<span class="tag">'+esc(NOMES_MUD[k]||k)+'</span>').join(' ');
     return '<tr'+(m?'':' class="off"')+'><td>'+(m?'<input type="checkbox" class="nomes-c" data-f="'+x.fonte+'" data-id="'+x.id+'" checked>':'')+'</td>'+
       '<td>'+(x.fonte==="catalogo"?'catálogo #'+x.id:esc(x.garrafeira||"garrafeira")+'<br><span class="nota">'+esc(x.dono||"")+'</span>')+'</td>'+
       '<td><span class="antes">'+esc(x.nome)+'</span>'+(x.ano?' · '+esc(x.ano):'')+'<br><span class="nota">'+esc(x.produtor||"(sem produtor)")+' · '+esc(x.tipo||"sem cor")+'</span></td>'+
-      '<td><b>'+esc(x.novo_nome)+'</b>'+(x.novo_ano?' · '+esc(x.novo_ano):'')+' '+mud+cor+av+'</td></tr>';}).join("")+'</table>'
+      '<td><b>'+esc(x.novo_nome)+'</b>'+(x.novo_ano?' · '+esc(x.novo_ano):'')+' '+mud+av+'</td></tr>';}).join("")+'</table>'
     :'<p class="nota">Nada a mudar.</p>';
 }
 async function nomesAplicar(){

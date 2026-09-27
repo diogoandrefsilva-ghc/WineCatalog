@@ -179,6 +179,8 @@ $$;
 -- o ecrã de duplicados — juntar duas linhas é a `fundir`, que é
 -- reversível; um UPDATE à socapa não seria.
 -- =====================================================================
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.editar(
   p_id bigint,
   p_campos jsonb DEFAULT '{}'::jsonb,
@@ -324,6 +326,8 @@ $$;
 -- o `juntar` faz antes de escrever — se já existir, recusa e diz qual é,
 -- para o ecrã abrir essa em vez de duplicar.
 -- =====================================================================
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.criar(
   p_nome text,
   p_produtor text DEFAULT '',
@@ -677,6 +681,8 @@ $$;
 -- catálogo (a `garrafeira.ficha_catalogo` é que faz essa tradução, e é a
 -- MESMA que alimenta o `juntar` — uma tradução só não pode divergir).
 -- =====================================================================
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.comparar(
   p_nome text, p_produtor text DEFAULT '', p_ano integer DEFAULT NULL,
   p_ficha jsonb DEFAULT '{}'::jsonb
@@ -790,6 +796,8 @@ AS $$
             WHERE t NOT IN ('tinto','branco','rose')), '-'), '');
 $$;
 
+-- ⚠ SUBSTITUÍDA em `cor-na-chave.sql` (fase 4, a cor na chave), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.colheitas(
   p_nome text, p_produtor text DEFAULT '', p_tipo text DEFAULT NULL
 ) RETURNS jsonb
