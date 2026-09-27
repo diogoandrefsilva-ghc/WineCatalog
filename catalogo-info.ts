@@ -289,6 +289,14 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
 }
 
 type UsageMetadata = { promptTokenCount: number; candidatesTokenCount: number; thoughtsTokenCount: number; totalTokenCount: number };
+// As duas fases do pacote completo somam-se no registo.
+function somarUso(a: UsageMetadata | null, b: UsageMetadata | null): UsageMetadata | null {
+  if (!a) return b;
+  if (!b) return a;
+  const out: any = { ...a };
+  for (const [k, v] of Object.entries(b)) if (typeof v === "number") out[k] = (Number(out[k]) || 0) + v;
+  return out;
+}
 function usageMetadata(raw: any): UsageMetadata | null {
   const toInt = (v: unknown) => {
     const n = typeof v === "number" ? v : Number(v);
@@ -675,7 +683,8 @@ async function processarPesquisa(
     let grounding: Record<string, unknown> | null = null;
     // null na manual (não há como saber); true/false na automática.
     let pesquisaWeb: boolean | null = null;
-    let serperConsultas = 0; // só na profunda
+    let serperConsultas = 0; // as consultas ao Serper do pacote completo
+    let usouGround = false;  // houve (também) a fase com grounding
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -693,59 +702,49 @@ async function processarPesquisa(
          confundir este vinho com um homónimo e a dar prioridade a fontes de
          confiança. Nunca entram na lista `campos` (o que se pede de volta);
          só no texto do prompt. */
-      // Profunda: a pesquisa faz-se AQUI, antes do Gemini (ver `pesquisarSerper`).
+      /* O PACOTE COMPLETO (27/09/2026, o dono das apps): primeiro a pesquisa
+         NOSSA (Serper: uma consulta geral e uma ao Vivino, e o Gemini só a
+         ler os resultados, sem `google_search` e com JSON direto) e depois,
+         SÓ pelos campos que ela não trouxe, o grounding. Tudo de seguida,
+         uma pesquisa só para quem a pediu. Quem chega aqui é sempre o admin
+         do catálogo, que tem sempre o pacote completo. Sem Serper (chave em
+         falta, erro, nada encontrado), faz-se só o grounding. */
       let evidencia = "";
-      if (profunda) {
+      if (SEARCH_API_KEY) {
         const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
         const siteQ = sites.length ? ` (${sites.map((s) => `site:${s}`).join(" OR ")})` : "";
         const consultas = [`${quem_} vinho preço${siteQ}`, `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " ")];
         try {
           const s = await pesquisarSerper(consultas, ctrl.signal);
+          serperConsultas = consultas.length;
           evidencia = s.texto;
-          fontes = s.fontes;
+          if (evidencia) fontes = s.fontes;
         } catch (e) {
           if (ctrl.signal.aborted) throw e;
-          await registar("erro", { passo: "serper", vinho_id: vinhoId, profunda: true,
+          await registar("erro", { passo: "serper", vinho_id: vinhoId,
             erro: String((e as Error).message).slice(0, 300) }, quem);
-          await fechar(pesquisaId, { estado: "erro", erro: `a pesquisa Google não respondeu — ${(e as Error).message}. Tenta outra vez.` });
-          return;
         }
-        serperConsultas = consultas.length;
-        if (!evidencia) {
-          await registar("ok", { passo: "serper_vazio", vinho_id: vinhoId, profunda: true, pesquisa: "serper",
-            serper_consultas: serperConsultas, custo_estimado_eur: serperConsultas * CUSTO_SERPER_EUR }, quem);
-          await fechar(pesquisaId, { estado: "erro", erro: "a pesquisa Google não encontrou nada sobre este vinho — confirma o nome e o produtor." });
-          return;
-        }
-        pesquisaWeb = true;
       }
-      const textoPedido = promptFicha(
+      const notasPedido = vivinoDado ? `${notas}\nA página do Vivino deste vinho é ${vivinoDado} — usa esta, é a certa.`.trim() : notas;
+      const textoDe = (camposP: string[] | null, ev: string) => promptFicha(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
-        String(antes.ficha.tipo ?? ""),
-        vivinoDado ? `${notas}\nA página do Vivino deste vinho é ${vivinoDado} — usa esta, é a certa.`.trim() : notas,
-        sites,
-        new Date().toISOString().slice(0, 10), camposSemJanela(campos, antes.ano), colheitaEspecifica, evidencia,
+        String(antes.ficha.tipo ?? ""), notasPedido, sites,
+        new Date().toISOString().slice(0, 10), camposP, colheitaEspecifica, ev,
       );
 
-      /* O `google_search` está SEMPRE ligado — é a razão de esta função
-         existir. Por isso NÃO há aqui variante com `thinkingBudget:0`: a API
-         recusa as duas juntas com 400 ("Request contains an invalid
-         argument"), e a pesquisa precisa mesmo de pensar para decidir o que
-         pesquisar. Era a primeira variante tentada nas funções irmãs e só
-         deitava fora uma ida ao Gemini de cada vez, sem nada no ecrã a
-         dizê-lo.
-         Na PROFUNDA é ao contrário: a pesquisa já foi feita (Serper), o
-         `google_search` fica desligado e pede-se JSON direto. */
-      const chamarGemini = (m: string) =>
+      /* Com o `google_search` ligado NÃO há variante com `thinkingBudget:0`:
+         a API recusa as duas juntas com 400. Com os resultados do Serper é
+         ao contrário: sem tool, e pede-se JSON direto. */
+      const chamarGemini = (m: string, textoPedido: string, comGround: boolean) =>
         fetch(`${GAPI}/models/${m}:generateContent?key=${GEMINI_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: ctrl.signal,
           body: JSON.stringify({
             contents: [{ role: "user", parts: [{ text: textoPedido }] }],
-            ...(profunda
-              ? { generationConfig: { temperature: 0, responseMimeType: "application/json" } }
-              : { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }),
+            ...(comGround
+              ? { generationConfig: { temperature: 0 }, tools: [{ google_search: {} }] }
+              : { generationConfig: { temperature: 0, responseMimeType: "application/json" } }),
           }),
         });
 
@@ -753,76 +752,85 @@ async function processarPesquisa(
       const candidatos = await candidatosModelo(ctrl.signal);
       if (ctrl.signal.aborted) throw new DOMException("timeout", "AbortError");
       console.log("CATALOGO-INFO candidatos:", candidatos.join(", "));
-      let g: Response | null = null;
-      /* O motivo do último 200 VAZIO (ver o comentário a seguir ao ciclo).
-         Guarda-se para a mensagem de erro: "MAX_TOKENS" e "SAFETY" são
-         avarias muito diferentes e quem lê tem de as poder distinguir. */
-      let vazioMotivo = "";
-      const aceitar = (gd: any, bruto: string) => {
-        usage = usageMetadata(gd);
-        parsed = extrairJson(bruto);
-        if (profunda) return; // fontes e pesquisaWeb já vieram do Serper
-        fontes = fontesGrounding(gd);
-        grounding = resumoGrounding(gd);
-        pesquisaWeb = fezPesquisa(gd);
-        console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
+
+      /* Uma pergunta ao Gemini, modelo a modelo. O CORPO LÊ-SE DENTRO DO
+         CICLO: um 200 COM ZERO TOKENS DE SAÍDA (o modelo gasta o orçamento a
+         pensar e não escreve nada) passa ao modelo seguinte, e se nenhum
+         escrever é ERRO, nunca "concluído, 0 campos" (20/09/2026). */
+      type Resposta = { gd: any; bruto: string } | { falha: Response | null; vazioMotivo: string };
+      const perguntar = async (textoPedido: string, comGround: boolean): Promise<Resposta> => {
+        let g: Response | null = null;
+        let vazioMotivo = "";
+        for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
+          model = candidatos[ci];
+          g = await chamarGemini(model, textoPedido, comGround);
+          console.log("CATALOGO-INFO tentativa:", model, comGround ? "(grounding)" : "(serper)", "->", g.status);
+          if (g.ok) {
+            const gd = await g.json();
+            const cand = gd?.candidates?.[0];
+            const motivo = String(cand?.finishReason ?? "");
+            const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
+            usage = somarUso(usage, usageMetadata(gd));
+            if (bruto) return { gd, bruto };
+            vazioMotivo = motivo || "resposta vazia";
+            g = null;
+            continue;
+          }
+          if (g.status === 404) { _models = null; continue; }
+          if (!transitorio(g.status)) break;
+        }
+        return { falha: g, vazioMotivo };
       };
 
-      /* O CORPO LÊ-SE DENTRO DO CICLO, e é essa a correção. Antes o ciclo
-         fazia `break` no 200 e só depois é que alguém lia a resposta — por
-         isso um 200 COM ZERO TOKENS DE SAÍDA (o modelo gasta o orçamento
-         todo a pensar e não escreve nada) nunca chegava a tentar o modelo
-         seguinte, e ainda por cima acabava a ser contado como sucesso:
-         texto vazio -> `extrairJson` null -> `normalizar` {} -> "0 campos"
-         -> a pesquisa FECHAVA COMO CONCLUÍDA. No ecrã lia-se "não encontrei
-         nada" quando o que houve foi não ter havido resposta nenhuma.
-         Apanhado a 20/09/2026 com o `gemini-flash-latest`: 200, 5989 tokens
-         de entrada, 0 de saída, ~4977 gastos a pensar. */
-      for (let ci = 0; ci < candidatos.length && !ctrl.signal.aborted; ci++) {
-        model = candidatos[ci];
-        g = await chamarGemini(model);
-        console.log("CATALOGO-INFO tentativa:", model, "->", g.status);
-        if (g.ok) {
-          const gd = await g.json();
-          const cand = gd?.candidates?.[0];
-          const motivo = String(cand?.finishReason ?? "");
-          const bruto = (cand?.content?.parts ?? []).map((p: any) => p?.text ?? "").join("").trim();
-          const uso = usageMetadata(gd);
-          console.log("CATALOGO-INFO resposta:", model, "finishReason:", motivo || "(nenhum)",
-                      "texto:", bruto.length, "tokens saída:", uso?.candidatesTokenCount ?? 0);
-          if (bruto) {
-            aceitar(gd, bruto);
-            break;
-          }
-          // 200 sem uma letra escrita: não é "não encontrei", é não ter
-          // havido resposta. Segue para o modelo seguinte da lista.
-          vazioMotivo = motivo || "resposta vazia";
-          usage = uso ?? usage;
-          g = null;
-          continue;
+      // Todos os campos que se pediram (ou todos, se não se escolheu), sem a
+      // janela quando não há colheita.
+      const pedidos = (camposSemJanela(campos, antes.ano) ?? Object.keys(CAMPOS))
+        .filter((k) => antes.ano !== null || (k !== "beber_de" && k !== "beber_ate"));
+      const vazioV = (x: unknown) => x == null || x === "" || (Array.isArray(x) && !x.length);
+
+      let r: Resposta | null = null;
+      if (evidencia) {
+        r = await perguntar(textoDe(camposSemJanela(campos, antes.ano), evidencia), false);
+        if ("gd" in r) { parsed = extrairJson(r.bruto); pesquisaWeb = true; }
+      }
+      // O grounding: pelo que o Serper não trouxe, ou por tudo sem Serper.
+      const jaTem = parsed ? normalizar(parsed, campos) : {};
+      const faltam = pedidos.filter((k) => vazioV((jaTem as any)[k]));
+      if (!parsed || faltam.length) {
+        usouGround = true;
+        const r2 = await perguntar(textoDe(parsed ? faltam : camposSemJanela(campos, antes.ano), ""), true);
+        if ("gd" in r2) {
+          const p2 = extrairJson(r2.bruto);
+          const fg = fontesGrounding(r2.gd);
+          grounding = resumoGrounding(r2.gd);
+          console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
+          if (!parsed) pesquisaWeb = fezPesquisa(r2.gd);
+          fontes = [...fontes, ...fg].filter((f, i, a) => a.findIndex((x) => x.url === f.url) === i);
+          // O Serper ganha: o grounding só tapa o que ele deixou vazio.
+          const cheios = parsed ? Object.fromEntries(Object.entries(parsed).filter(([, v]) => !vazioV(v))) : {};
+          parsed = { ...(p2 ?? {}), ...cheios };
+        } else if (!parsed) {
+          r = r2;
         }
-        if (g.status === 404) { _models = null; continue; }
-        if (!transitorio(g.status)) break;
       }
 
-      if (g && !g.ok) {
-        const status = g.status;
-        const detail = await g.text();
-        let msg = "";
-        try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
-        await registar("erro", { passo: "gemini", status, modelo: model, vinho_id: vinhoId, erro: (msg || detail).slice(0, 800) }, quem);
-        await fechar(pesquisaId, {
-          estado: "erro",
-          erro: transitorio(status)
-            ? "o serviço está com muita procura agora — tenta outra vez"
-            : `gemini ${status} (${model})${msg ? ": " + msg.slice(0, 200) : ""}`,
-        });
-        return;
-      }
-
-      // Nenhum dos modelos escreveu nada. Isto é um ERRO e diz-se que é —
-      // fechar como "concluído, 0 campos" era mentir a quem está à espera.
-      if (!g) {
+      if (!parsed && r && "falha" in r) {
+        const g = r.falha;
+        if (g && !g.ok) {
+          const status = g.status;
+          const detail = await g.text();
+          let msg = "";
+          try { msg = JSON.parse(detail)?.error?.message ?? ""; } catch (_) { /**/ }
+          await registar("erro", { passo: "gemini", status, modelo: model, vinho_id: vinhoId, erro: (msg || detail).slice(0, 800) }, quem);
+          await fechar(pesquisaId, {
+            estado: "erro",
+            erro: transitorio(status)
+              ? "o serviço está com muita procura agora — tenta outra vez"
+              : `gemini ${status} (${model})${msg ? ": " + msg.slice(0, 200) : ""}`,
+          });
+          return;
+        }
+        const vazioMotivo = r.vazioMotivo;
         await registar("erro", {
           passo: vazioMotivo ? "gemini_vazio" : "gemini_sem_resposta",
           modelo: model, vinho_id: vinhoId, finishReason: vazioMotivo || null,
@@ -853,12 +861,14 @@ async function processarPesquisa(
     // `groundingMetadata` nenhum a colar aqui) — inventar uma era pior do
     // que não ter nenhuma.
     const chamadasGemini = respostaManual !== null ? 0 : 1;
-    // Na profunda o Gemini não pesquisa (não há pesquisa Google a pagar
-    // lá); paga-se o Serper, à parte.
+    // Com o Serper, o Gemini só lê (e paga-se o Serper, à parte); a fase
+    // com grounding custa a pesquisa Google.
     const custoEstimado = respostaManual !== null ? 0
-      : profunda ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR
-      : CUSTO_PESQUISA_EUR;
-    const serperLog = profunda ? { pesquisa: "serper", serper_consultas: serperConsultas } : {};
+      : (serperConsultas ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR : 0)
+        + (usouGround ? CUSTO_PESQUISA_EUR : 0);
+    // A app diz "a pesquisa avançada" quando houve Serper.
+    profunda = serperConsultas > 0;
+    const serperLog = serperConsultas ? { pesquisa: usouGround ? "serper+grounding" : "serper", serper_consultas: serperConsultas } : {};
 
     /* O PRODUTOR não é campo de ficha — não passa pela `juntar` nem pela
        `forca()` que decide os outros. É IDENTIDADE (parte da `chave`), e

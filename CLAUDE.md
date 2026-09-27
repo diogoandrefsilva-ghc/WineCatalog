@@ -252,6 +252,18 @@ não tinha ecrã nenhum. "Atualizar informação" é o lote — ver a secção
 própria a seguir a "Vinho novo".
 
 ### Vinho novo — *um vinho que ninguém tem, do zero*
+**Abre COMPACTO (27/09/2026, o dono das apps — o mesmo desenho da
+Garrafeira)**: nome, colheita, cor e o produtor (opcional), a leitura do
+rótulo por fotografia, e duas saídas (`wcAbrirNovo`). **"Procurar
+informação"** pergunta primeiro à `winecatalog.colheitas` que vinhos com este
+nome já cá estão, e mostra-os em lista (ano, nome, produtor, castas,
+região; o da colheita escrita destacado): aqui, que É o catálogo, um
+candidato quer dizer "já existe", e tocar-lhe abre a ficha em vez de nascer
+um duplicado. **"Nenhum destes"** (ou nenhum candidato) cria a linha e segue
+para a pesquisa, como abaixo. **"Preencher à mão"** abre o formulário
+inteiro (`nv-resto`). A cor do compacto (`nv-cor`) vai para o `nv-tipo`
+antes de criar (`wcNovoCor`).
+
 O botão **"+ Vinho novo"** no Catálogo (só admin) cria uma linha vazia
 (`winecatalog.criar`) e abre logo a ficha para "Procurar informação"
 tratar do resto — exatamente o plano que ficou por fazer em "O que falta"
@@ -435,6 +447,17 @@ com "A pesquisa com IA terminou e trouxe informação nova em N campos" (ou
 IA pergunta sempre "Pretendes fazer a pesquisa avançada?" — que é a
 profunda com outro nome (Serper, e o Gemini só a ler). Antes o botão só
 aparecia quando a resposta tinha vindo de memória.
+
+**Uma pesquisa só (27/09/2026)**: a `catalogo-info` faz, de seguida, o
+Serper (uma consulta geral e uma ao Vivino; o Gemini só lê os resultados,
+com JSON direto) e depois o grounding SÓ pelos campos que ele não trouxe —
+quem pesquisa aqui é o admin, que tem o pacote completo. Sem Serper (chave em
+falta, erro, nada encontrado) faz só o grounding. A "pesquisa avançada" que
+a revisão oferecia deixou de existir: já está dentro da pesquisa. O
+`profunda` no resultado passou a querer dizer "houve Serper". E a
+**pesquisa manual (colar a resposta de outro assistente) saiu do ecrã da
+pesquisa para o EDITAR** (`wcEditarManual`): é aí que se procura quem não
+quer gastar IA; entra pela mesma porta e pela mesma revisão.
 
 **Sem `rever` a Edge Function faz o de antes** (grava pela força e relata):
 é o que uma app ainda em cache manda, e é o que deixa publicar a função sem

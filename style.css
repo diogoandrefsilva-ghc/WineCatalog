@@ -744,3 +744,13 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .hist-dia-c{display:block;margin-top:2px;font-size:11px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .hist-dia-seta{color:var(--wine);flex-shrink:0}
 .hist-dia-det{padding:0 12px;border-top:1px solid var(--bo)}
+
+/* O vinho novo compacto: os candidatos do catálogo, um botão cada, com o ano
+   à frente em serifa (o mesmo desenho da escolha de colheita da Garrafeira). */
+.nv-cands{display:grid;gap:6px;margin:6px 0 4px}
+.nv-cand{display:grid;grid-template-columns:auto 1fr;gap:0 12px;align-items:baseline;text-align:left;width:100%;padding:9px 12px;border:1px solid var(--bo);border-radius:11px;background:var(--card);font:inherit;color:var(--tx);cursor:pointer}
+.nv-cand:hover,.nv-cand:focus-visible{border-color:var(--wine)}
+.nv-cand.igual{border-color:var(--wine);background:#f7ecef}
+.nv-cand b{grid-row:span 2;font-family:Georgia,serif;font-size:20px;font-weight:600;color:var(--wine)}
+.nv-cand span{font-size:13px;min-width:0}
+.nv-cand i{font-style:normal;font-size:11.5px;color:var(--mu)}

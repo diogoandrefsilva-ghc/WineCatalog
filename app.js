@@ -1335,6 +1335,8 @@ function wcAbrirEditar(){
     para a próxima escrita de qualquer garrafeira o voltar a preencher. Para travar um valor
     errado, corrige-o em vez de o apagares.</p>
   <div class="divi"></div>
+  <button class="btn-n larg" onclick="wcEditarManual()">✍️ Gerar um prompt para outro assistente (ChatGPT, Claude…) e colar a resposta</button>
+  <div class="divi"></div>
   ${wcCamposEditHTML('ed-',ficha,origens)}
   ${wcPrecosEditHTML(ficha.precos,ficha.preco_medio)}`;
   _wcRefAuto=null;
@@ -1534,41 +1536,101 @@ async function wcGuardarEdicao(){
    ══════════════════════════════════════════════ */
 const FN_CATALOGO_FOTO=SB_URL+'/functions/v1/catalogo-foto';
 
+/* O VINHO NOVO ABRE COMPACTO (27/09/2026, o dono das apps — o mesmo desenho
+   da Garrafeira): nome, colheita, cor e o produtor (opcional), e duas
+   saídas. "Procurar informação" pergunta primeiro ao catálogo que vinhos
+   com este nome já lá estão (`winecatalog.colheitas`) — e aqui, que É o
+   catálogo, um candidato quer dizer "este vinho já existe": abre-se a
+   ficha dele em vez de nascer um duplicado. "Nenhum destes" (ou nenhum
+   candidato) cria a linha e segue para a pesquisa. "Preencher à mão" abre
+   o formulário inteiro (`nv-resto`). A leitura do rótulo por fotografia
+   fica à vista nas duas. */
 function wcAbrirNovo(){
   if(!isAdmin())return;
   const box=document.getElementById('novo-corpo');
   if(!box)return;
-  box.innerHTML=`<p class="wc-note">Só o <strong>nome</strong> é obrigatório. O resto fica para
-      <strong>Procurar informação</strong> tratar a seguir — ou preenche à mão o que já souberes,
-      por exemplo lido no rótulo.</p>
+  box.innerHTML=`
     <div class="ed-campo"><label for="nv-nome">Nome *</label>
       <input type="text" id="nv-nome" placeholder="ex.: Quinta do Crasto Reserva"></div>
-    <div class="ed-campo"><label for="nv-produtor">Produtor</label>
-      <input type="text" id="nv-produtor"></div>
     <div class="ed-campo"><label for="nv-ano">Colheita (ano, vazio se não tiver)</label>
       <input type="text" id="nv-ano" inputmode="numeric" oninput="wcJanelaSincronizar('nv-',this.value)"></div>
-
-    <div class="divi"></div>
-    <p class="wc-note">Duas portas para encher o resto — com o nome (e produtor/ano, se
-      souberes) já dá para as duas.</p>
+    <div class="ed-campo"><label for="nv-cor">Cor *</label>
+      <select id="nv-cor"><option value="">— escolhe a cor —</option>${WC_TIPOS.filter(Boolean).map(t=>
+        `<option value="${esc(t)}">${esc(t)}</option>`).join('')}</select></div>
+    <div class="ed-campo"><label for="nv-produtor">Produtor (opcional — ajuda a acertar)</label>
+      <input type="text" id="nv-produtor"></div>
     <label class="btn-n larg" style="text-align:center;cursor:pointer;display:block">
       📷 Ler o rótulo de uma fotografia
       <input type="file" accept="image/*" id="nv-foto" style="display:none" onchange="wcNovoFoto(this)">
     </label>
     <p class="wc-note" id="nv-foto-status"></p>
-    <button class="btn-n larg" id="nv-procurar" onclick="wcNovoProcurar()">🔎 Procurar informação</button>
 
-    <div class="divi"></div>
-    ${wcCamposEditHTML('nv-',{},{})}
+    <div id="nv-botoes" class="macoes fim">
+      <button class="btn-n" onclick="wcNovoMao()">✏️ Preencher à mão</button>
+      <button class="btn-prim auto" id="nv-procurar" onclick="wcNovoCandidatos()">🔎 Procurar informação</button>
+    </div>
+    <div id="nv-cand"></div>
 
-    <div class="macoes fim">
-      <button class="btn-n" onclick="fecharModal('modal-novo')">Cancelar</button>
-      <button class="btn-prim auto" id="nv-criar" onclick="wcCriarVinho()">Criar vinho</button>
+    <div id="nv-resto" class="ed-oculto">
+      <div class="divi"></div>
+      ${wcCamposEditHTML('nv-',{},{})}
+      <div class="macoes fim">
+        <button class="btn-n" onclick="fecharModal('modal-novo')">Cancelar</button>
+        <button class="btn-n" onclick="wcNovoProcurar()">🔎 Criar e procurar informação</button>
+        <button class="btn-prim auto" id="nv-criar" onclick="wcCriarVinho()">Criar vinho</button>
+      </div>
     </div>`;
   wcJanelaSincronizar('nv-',null);
   abrirModal('modal-novo');
   const nomeEl=document.getElementById('nv-nome');
   if(nomeEl)nomeEl.focus();
+}
+/* A cor do formulário compacto vai para o campo da ficha (`nv-tipo`), que é
+   o que a `criar` lê. */
+function wcNovoCor(){
+  const c=document.getElementById('nv-cor'), t=document.getElementById('nv-tipo');
+  if(c&&t&&c.value)t.value=c.value;
+  return c?c.value:'';
+}
+function wcNovoMao(){
+  wcNovoCor();
+  document.getElementById('nv-resto')?.classList.remove('ed-oculto');
+  const b=document.getElementById('nv-botoes');if(b)b.style.display='none';
+  const c=document.getElementById('nv-cand');if(c)c.innerHTML='';
+}
+let _wcNovoCand=[];
+async function wcNovoCandidatos(){
+  if(!isAdmin())return;
+  const {nome,produtor,ano}=wcNovoIdentidade();
+  if(!nome){toast('Falta o nome.',1);return;}
+  const cor=wcNovoCor();
+  if(!cor){toast('Escolhe primeiro a cor.',1);document.getElementById('nv-cor')?.focus();return;}
+  const b=document.getElementById('nv-procurar');
+  if(b){b.disabled=true;b.textContent='A ver o catálogo…';}
+  let lista=[];
+  try{ lista=await catRpc('colheitas',{p_nome:nome,p_produtor:produtor,p_tipo:cor})||[]; }
+  catch(e){ lista=[]; }
+  if(b){b.disabled=false;b.textContent='🔎 Procurar informação';}
+  _wcNovoCand=(lista||[]).filter(c=>!c.tipo||c.tipo.toLowerCase()===cor.toLowerCase())
+    .sort((x,y)=>(y.ano===ano)-(x.ano===ano));
+  // Nenhum candidato: não há nada a escolher — cria-se e pesquisa-se.
+  if(!_wcNovoCand.length){toast('Não está no catálogo — a criar e a pesquisar');return wcNovoProcurar();}
+  const L=_wcNovoCand;
+  document.getElementById('nv-cand').innerHTML=`
+    <p class="wc-note" style="font-size:13.5px;color:var(--tx)"><strong>${L.length===1?'Este vinho já está no catálogo. É o mesmo?':`Encontrei ${L.length} vinhos no catálogo. É algum destes?`}</strong></p>
+    <div class="nv-cands">${L.map((c,i)=>{
+      const castas=Array.isArray(c.castas)?c.castas.join(', '):(c.castas||'');
+      const igual=ano!=null&&c.ano===ano;
+      return `<button class="nv-cand${igual?' igual':''}" onclick="wcNovoAbrirCand(${i})"><b>${c.ano!=null?esc(String(c.ano)):'s/ ano'}</b>
+        <span>${esc(c.nome)}${c.produtor?' · '+esc(c.produtor):''}</span>
+        <i>${castas?esc(castas):'castas por saber'}${c.regiao?' · '+esc(c.regiao):''} · abrir a ficha</i></button>`;}).join('')}</div>
+    ${ano!=null&&!L.some(c=>c.ano===ano)?`<p class="wc-note">A colheita ${esc(String(ano))} ainda não está no catálogo — "Nenhum destes" cria-a.</p>`:''}
+    <div class="macoes fim"><button class="btn-n" onclick="wcNovoProcurar()">Nenhum destes — criar e pesquisar</button></div>`;
+}
+async function wcNovoAbrirCand(i){
+  const c=_wcNovoCand[i];if(!c)return;
+  fecharModal('modal-novo');
+  await wcVerFicha(c.id);
 }
 
 /* Reduz a foto no browser antes de enviar — o mesmo truque da Garrafeira
@@ -1645,6 +1707,7 @@ async function wcNovoFoto(input){
     if(d.produtor)document.getElementById('nv-produtor').value=d.produtor;
     if(d.ano){document.getElementById('nv-ano').value=String(d.ano);wcJanelaSincronizar('nv-',d.ano);}
     const campos=d.campos||{};
+    if(campos.tipo){const c=document.getElementById('nv-cor');if(c)c.value=campos.tipo;}
     for(const [k,,tp] of WC_EDIT){
       if(!(k in campos)||tp==='img')continue;
       const el=document.getElementById('nv-'+k);
@@ -1671,6 +1734,7 @@ function wcNovoIdentidade(){
 }
 async function wcCriarVinho(){
   if(!isAdmin())return;
+  wcNovoCor();
   const {nome,produtor,ano}=wcNovoIdentidade();
   if(!nome){toast('Falta o nome.',1);return;}
   const b=document.getElementById('nv-criar');
@@ -1699,6 +1763,7 @@ async function wcCriarVinho(){
    só que a linha nasce um instante antes de se bater a ela. */
 async function wcNovoProcurar(){
   if(!isAdmin())return;
+  wcNovoCor();
   const {nome,produtor,ano}=wcNovoIdentidade();
   if(!nome){toast('Falta o nome.',1);return;}
   const b=document.getElementById('nv-procurar');
@@ -1829,7 +1894,7 @@ function wcAbrirProcurar(){
     <button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button>
     <button class="btn-prim auto" id="pr-ir" onclick="wcProcurarArrancar()">🔎 Pesquisar</button>
   </div>
-  <button class="btn-n larg" onclick="wcProcurarManual()">✍️ Pesquisa manual — grátis, colar a resposta de um assistente de IA</button>`;
+`;
   box.innerHTML=h;
   wcProcTitulo('Procurar informação');
   wcProcContar();
@@ -2100,20 +2165,17 @@ function wcRevisaoCorpo(res,o){
   const igual=nIg?`<p class="wc-note">${nIg===1?'Mais 1 campo veio':'Mais '+nIg+' campos vieram'} igual ao que
     já está (${esc(r.iguais.map(wcRvNome).join(', '))}).</p>`:'';
   let h='';
-  /* As mesmas etapas e as mesmas palavras da Garrafeira: o que a pesquisa
-     fez, numa frase, e — depois de uma pesquisa com IA — a pergunta da
-     seguinte, a avançada (a profunda: Serper, e o Gemini só a ler). */
+  /* As mesmas palavras da Garrafeira: o que a pesquisa fez, numa frase. */
   const manual=res.pesquisaWeb!==true&&res.pesquisaWeb!==false;
-  const quem=manual?'A resposta colada':res.profunda?'A pesquisa avançada':'A pesquisa com IA';
+  // Desde 27/09/2026 a pesquisa automática é uma só (o Serper e depois o
+  // grounding pelo que falta, na Edge Function): já não há "avançada".
+  const quem=manual?'A resposta colada':'A pesquisa com IA';
   const n=r.linhas.length;
   h+=`<p class="wc-note" style="font-size:13.5px;color:var(--tx)">${quem} terminou e ${n
     ?`trouxe informação nova em <b>${n}</b> ${n===1?'campo':'campos'}.`:'não trouxe nada de novo.'}</p>`;
   if(res.aviso)h+=`<div class="rv-aviso">⚠️ ${esc(res.aviso)}</div>`;
-  if(o.profunda&&!manual&&!res.profunda){
-    h+=`<div class="rv-memoria"><span>${res.pesquisaWeb===false
-        ?'🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net. '
-        :''}<b>Pretendes fazer a pesquisa avançada?</b> Pesquisa mesmo no Google (o Vivino incluído) e a IA só lê o que se encontrou.</span>
-      <button class="btn-n" onclick="wcProcurarProfunda()">🔬 Pesquisa avançada</button></div>`;
+  if(!manual&&res.pesquisaWeb===false){
+    h+=`<div class="rv-memoria"><span>🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net — confere antes de guardar.</span></div>`;
   }
   if(r.linhas.length){
     h+=`<p class="wc-note"><strong>Ainda não foi gravado nada.</strong> Só entra o que ficar marcado.
@@ -2131,7 +2193,7 @@ function wcRevisaoCorpo(res,o){
     `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join(' · ')}</div>`;
   h+=`<div class="rv-fontes"><i>${
     res.pesquisaWeb===false?'⚠️ Isto saiu da memória do modelo, sem pesquisa na net — confere tudo antes de aceitar.'
-    :res.pesquisaWeb===true?(res.profunda?'Pesquisa avançada: tirado só dos resultados do Google.':'Pesquisado no Google.')+
+    :res.pesquisaWeb===true?(res.profunda?'Pesquisado no Google (e lido dos resultados).':'Pesquisado no Google.')+
       ' Leitura automática de páginas da net — vale como ponto de partida, não como certeza.'
     :'Resposta colada de um assistente de IA — confere antes de aceitar.'}${res.modelo?` · ${esc(res.modelo)}`:''}</i></div>`;
   return h;
@@ -2328,6 +2390,19 @@ Se não conseguires identificar o vinho de todo, responde {"encontrado": false, 
 
 let _wcManualSites=[];
 let _wcManualColado=null;   // {vinhoId, texto} — um JSON que falhou não obriga a colar outra vez
+/* A resposta colada de outro assistente vive no EDITAR (27/09/2026, o dono
+   das apps): é aí, ao lado de onde se escreve à mão, que se procura quem não
+   quer gastar IA. Passa pela MESMA porta de sempre (`pesquisa_criar` + a
+   `catalogo-info` com `resposta`) e pela mesma revisão — só se entra nela
+   por outro sítio. Pede os campos vazios; sem nenhum vazio, pede todos. */
+function wcEditarManual(){
+  if(!_wcFicha||!isAdmin())return;
+  fecharModal('modal-editar');
+  wcAbrirProcurar();
+  const cx=wcProcCaixas();
+  if(!cx.some(c=>c.checked))cx.forEach(c=>c.checked=true);
+  wcProcurarManual();
+}
 function wcProcurarManual(){
   if(!_wcFicha||!isAdmin())return;
   const campos=wcProcCaixas().filter(c=>c.checked).map(c=>c.value);

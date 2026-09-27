@@ -807,7 +807,8 @@ BEGIN
              winecatalog.base_nome(p_nome)                                         AS bn,
              winecatalog.sem_cor(winecatalog.chave_base(p_nome, COALESCE(p_produtor,''))) AS bs,
              winecatalog.sem_cor(winecatalog.base_nome(p_nome))                    AS bns,
-             winecatalog.tokens(COALESCE(p_tipo,''))                               AS cor
+             winecatalog.tokens(COALESCE(p_tipo,''))                               AS cor,
+             winecatalog.tokens(regexp_replace(COALESCE(p_produtor,''), '\s*\([^)]*\)', ' ', 'g')) AS pt
     ),
     cand AS (
       SELECT DISTINCT COALESCE(a.id_para, v.id) AS id
@@ -822,15 +823,29 @@ BEGIN
                OR (v.base_nome IS NOT NULL AND winecatalog.sem_cor(v.base_nome) IN (q.bs, q.bns)))
               AND (cardinality(q.cor) = 0 OR COALESCE(v.ficha ->> 'tipo','') = ''
                    OR winecatalog.tokens(v.ficha ->> 'tipo') = q.cor))
+    ),
+    -- O PRODUTOR ajuda como um "contém" (27/09/2026, o dono das apps):
+    -- "Morais Rocha" bate com "Morais Rocha Wines" e vice-versa. Se algum
+    -- candidato bate, ficam só esses; se nenhum bate, ficam todos (o
+    -- produtor escrito pode estar errado, e é para isso que a lista existe).
+    marc AS (
+      SELECT v, (cardinality(q.pt) = 0 OR COALESCE(v.produtor,'') = ''
+                 OR q.pt <@ winecatalog.tokens(v.produtor)
+                 OR winecatalog.tokens(v.produtor) <@ q.pt) AS bate
+        FROM q, cand JOIN winecatalog.vinhos v ON v.id = cand.id
     )
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
-             'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
-             'tipo', v.ficha ->> 'tipo',
-             'campos', (SELECT count(*) FROM jsonb_object_keys(v.ficha)),
-             'vivino_nota', v.ficha -> 'vivino_nota',
-             'vivino_nota_global', v.ficha -> 'vivino_nota_global')
-           ORDER BY v.ano DESC NULLS LAST, v.id), '[]'::jsonb)
-      FROM cand JOIN winecatalog.vinhos v ON v.id = cand.id
+             'id', (m.v).id, 'nome', (m.v).nome, 'produtor', (m.v).produtor, 'ano', (m.v).ano,
+             'tipo', (m.v).ficha ->> 'tipo',
+             'castas', (m.v).ficha -> 'castas',
+             'regiao', (m.v).ficha ->> 'regiao',
+             'campos', (SELECT count(*) FROM jsonb_object_keys((m.v).ficha)),
+             'vivino_nota', (m.v).ficha -> 'vivino_nota',
+             'vivino_nota_global', (m.v).ficha -> 'vivino_nota_global',
+             'produtorBate', m.bate)
+           ORDER BY m.bate DESC, (m.v).ano DESC NULLS LAST, (m.v).id), '[]'::jsonb)
+      FROM marc m
+     WHERE m.bate OR NOT EXISTS (SELECT 1 FROM marc x WHERE x.bate)
   );
 END;
 $$;
