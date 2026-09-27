@@ -34,7 +34,7 @@
 // IDS=1,2,3 (só estes vinhos, escolhidos no painel), NOVO=[…] (vinhos novos),
 // APLICAR=<ficheiro> (grava uma simulação revista), PARAR=<ficheiro> (o
 // botão "Parar" do painel: se o ficheiro existir, pára entre dois vinhos),
-// SITES=vivino,garrafeira_nacional,granvine,vinha,portugal_vineyards (onde
+// SITES=vivino,garrafeira_nacional,granvine,vinha (onde
 // se procura; vazio = todos).
 // =====================================================================
 import { pathToFileURL } from "node:url";
@@ -55,8 +55,8 @@ const SERPER_URL = process.env.SEARCH_API_URL || "https://google.serper.dev/sear
 //                 (vazia, ou que também veio do Vivino). O preço médio só
 //                 muda se NÃO tiver vindo de uma loja: sem as lojas nesta
 //                 corrida, não há nada que diga que o delas está errado;
-//  · "precos"   — só as lojas (GN → Granvine → Vinha.pt → Portugal
-//                 Vineyards), pela ordem, a parar na primeira que tenha o
+//  · "precos"   — só as lojas (GN → Granvine → Vinha.pt), pela ordem,
+//                 a parar na primeira que tenha o
 //                 vinho; o preço médio fica com esse. Não abre o Vivino nem
 //                 regista verificação.
 // LOJAS=false (o nome antigo) é o mesmo que MODO=vivino.
@@ -870,11 +870,9 @@ function precoDaPagina(info, url, { vivino = false } = {}) {
   return { preco: Math.round(preco * 100) / 100, url: String(url || "").split(/[?#]/)[0] };
 }
 
-// ── As lojas: Garrafeira Nacional, Granvine, Vinha.pt, Portugal Vineyards ─
+// ── As lojas: Garrafeira Nacional, Granvine, Vinha.pt ─────────────────
 // A prioridade do preço, decidida pelo dono (25/09/2026, e a Vinha.pt no
-// mesmo dia; a Portugal Vineyards a 27/09/2026, "tem vinhos que as outras
-// não têm"): Garrafeira Nacional → Granvine → Vinha → Portugal Vineyards →
-// Vivino. Guardam-se
+// mesmo dia): Garrafeira Nacional → Granvine → Vinha → Vivino. Guardam-se
 // TODOS em `precos` (cada um com o link, a colheita e a data), e o
 // `preco_medio` fica com o primeiro que houver, com a origem da loja.
 //
@@ -884,6 +882,9 @@ function precoDaPagina(info, url, { vivino = false } = {}) {
 // post_type=product` — os outros endereços davam 404). Uma loja nova pode
 // levar vários endereços em `procuras` e uma `casa` para o formulário de
 // procura da página inicial; o que resultou fica no `detalhe` (`como`).
+// A Portugal Vineyards esteve cá umas horas (27/09/2026) e saiu: a página
+// do produto responde 403 com um desafio anti-bots ("Executando verificação
+// de segurança"), e isso não se contorna.
 const LOJAS = [
   { id: "garrafeira_nacional", nome: "Garrafeira Nacional", origem: "loja-garrafeira-nacional",
     procuras: [q => `https://www.garrafeiranacional.com/catalogsearch/result/?q=${encodeURIComponent(q)}`] },
@@ -892,21 +893,8 @@ const LOJAS = [
   { id: "vinha", nome: "Vinha.pt", origem: "loja-vinha", casa: "https://www.vinha.pt/",
     // WooCommerce: confirmado na 1.ª corrida (as outras davam 404).
     procuras: [q => `https://www.vinha.pt/?s=${encodeURIComponent(q)}&post_type=product`] },
-  // PrestaShop 1.6 (os produtos são /pt/<categoria>/<id>-<nome>-<ean>.html e
-  // a procura é `controller=search&search_query=`, visto nos resultados do
-  // Google). Escrita sem a ver, como a Vinha.pt: três endereços, e o
-  // formulário da página inicial se nenhum der; o `como` diz qual resultou.
-  // Os nomes vêm em INGLÊS ("Cartuxa Red 2019") — as regras de nome já
-  // conhecem red/white/reserve.
-  { id: "portugal_vineyards", nome: "Portugal Vineyards", origem: "loja-portugal-vineyards",
-    casa: "https://www.portugalvineyards.com/pt/",
-    procuras: [
-      q => `https://www.portugalvineyards.com/pt/pesquisa?controller=search&orderby=position&orderway=desc&search_query=${encodeURIComponent(q)}`,
-      q => `https://www.portugalvineyards.com/pt/search?controller=search&orderby=position&orderway=desc&search_query=${encodeURIComponent(q)}`,
-      q => `https://www.portugalvineyards.com/index.php?controller=search&search_query=${encodeURIComponent(q)}`,
-    ] },
 ];
-const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "portugal_vineyards", "vivino"];
+const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "vivino"];
 // Os SÍTIOS onde se procura (SITES=vivino,garrafeira_nacional,…; 27/09/2026,
 // pedido do dono: por omissão os cinco, e um visto por sítio no painel para
 // procurar só em alguns). Vazio, ou nenhum conhecido, é todos. Um sítio que
@@ -1611,7 +1599,6 @@ function linksDoVinho(lista) {
     } else if (/(^|\.)garrafeiranacional\.com$/.test(h)) out.lojas.garrafeira_nacional = u;
     else if (/(^|\.)granvine\.com$/.test(h)) out.lojas.granvine = u;
     else if (/(^|\.)vinha\.pt$/.test(h)) out.lojas.vinha = u;
-    else if (/(^|\.)portugalvineyards\.com$/.test(h)) out.lojas.portugal_vineyards = u;
     else out.ignorados.push(u);
   }
   return out;
@@ -1626,7 +1613,7 @@ async function vinhosNovos(lista) {
     // Os links que o admin colou: foi ele que os abriu, e valem mais do que
     // uma procura. O do Vivino substitui o que houver (se o vinho já existir).
     const lk = linksDoVinho(x.links);
-    if (lk.ignorados.length) console.log(`"${novo.nome}": links postos de lado (não são do Vivino /w/<nº>, GN, Granvine, Vinha.pt nem Portugal Vineyards): ${lk.ignorados.join(" ")}`);
+    if (lk.ignorados.length) console.log(`"${novo.nome}": links postos de lado (não são do Vivino /w/<nº>, GN, Granvine nem Vinha.pt): ${lk.ignorados.join(" ")}`);
     const extra = { links_lojas: lk.lojas, ...(lk.vivino ? { vivino_url: lk.vivino, vivino_confiado: true } : {}) };
     const ja = await rpc("vivino_achar", { p_nome: novo.nome, p_produtor: novo.produtor, p_ano: novo.ano });
     if (ja) {

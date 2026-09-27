@@ -727,31 +727,21 @@ resultou — fixa-se depois. Os produtos lêem-se pelos seletores das
 plataformas e, sem nenhum, pelos links da loja com uma palavra distintiva do
 nosso nome (`produtosDaPagina`).
 
-**A Portugal Vineyards** (27/09/2026, pedido do dono: "tem vinhos que não
-existem na GN, Granvine ou Vinha"): a 4.ª loja, antes do Vivino na ordem do
-preço (`PRIORIDADE_PRECO`, `WC_PRECO_PRIORIDADE` na app), origem
-`loja-portugal-vineyards` (força 3), chave `portugal_vineyards` no `precos`.
-É **PrestaShop 1.6** (produtos em `/pt/<categoria>/<id>-<nome>-<ean>.html`,
-procura `controller=search&search_query=`, visto nos resultados do Google)
-e foi **escrita sem a ver** — a rede daqui não lá chega, como com a Vinha.pt:
-três endereços de procura e o formulário, os seletores do tema de base
-(`.ajax_block_product`, `a.product-name`) e o preço em `#our_price_display`;
-o `como` do `detalhe.lojas` diz o que resultou. Duas coisas que ela obrigou a
-mudar no resto: **os nomes vêm em inglês** mesmo em `/pt/` ("Cartuxa Reserve
-Red 2017") — "reserve" e "grand" passaram às genéricas e a `mencao` lê
-"Grand Reserve" como grande reserva (antes lia "reserva", e o "Cartuxa
-Reserva" casava com um "Grand Reserve"); e **as fotografias do PrestaShop
-chamam-se `…-large_default/…`**, e o `imagemDe` recusava tudo o que tivesse
-"default" — agora só a palavra solta (`/default/`, `pt-default-…`, que é a
-imagem por omissão dela). A `garrafeira.precos_lojas` percorre as lojas do
-`precos` todas, e por isso a Garrafeira recebe esta sem mudar nada lá — mas
-o nome da loja no ecrã de lá é do repo Garrafeira.
-**Na 1.ª corrida recusou as páginas** ("recusou as páginas — salto-a no resto
-da corrida"), e o registo não dizia porquê. Agora uma recusa leva a
-`recusa` no `detalhe.lojas` (`recusaDe`: o endereço, o HTTP, o título e o
-princípio do texto, e o `motivo` — `HTTP 403`/`429` ou a palavra do regex
-que apanhou) e o registo mostra-o. É o que separa um Cloudflare a sério
-(não se contorna, como no Vivino) de um falso positivo do `bloqueio`.
+**A Portugal Vineyards esteve cá umas horas e saiu** (27/09/2026). Entrou a
+pedido do dono ("tem vinhos que não existem na GN, Granvine ou Vinha") como
+4.ª loja, e na 1.ª corrida a PÁGINA DO PRODUTO respondeu **403 com um desafio
+anti-bots** ("Executando verificação de segurança… proteção contra bots
+maliciosos") — a procura ainda passou. Não se contorna (a regra do Vivino),
+e o dono: "não vale a pena complicar, removemos mesmo". Saiu do script, do
+painel e da app; nunca chegou a gravar nada (zero `precos`, zero origens). O
+que ficou por ela e vale para as outras: "reserve"/"grand" nas genéricas e
+"Grand Reserve" como grande reserva na `mencao`; o `imagemDe` só recusa a
+palavra "default" solta (não o `large_default` do PrestaShop); e a
+**`recusaDe`** — uma loja recusada leva no `detalhe.lojas` a `recusa` (o
+endereço, o HTTP, o título, o princípio do texto e o `motivo`), e o registo
+mostra-a: foi o que separou este Cloudflare a sério de um falso positivo do
+`bloqueio`. A `loja-portugal-vineyards` ficou na `forca()` (sem dados, não
+faz mal nenhum).
 
 **O que a 1.ª corrida com lojas ensinou (25/09/2026):**
 - **A casta no nome é identidade** (`castasBatem`): o "Casa Ermelinda
@@ -951,7 +941,7 @@ Sem as lojas nesta corrida não há nada que diga que o preço delas está
 errado, por isso **um preço médio com origem `loja-*` não se toca**; os
 outros podem passar ao do Vivino (com a regra da metade ao dobro).
 **Só preços** (`precos`): não abre o Vivino nem regista verificação; GN →
-Granvine → Vinha.pt → Portugal Vineyards, pára na PRIMEIRA que tem o vinho, e o preço médio fica
+Granvine → Vinha.pt, pára na PRIMEIRA que tem o vinho, e o preço médio fica
 com esse (um preço antigo de uma loja que hoje não o encontrou não conta).
 **Uma imagem que veio do Vivino segue o link validado** (nos dois modos que
 abrem o Vivino): se o link antigo era de outro vinho, a garrafa também era.
@@ -967,7 +957,7 @@ outra colheita — aceite, como no preço. `LOJAS=false` (o nome
 antigo) continua a valer `MODO=vivino`.
 **E onde se procura é outro visto** (`SITES`, 27/09/2026, pedido do dono:
 "por defeito os cinco sites, mas um ticker para só alguns"): no painel há um
-visto por sítio — Vivino, GN, Granvine, Vinha.pt, Portugal Vineyards, todos
+visto por sítio — Vivino, GN, Granvine, Vinha.pt, todos
 marcados de cada vez que se abre — e o "Procurar" passou a "Ler: Tudo · Só
 preços". O "Só o Vivino" de antes é "Tudo" só com o Vivino marcado (a ficha
 toda do que a página do Vivino diz). Sem o Vivino marcado não se abre nem se

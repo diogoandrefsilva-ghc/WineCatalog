@@ -2,7 +2,7 @@
 
 O script `vivino-verificar.mjs` confere os links do Vivino do catálogo, **sem
 IA**, lê a nota e as avaliações, e (no teu computador) o **preço na Garrafeira
-Nacional, na Granvine, na Vinha.pt e na Portugal Vineyards** — e o que as páginas dizem do vinho
+Nacional, na Granvine e na Vinha.pt** — e o que as páginas dizem do vinho
 (fotografia, castas, região, teor, estágio, harmonização, notas de prova), só para os
 campos que o catálogo ainda tem **vazios**. **Escreve no catálogo** o que encontra com certeza;
 cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na ficha
@@ -17,7 +17,7 @@ sem colheita a página já é a de todas, e só essa se grava. As apps mostram a
 da colheita a partir de 100 avaliações, e a global abaixo disso.
 
 O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vinha.pt →
-Portugal Vineyards → Vivino. Ficam todos guardados na ficha ("Preços nas lojas"), com o link, a colheita
+Vivino. Ficam todos guardados na ficha ("Preços nas lojas"), com o link, a colheita
 e a data. Se a loja só tiver outra colheita, aceita-se e fica escrita ao lado.
 
 Tem dois motores:
@@ -93,7 +93,7 @@ página não o perde).
      vai correr e desmarcares algum. **Ver só os escolhidos** mostra a
      escolha, pela ordem em que corre. Até 50 de cada vez.
   3. **Correr** — **onde procurar**: um visto por sítio (Vivino, Garrafeira
-     Nacional, Granvine, Vinha.pt, Portugal Vineyards — todos marcados de
+     Nacional, Granvine, Vinha.pt — todos marcados de
      cada vez que abres o painel; "todos" · "nenhum"); **o que ler** (ver
      abaixo); **"trocar a imagem destes,
      venha de onde vier"** (os escolhidos ficam com a imagem da primeira
@@ -105,7 +105,7 @@ página não o perde).
 
   A lista mostra a **miniatura da imagem** de cada vinho (e de onde veio:
   Vivino, loja, vossa, outro site; "✕" se já não abre) e **os preços de
-  cada sítio** (GN, Granvine, Vinha.pt, Portugal Vineyards, Vivino — o que é o preço de
+  cada sítio** (GN, Granvine, Vinha.pt, Vivino — o que é o preço de
   referência a negrito com ★; se veio de outro sítio, uma linha
   "referência" diz de onde; passa o rato para ver o nome na loja, a colheita
   e a data). Corre sempre só o que está marcado: o painel já não escolhe
@@ -121,12 +121,12 @@ página não o perde).
     que já lá estava fica, e conta para o preço de referência como sempre.
   - **Ler: Tudo** — a ficha toda (só preenche campos vazios).
   - **Ler: Só preços (e imagem)** — não abre o Vivino (o visto dele fica
-    apagado): as lojas marcadas, pela ordem GN → Granvine → Vinha.pt →
-    Portugal Vineyards, e pára na primeira que tenha o vinho; o preço médio
+    apagado): as lojas marcadas, pela ordem GN → Granvine → Vinha.pt,
+    e pára na primeira que tenha o vinho; o preço médio
     fica com esse, e a imagem dessa loja entra se a atual estiver vazia ou
     tiver vindo do Vivino. Precisa de pelo menos uma loja marcada.
   - **A imagem**, em qualquer modo, segue a ordem das lojas (GN → Granvine
-    → Vinha.pt → Portugal Vineyards) e só depois o Vivino: a das lojas é mais nítida e igual de
+    → Vinha.pt) e só depois o Vivino: a das lojas é mais nítida e igual de
     vinho para vinho. Uma imagem que veio do Vivino é trocada pela da loja;
     a vossa fotografia e a de outros sites nunca.
 - **Registo** — uma linha por vinho, enquanto corre, e por cima uma **barra**
@@ -155,7 +155,7 @@ página não o perde).
   simulação: o vinho só é criado quando a gravares. Se já existir,
   enriquece o que lá está.
   Em **Links (opcional)** podes colar os endereços que já tens (Vivino,
-  Garrafeira Nacional, Granvine, Vinha.pt, Portugal Vineyards — separados por espaço): o script
+  Garrafeira Nacional, Granvine, Vinha.pt — separados por espaço): o script
   abre-os diretamente em vez de procurar, e o nome não os recusa (só a cor e
   a colheita contam). O do Vivino tem de ser o de um vinho (`/w/<nº>`). Sem
   produtor, propõe o que a página do Vivino diz (a adega) — aparece na
@@ -270,7 +270,7 @@ Notas:
   verificados, depois os vistos há mais tempo — é a do GitHub e do
   `npm run vivino`; no painel, os pedidos são o filtro **Pedidos na app**.
 - Sem o painel (Mac, ou à mão): `npm run vivino`, com `LIMITE=`, `ENSAIO=true`,
-  `MODO=completo|vivino|precos` e `SITES=vivino,garrafeira_nacional,granvine,vinha,portugal_vineyards`
+  `MODO=completo|vivino|precos` e `SITES=vivino,garrafeira_nacional,granvine,vinha`
   (vazio = todos) no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
   simulação revista à mão (põe `"aplicar": false` no que não queres).
 - O painel só escuta neste computador (127.0.0.1) e cada pedido que corre o

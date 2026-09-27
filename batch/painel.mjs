@@ -38,8 +38,8 @@ const PARAR = path.join(DIR, ".parar");
 // vivino-verificar.mjs; o "vivino" ainda se aceita). Outra coisa vale "completo".
 function modoPesquisa(x) { return ["completo", "vivino", "precos"].includes(x) ? x : "completo"; }
 // ONDE se procura (SITES no script; 27/09/2026, pedido do dono: por omissão
-// os cinco, com um visto por sítio para procurar só em alguns).
-const SITIOS = ["vivino", "garrafeira_nacional", "granvine", "vinha", "portugal_vineyards"];
+// todos, com um visto por sítio para procurar só em alguns).
+const SITIOS = ["vivino", "garrafeira_nacional", "granvine", "vinha"];
 function sitiosDe(opcoes) {
   if (!Array.isArray(opcoes.sitios)) return SITIOS.join(",");
   const l = SITIOS.filter(x => opcoes.sitios.includes(x));
@@ -514,7 +514,7 @@ body.com-modal{overflow:hidden}
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em Simulações. Se já existir, enriquece o que lá está.</p>
-  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine, Vinha.pt ou Portugal Vineyards — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
   <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button></div>
   <div class="correr" style="margin-top:10px">
     <div class="linha sitios" id="novo-sitios"></div>
@@ -711,7 +711,7 @@ function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">�
 // Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
 // vai a negrito com ★. Se o preço médio veio de outro sítio (uma garrafeira,
 // uma pesquisa, reposto à mão), aparece numa linha à parte a dizer de onde.
-const LOJAS_P=[["garrafeira_nacional","GN","loja-garrafeira-nacional"],["granvine","Granvine","loja-granvine"],["vinha","Vinha.pt","loja-vinha"],["portugal_vineyards","P.Vineyards","loja-portugal-vineyards"],["vivino","Vivino","vivino-pagina"]];
+const LOJAS_P=[["garrafeira_nacional","GN","loja-garrafeira-nacional"],["granvine","Granvine","loja-granvine"],["vinha","Vinha.pt","loja-vinha"],["vivino","Vivino","vivino-pagina"]];
 const eur=n=>(Math.round(Number(n)*100)/100).toFixed(2).replace(".",",")+" €";
 function precosHTML(v){
   const ps=v.precos&&typeof v.precos==="object"?v.precos:{};
@@ -827,10 +827,10 @@ const CAMPOS_ED=[
 const ORIGEM_TXT={"catalogo-admin":"à mão (admin)","catalogo-pesquisa":"pesquisa (IA)","garrafeira":"uma garrafeira",
   "garrafeira-bruto":"garrafeira (bruto)","ws-verificacao":"WineSelection (verificação)","ws-sugestao":"WineSelection (sugestão)",
   "vivino-pagina":"página do Vivino","vivino-serper":"Google (Serper)","loja-garrafeira-nacional":"Garrafeira Nacional",
-  "loja-granvine":"Granvine","loja-vinha":"Vinha.pt","loja-portugal-vineyards":"Portugal Vineyards","lojas-script":"script (lojas)",
+  "loja-granvine":"Granvine","loja-vinha":"Vinha.pt","lojas-script":"script (lojas)",
   "vinho-info-premium":"Garrafeira (IA)","vinho-info-gratis":"Garrafeira (pesquisa)","reposto":"reposto à mão"};
-const NOME_LOJA={garrafeira_nacional:"Garrafeira Nacional",granvine:"Granvine",vinha:"Vinha.pt",portugal_vineyards:"Portugal Vineyards",vivino:"Vivino"};
-const PRIORIDADE=["garrafeira_nacional","granvine","vinha","portugal_vineyards","vivino"];
+const NOME_LOJA={garrafeira_nacional:"Garrafeira Nacional",granvine:"Granvine",vinha:"Vinha.pt",vivino:"Vivino"};
+const PRIORIDADE=["garrafeira_nacional","granvine","vinha","vivino"];
 const JANELA=["beber_de","beber_ate"];
 let VINHO=null,EDITAR=false,MESMO=false;
 const dataFmt=x=>{const t=data(x);return t==null?"":DMA.format(t);};
@@ -1029,7 +1029,7 @@ async function mesmoE(alvo){
 }
 
 // ── Onde procurar ── (um visto por sítio; por omissão, todos)
-const SITIOS_P=[["vivino","Vivino"],["garrafeira_nacional","Garrafeira Nacional"],["granvine","Granvine"],["vinha","Vinha.pt"],["portugal_vineyards","Portugal Vineyards"]];
+const SITIOS_P=[["vivino","Vivino"],["garrafeira_nacional","Garrafeira Nacional"],["granvine","Granvine"],["vinha","Vinha.pt"]];
 function sitiosHTML(p){
   document.getElementById(p+"-sitios").innerHTML='<span class="rot">Onde procurar:</span>'+
     SITIOS_P.map(([id,n])=>'<label><input type="checkbox" class="sitio-'+p+'" value="'+id+'" checked> '+esc(n)+'</label>').join("")+
