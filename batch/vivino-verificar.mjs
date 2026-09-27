@@ -865,7 +865,11 @@ const LOJAS = [
 ];
 const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "vivino"];
 // Garrafas que não são "a" garrafa: outro tamanho, ou mais do que uma.
-const NAO_E_GARRAFA = /magnum|jeroboam|\b1[.,]5\s?l\b|\b150\s?cl\b|\b3\s?l\b|\b300\s?cl\b|\b37[.,]5\s?cl\b|\b375\s?ml\b|\b50\s?cl\b|\b500\s?ml\b|\bcaixa\b|\bpack\b|\b\d+\s?x\s?75|\b\d+\s?garrafas\b/i;
+// Qualquer volume que não seja o de uma garrafa (0,75 L, 75 cl, 750 ml): a
+// Granvine escreve "1,5Lt", e o "Cartuxa Tinto 2020 1,5Lt" (48,89 €) passou
+// por garrafa no Cartuxa 2020; a GN tem 5L, 6L e 15L. O (?<!…) é o que impede
+// de ler o "75L" de dentro do "0,75L".
+const NAO_E_GARRAFA = /magnum|jeroboam|(?<![\d.,])(?!0[.,]75(?!\d))\d+(?:[.,]\d+)?\s?(?:l|lt|lts|litros?)\b|(?<![\d.,])(?!75\s?cl\b)\d+(?:[.,]\d+)?\s?cl\b|(?<![\d.,])(?!750\s?ml\b)\d+\s?ml\b|\bcaixa\b|\bpack\b|\b\d+\s?x\s?75|\b\d+\s?garrafas\b/i;
 function colheitaDe(t) { const m = String(t || "").match(/\b(19[5-9]\d|20[0-4]\d)\b/); return m ? +m[1] : null; }
 // Que endereço de procura resultou em cada loja, nesta corrida.
 const PROCURA_BOA = {};
@@ -963,7 +967,31 @@ async function lerLoja(page, loja, v) {
     if (!pp) { det.sem_preco = true; return { detalhe: det, ficha }; }
     return { achado: { preco: pp.preco, url: colado.split(/[?#]/)[0], colheita: colheitaDe(nomeP), nome: nomeP }, detalhe: det, ficha };
   }
-  for (const q of [...new Set([nome, semCor, soDistintivas])].filter(x => x && x.length >= 3)) {
+  // A página do produto escolhido: o preço e a ficha que ela diz.
+  const abrirEscolhido = async (b, como) => {
+    await pausa();
+    const pg = await abrir(page, b.href);
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
+    const pp = precoDaPagina(pg.info, b.href) || (numero(b.preco) ? { preco: numero(b.preco), url: b.href } : null);
+    const ficha = fichaDosPares(pg.info);
+    det.escolhido = { nome: b.nome, href: b.href, http: pg.status, jsonld: !!pg.info?.ldTem, como,
+      ficha_lida: Object.keys(ficha).length ? ficha : undefined,
+      // Para afinar a leitura: os primeiros rótulos que a página tem.
+      rotulos: (pg.info?.pares || []).slice(0, 25).map(([r]) => r) };
+    if (!pp) { det.sem_preco = true; return { detalhe: det, ficha }; }
+    return { achado: { preco: pp.preco, url: b.href, colheita: b.colheita, nome: b.nome }, detalhe: det, ficha };
+  };
+  // A última tentativa leva a COLHEITA: a GN é estrita, e "Cartuxa Colheita
+  // Tinto" deu as colheitas que calharam (só passou a de 2008, a 49,95 €),
+  // com o 2018, o 2019 e o 2020 lá à venda. Quando a colheita certa não vem,
+  // a de outra fica guardada (`outra`) e salta-se para esta — sem ela, fica a
+  // mais recente das duas, como sempre.
+  const qAno = v.ano && soDistintivas ? `${soDistintivas} ${v.ano}` : null;
+  const consultas = [...new Set([nome, semCor, soDistintivas, qAno])].filter(x => x && x.length >= 3);
+  let outra = null;
+  for (let i = 0; i < consultas.length; i++) {
+    const q = consultas[i];
+    if (q === qAno && outra) await pausa();
     let itens = [], como = null;
     const ordem = PROCURA_BOA[loja.id] != null ? [PROCURA_BOA[loja.id]] : loja.procuras.map((_, k) => k);
     for (const k of ordem) {
@@ -1005,22 +1033,24 @@ async function lerLoja(page, loja, v) {
       const escolhido = r && r.filter(it => aMaisSemAsNossasCastas(v, tituloLimpo(it.nome)).length <= MAX_A_MAIS
         && !NAO_E_GARRAFA.test(`${it.nome} ${it.texto}`))
         .sort((x, y) => (Number(colheitaDe(y.nome) === v.ano) - Number(colheitaDe(x.nome) === v.ano)) || ((colheitaDe(y.nome) || 0) - (colheitaDe(x.nome) || 0)))[0];
-      if (!escolhido) { det.ambiguo = quaseTodos.slice(0, 6).map(it => it.nome); return { detalhe: det }; }
+      if (!escolhido) {
+        if (outra) break;   // a procura com o ano ficou ambígua; a de antes não
+        det.ambiguo = quaseTodos.slice(0, 6).map(it => it.nome); return { detalhe: det };
+      }
       det.desambiguado = "pela casta da ficha";
       b = { ...escolhido, colheita: colheitaDe(escolhido.nome) };
     }
-    await pausa();
-    const pg = await abrir(page, b.href);
-    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
-    const pp = precoDaPagina(pg.info, b.href) || (numero(b.preco) ? { preco: numero(b.preco), url: b.href } : null);
-    const ficha = fichaDosPares(pg.info);
-    det.escolhido = { nome: b.nome, href: b.href, http: pg.status, jsonld: !!pg.info?.ldTem, como,
-      ficha_lida: Object.keys(ficha).length ? ficha : undefined,
-      // Para afinar a leitura: os primeiros rótulos que a página tem.
-      rotulos: (pg.info?.pares || []).slice(0, 25).map(([r]) => r) };
-    if (!pp) { det.sem_preco = true; return { detalhe: det, ficha }; }
-    return { achado: { preco: pp.preco, url: b.href, colheita: b.colheita, nome: b.nome }, detalhe: det, ficha };
+    if (qAno && b.colheita !== v.ano) {
+      if (q !== qAno) {
+        if (!outra) outra = { b, como };
+        i = consultas.indexOf(qAno) - 1;
+        continue;
+      }
+      if (outra && (outra.b.colheita || 0) >= (b.colheita || 0)) ({ b, como } = outra);
+    }
+    return await abrirEscolhido(b, como);
   }
+  if (outra) return await abrirEscolhido(outra.b, outra.como);
   return { detalhe: det };
 }
 
