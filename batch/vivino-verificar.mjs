@@ -1053,7 +1053,8 @@ function tituloLimpo(t) {
 // "Post Reserve Cabernet Sauvignon" — todos a 100% de parecença.
 function aMais(v, titulo) {
   const nossas = new Set([...palavras(v.nome), ...palavras(v.produtor)]);
-  let extra = distintivas(titulo).filter(t => !nossas.has(t));
+  const regiao = new Set(palavrasDaRegiao(v));
+  let extra = distintivas(titulo).filter(t => !nossas.has(t) && !regiao.has(t));
   // Sem produtor no catálogo, o que vem ANTES do nosso nome no título é a
   // adega (o Vivino escreve sempre "Adega Vinho"): o "Sidónio de Sousa
   // Garrafeira" é o "Dulcinea Santos Ferreira Sidónio de Sousa Garrafeira".
@@ -1065,6 +1066,29 @@ function aMais(v, titulo) {
   return extra;
 }
 const MAX_A_MAIS = 1;
+
+// A REGIÃO DO PRÓPRIO VINHO não é uma palavra a mais (27/09/2026). O Vivino
+// escreve "Cartuxa Évora Colheita Tinto", o catálogo "Cartuxa Colheita
+// Tinto" com a região Évora na ficha — e, com uma palavra distintiva só
+// ("Cartuxa", que não aguenta nenhuma a mais), o "Évora" recusava o link
+// certo (/w/76431) nas duas colheitas: "o link abre OUTRO vinho". Contam
+// como nossas as palavras da região e da sub-região da FICHA e, num vinho
+// do Alentejo, as sub-regiões DOC dele (a ficha pode dizer "Alentejo" e o
+// título "Évora"; ou dizer "Évora", que também é Alentejo). Só no título a
+// mais — a parecença continua a olhar só para o nosso nome. E uma palavra
+// que não seja região continua a contar: o "Cartuxa Foral de Évora" tem o
+// "Foral" a mais, e é outro vinho.
+const SUBREGIOES = {
+  Alentejo: "evora borba redondo reguengos vidigueira portalegre moura granja amareleja",
+};
+function palavrasDaRegiao(v) {
+  const f = v?.ficha || {};
+  const txt = [f.regiao, f.sub_regiao].filter(x => typeof x === "string").join(" / ");
+  const ws = palavras(txt);
+  const larga = regiaoDe(txt)
+    || Object.keys(SUBREGIOES).find(r => ws.some(w => SUBREGIOES[r].split(" ").includes(w)));
+  return larga && SUBREGIOES[larga] ? ws.concat(SUBREGIOES[larga].split(" ")) : ws;
+}
 
 // A MENÇÃO separa vinhos da mesma casa, e está na lista das genéricas
 // (sozinha não identifica nada): na 2.ª corrida, "Carm Grande Reserva
@@ -1669,7 +1693,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { canon, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { canon, palavrasDaRegiao, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

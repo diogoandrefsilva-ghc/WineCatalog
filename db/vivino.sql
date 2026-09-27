@@ -446,6 +446,19 @@ BEGIN
      CASE v_rev WHEN 'aceite' THEN 'script' WHEN 'recusado' THEN 'admin (na revisão da simulação)' END)
   RETURNING id INTO v_id;
 
+  -- Uma verificação nova SUBSTITUI as que estavam por decidir para o mesmo
+  -- vinho (27/09/2026): foi feita agora, com as regras de agora. Os dois
+  -- Cartuxa Colheita ficaram em Alertas como "o link abre OUTRO vinho" (o
+  -- "Évora" do título contava como palavra a mais); corrigida a regra e
+  -- verificados outra vez, os alertas velhos ficavam lá a pedir uma decisão
+  -- que já não havia. Bloqueado ou erro não é resposta, e não substitui.
+  IF p_res ->> 'estado' NOT IN ('bloqueado','erro') THEN
+    UPDATE winecatalog.vivino_verificacoes
+       SET revisao = 'sem_acao', revisto_em = now(),
+           revisto_por = 'script (verificação mais recente)'
+     WHERE vinho_id = v.id AND revisao = 'pendente' AND id <> v_id;
+  END IF;
+
   v_fila := COALESCE((SELECT valor::jsonb FROM winecatalog.config WHERE chave = 'vivino_fila'), '[]');
   IF p_res ->> 'estado' NOT IN ('bloqueado','erro') THEN
     SELECT COALESCE(jsonb_agg(value ORDER BY ord), '[]') INTO v_fila
