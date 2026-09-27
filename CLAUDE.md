@@ -647,7 +647,9 @@ O que existe agora, **sem IA**, com DOIS motores no mesmo script:
 - **A fila** (`vivino_pedir`, botão "🍷 Verificar no Vivino" na ficha):
   os vinhos pedidos à mão vêm primeiro; depois os nunca verificados,
   depois os verificados há mais tempo; quem tem uma proposta por decidir
-  fica de fora.
+  fica de fora. É a ordem do Actions e do `npm run vivino`; **o painel já
+  não a corre** (27/09/2026, ver "Os três separadores") — lá os pedidos são
+  o filtro "Pedidos na app" (`pedido` na `vivino_catalogo`).
 
 **Desde 25/09/2026 o script ESCREVE no catálogo** (a pedido do dono,
 depois de duas corridas a afinar as regras de nome), pela
@@ -944,7 +946,7 @@ troca daqui (é o Editar), e se a chave nova já for de outra linha, não
 entra e diz qual (a trava da `editar`) — o resto do vinho grava na mesma.
 Um vinho do "Vinho novo" que afinal já existia sem produtor fica com o que
 o admin escreveu no painel (`catalogo-admin`) antes do da página. O filtro
-**"sem produtor"** de "Escolher no catálogo" junta os que faltam.
+**Produtor › "sem produtor"** da escolha dos vinhos junta os que faltam.
 
 **No PC corre-se pelo `vinhos.bat` → `painel.mjs`** (25/09/2026, a pedido
 do dono): `git pull`, e um painel local (`127.0.0.1:8787`, sem
@@ -994,14 +996,42 @@ site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
 `git pull` pode trocá-lo a meio.
 
-**Escolher no catálogo pelo painel** (25/09/2026): o painel lista o
+**Os três separadores e UM menu para escolher os vinhos** (27/09/2026,
+pedido do dono: "hoje isso está separado e faz-me confusão"). O painel era
+uma página corrida, e escolher os vinhos a enriquecer vivia em dois cartões,
+cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
+`vivino_a_tratar` — o script escolhia sozinho, e não se via quais) e o
+**"Escolher no catálogo"**. Agora são três separadores (`#info`, `#nomes`,
+`#produtores`, no endereço):
+- **Informação de vinhos** — "Escolher os vinhos a enriquecer ou corrigir"
+  em três passos: **1 Critério** (a procura e os filtros, cada opção com a
+  contagem feita com os OUTROS filtros, como os da app), **2 Escolha** (à
+  mão na lista, "Marcar todos os que passam", ou **🎲 Sortear N ao acaso
+  entre os que passam** — troca a escolha e mostra só os sorteados, para se
+  ver o que vai correr) e **3 Correr** (o que procurar, o "trocar a imagem"
+  e UM Simular/Enriquecer). Corre sempre `IDS=` — o `/correr` recusa sem
+  vinhos escolhidos; a fila às cegas saiu do painel, e os pedidos da app
+  são um filtro. Por baixo, o Registo, as Simulações, o Vinho novo (com o
+  seu "Procurar:") e "As garrafeiras × o catálogo" (links e fichas);
+- **Nomes de vinhos** — a simulação da regra do nome, com procura, "Onde"
+  (catálogo/garrafeiras) e "O que sai do nome" (colheita/produtor/cor/com
+  avisos). Um desmarcado fica desmarcado ao mudar os filtros (`NOMES_OFF`),
+  e "Aplicar" leva só os marcados **que se veem**;
+- **Produtores** — as sugestões e os oficiais, com uma procura.
+Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
+que se abrem. Enquanto o script corre, só os botões que o põem a correr
+(`button.corre`) ficam desligados, e o separador mostra ⏳.
+
+**Escolher no catálogo pelo painel** (25/09/2026; desde 27/09/2026 é o
+único caminho — ver "Os três separadores"): o painel lista o
 catálogo (`vivino_catalogo` — leve: tem fotografia? preço? link? quando foi
 visto; sem os fundidos) e os vinhos marcados (até 50) correm com
 `IDS=1,2,3` em vez da fila (`vivino_estes`, pela ordem marcada; um id
 fundido responde pelo vinho que ficou). As duas só aceitam a
 `service_role`: o painel lê a chave do `batch/.env` (`process.loadEnvFile`)
-e o pedido `/catalogo` também exige o código do painel. Os filtros: sem fotografia, sem preço, nunca verificados e **link do
-Vivino suspeito** — o `link` da `vivino_catalogo` é `ok` (`/<nome>/w/<nº>`),
+e o pedido `/catalogo` também exige o código do painel. Os filtros: imagem
+(por origem, ou sem), preço, produtor, **link do Vivino**, verificado (nunca,
+ou há mais de 30/90 dias) e pedidos na app — o `link` da `vivino_catalogo` é `ok` (`/<nome>/w/<nº>`),
 `por_limpar` (tem o número, mas com país/língua/`?year=`: funciona, e o
 script arruma-o quando passa) ou `invalido` (sem `/w/<nº>` — `/wines/<nº>`
 é uma colheita, `/Wines/<nome>` não existe). Só o `invalido` conta como
@@ -1062,8 +1092,8 @@ e com a cor a bater — a cor ainda não está na chave. E só se o link do
 catálogo estiver **confirmado**: origem `vivino-pagina`/`catalogo-admin`, ou
 uma verificação aceite do motor browser com o mesmo número. Um link do
 catálogo que só veio de uma garrafeira não vale mais do que o de outra: esses
-ficam em **"Por confirmar"**, com um botão que os marca em "Escolher no
-catálogo" para se verificarem primeiro no Vivino — ou, se o admin abrir os
+ficam em **"Por confirmar"**, com um botão que os passa para a escolha dos
+vinhos (já com "Só o Vivino") para se verificarem primeiro no Vivino — ou, se o admin abrir os
 dois links e o do catálogo for o certo, o visto **"usar o do catálogo"**
 (desligado por omissão) leva-o no "Corrigir os marcados" (`p_forcar`): o
 visto é a confirmação que faltava, e o registo diz `confirmado_por: admin`.
@@ -1233,7 +1263,7 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
 1. **Produtores oficiais** (`db/produtores.sql`; a tabela e a
    `produtor_oficial` estão no `catalogo.sql`, porque a chave as usa). O
    admin escolhe o nome oficial e as grafias que são ele — no painel do PC
-   (cartão "Produtores") ou na app (Duplicados › Produtores). A partir daí:
+   (separador "Produtores") ou na app (Duplicados › Produtores). A partir daí:
    a **`chave_base` usa o oficial** (e por isso deixou de ser IMMUTABLE), o
    trigger dos nomes troca a grafia pela oficial em qualquer escrita (aqui e
    na Garrafeira, migração 23), e o que já lá estava é corrigido no momento
@@ -1252,7 +1282,7 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    sai, mas só na fase 4 (ver abaixo). O duvidoso (a cor a meio do nome, um
    ano no nome diferente da colheita) é aviso, não muda.
 3. **Os dados de agora**: `nomes_rever` sem `p_aplicar` é a simulação (o
-   cartão "Nomes dos vinhos" do painel); com ele aplica só o que o admin
+   separador "Nomes de vinhos" do painel); com ele aplica só o que o admin
    marcou, no catálogo (chaves recalculadas, colisões para os Duplicados) e
    nas garrafeiras (`sync_log`, acao `nome_normalizado`).
 4. **A cor na chave — FEITA** (`db/cor-na-chave.sql`, ver "A cor na

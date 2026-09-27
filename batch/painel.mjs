@@ -1,10 +1,12 @@
 // =====================================================================
 // Painel local da verificação do Vivino e das lojas — abre-se pelo
 // vinhos.bat. Um servidor pequeno (sem dependências) em 127.0.0.1 que:
-//   · corre o vivino-verificar.mjs (Simular / Enriquecer) e mostra o registo;
+//   · corre o vivino-verificar.mjs (Simular / Enriquecer) sobre os vinhos
+//     escolhidos na lista do catálogo e mostra o registo;
 //   · lista as simulações guardadas numa tabela com caixas, e grava só o
 //     que ficou marcado (a opção APLICAR do script — sem voltar a abrir
-//     página nenhuma).
+//     página nenhuma);
+//   · e, em separadores à parte, os Nomes de vinhos e os Produtores.
 //
 // Porque um servidor e não só uma página: uma página aberta do disco não
 // pode correr o node nem o git. Só escuta em 127.0.0.1, e cada pedido que
@@ -49,14 +51,18 @@ function correr(modo, opcoes) {
     env.ENSAIO = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
   } else {
-    env.ENSAIO = modo === "simular" ? "true" : "false";
-    env.LIMITE = String(Math.max(1, Math.min(50, Number(opcoes.limite) || 10)));
-    // Escolhidos na lista do catálogo: só esses, em vez da fila.
+    // Sempre os vinhos escolhidos na lista (por critério ou ao acaso, até 50).
+    // A fila às cegas (`vivino_a_tratar`) saiu do painel a 27/09/2026 — fica
+    // para o GitHub Actions e para o `npm run vivino`; aqui, os pedidos da
+    // app são um filtro da lista.
     const ids = (Array.isArray(opcoes.ids) ? opcoes.ids : []).map(x => parseInt(x, 10)).filter(x => x > 0).slice(0, 50);
-    if (ids.length) env.IDS = ids.join(",");
+    if (!ids.length) throw new Error("Escolhe primeiro os vinhos.");
+    env.ENSAIO = modo === "simular" ? "true" : "false";
+    env.IDS = ids.join(",");
+    env.LIMITE = String(ids.length);
     // Escolhidos a olho pela imagem: pode trocar-se também a que não veio do
-    // Vivino (nunca a vossa fotografia). Só com escolhidos, nunca na fila.
-    if (ids.length && opcoes.trocarImagem === true) env.TROCAR_IMAGEM = "true";
+    // Vivino (nunca a vossa fotografia).
+    if (opcoes.trocarImagem === true) env.TROCAR_IMAGEM = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
   }
   corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null,
@@ -293,17 +299,39 @@ servidor.on("error", e => {
 });
 
 // ── A página ──────────────────────────────────────────────────────────
+// Três separadores (27/09/2026, pedido do dono): **Informação de vinhos**
+// (a escolha dos vinhos a enriquecer ou corrigir, o registo, as simulações,
+// o vinho novo e as garrafeiras × o catálogo) · **Nomes de vinhos** ·
+// **Produtores**. Antes era uma página corrida, e a escolha dos vinhos vivia
+// em dois cartões com os seus Simular/Enriquecer cada um — o "Correr N
+// vinhos" (a fila, que o script escolhia sozinho) e o "Escolher no
+// catálogo". Agora é UM menu: os filtros são o critério, e marca-se à mão,
+// todos os que passam, ou N ao acaso entre eles; corre só o que está marcado.
 const PAGINA = `<!doctype html>
 <html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vinhos — Vivino e lojas</title>
+<title>Vinhos — painel</title>
 <style>
 :root{--bd:#6b1a2e;--bd2:#8a2640;--ou:#b98b2e;--bg:#f6f1ea;--card:#fffdfb;--bo:#e6ddd2;--tx:#2b2220;--mu:#8a7d74;--ok:#2f7a4b;--er:#b3261e}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
-header{background:var(--bd);color:#fff;padding:14px 20px}header h1{margin:0;font:600 18px Georgia,serif}header p{margin:2px 0 0;opacity:.8;font-size:12.5px}
+header{background:var(--bd);color:#fff;padding:14px 20px 8px}header h1{margin:0;font:600 18px Georgia,serif}header p{margin:2px 0 0;opacity:.8;font-size:12.5px}
+nav.tabs{position:sticky;top:0;z-index:5;background:var(--bd);display:flex;gap:2px;padding:0 12px;overflow-x:auto;box-shadow:0 2px 4px rgba(0,0,0,.15)}
+nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#fff;opacity:.72;padding:10px 14px;font:600 14px system-ui;white-space:nowrap}
+nav.tabs button:hover{opacity:1}nav.tabs button.on{opacity:1;border-bottom-color:var(--ou)}
+.tab[hidden]{display:none}
 main{max-width:1100px;margin:0 auto;padding:16px}
-.card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);scroll-margin-top:52px}
 h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
-.linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.seccao{margin:24px 0 8px;font:600 12px system-ui;text-transform:uppercase;letter-spacing:.5px;color:var(--mu)}
+.linha{display:flex;flex-wrap:wrap;gap:12px;align-items:center}.linha>label{max-width:100%}
+.passo{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0 8px;font-weight:600;color:var(--bd)}
+.passo .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--bd);color:#fff;font-size:12px}
+.passo .nota{font-weight:400;margin:0}
+.filtros{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.filtros input[type=search]{flex:1 1 240px;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+.filtros label{display:flex;align-items:center;gap:6px;color:var(--mu);font-size:12.5px}
+select.ativo{border-color:var(--bd);background:#f6ecef;color:var(--bd);font-weight:600}
+.ou{color:var(--mu);font-size:12.5px}.conta{font-weight:600}
+.correr{background:#faf5ef;border:1px solid var(--bo);border-radius:10px;padding:10px 12px}
 label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;vertical-align:middle}
 .mini{width:44px;text-align:center}.mini img{width:40px;height:54px;object-fit:contain;display:block;margin:0 auto;background:#faf7f4;border-radius:4px}
 .mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
@@ -325,77 +353,47 @@ pre{background:#1f1a19;color:#eee;border-radius:10px;padding:12px;max-height:340
 .prog .linha{justify-content:space-between}.prog .nota{margin:0}
 table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--mu);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;padding:6px;border-bottom:1px solid var(--bo)}
 td{padding:6px;border-bottom:1px solid var(--bo);vertical-align:top;word-break:break-word}
-tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.alt.dim td{opacity:.45}
+tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.alt.dim td,tr.off td{opacity:.45}
 .antes{color:var(--mu);text-decoration:line-through}.seta{color:var(--mu);padding:0 4px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#f1e7d6;color:#7a5a17;font-weight:600}.tag.mudou{background:#f6dcdc;color:#8a1f2d}
 a{color:var(--bd)}
 </style></head><body>
-<header><h1>🍷 Vinhos — Vivino e lojas</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
+<header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
+<nav class="tabs" role="tablist">
+  <button role="tab" data-tab="info" onclick="abrirTab('info')">Informação de vinhos<span id="tab-corre"></span></button>
+  <button role="tab" data-tab="nomes" onclick="abrirTab('nomes')">Nomes de vinhos</button>
+  <button role="tab" data-tab="produtores" onclick="abrirTab('produtores')">Produtores</button>
+</nav>
 <main>
-<div class="card"><h2>Correr</h2>
-  <div class="linha">
-    <label>Vinhos: <input type="number" id="limite" min="1" max="50" value="10"></label>
+<section class="tab" id="t-info">
+<div class="card" id="c-escolher"><h2>Escolher os vinhos a enriquecer ou corrigir</h2>
+  <p class="nota" style="margin:0">Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois marcas <b>à mão</b> na lista, <b>todos</b> os que passam, ou <b>alguns ao acaso</b> entre eles. Corre só o que estiver marcado — até 50 de cada vez.</p>
+  <div class="passo"><span class="num">1</span>Critério <span class="nota" id="cat-passam"></span></div>
+  <div class="filtros"><input type="search" id="cat-q" placeholder="procurar por nome, produtor, região, cor, ano…" oninput="pintarCatalogo()">
+    <span id="cat-filtros" class="filtros"></span>
+    <button onclick="catLimparFiltros()">Limpar filtros</button></div>
+  <div class="passo"><span class="num">2</span>Escolha</div>
+  <div class="linha"><button onclick="catMarcarVisiveis()">Marcar todos os que passam</button>
+    <span class="ou">ou</span>
+    <button onclick="catSortear()" title="Troca a escolha de agora por estes">🎲 Sortear</button><input type="number" id="cat-acaso" min="1" max="50" value="10"><span class="ou">ao acaso entre os que passam</span>
+    <span class="ou">ou marca-os à mão na lista.</span></div>
+  <div class="linha" style="margin-top:8px"><span id="cat-n" class="conta">0 escolhidos</span>
+    <label><input type="checkbox" id="cat-so" onchange="pintarCatalogo()"> ver só os escolhidos</label>
+    <button onclick="catLimpar()">Limpar a escolha</button></div>
+  <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
+  <div class="passo"><span class="num">3</span>Correr <span class="nota" id="cat-n2"></span></div>
+  <div class="linha correr">
     <label>Procurar: <select id="pesquisa">
       <option value="completo">Tudo — Vivino e lojas (a ficha toda)</option>
       <option value="vivino">Só o Vivino — link, nota, avaliações, imagem</option>
       <option value="precos">Só preços (e imagem) — Garrafeira Nacional → Granvine → Vinha.pt</option>
     </select></label>
-    <button class="prim" onclick="correr('simular')">Simular</button>
-    <button onclick="correr('enriquecer')">Enriquecer (grava já)</button>
-  </div>
-  <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").
-  Trata primeiro os vinhos pedidos na ficha ("🍷 Verificar no Vivino") e depois os que nunca foram verificados.</p>
-</div>
-<div class="card"><h2>Escolher no catálogo</h2>
-  <p class="nota" style="margin:0 0 10px">Marca os vinhos que queres tratar (até 50) e corre só esses — em vez da fila.</p>
-  <div class="linha"><input id="cat-q" placeholder="procurar por nome, produtor, região…" oninput="pintarCatalogo()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
-    <label>Imagem: <select id="cat-img" onchange="pintarCatalogo()"><option value="">todas</option><option value="sem">sem imagem</option><option value="vivino">do Vivino</option><option value="loja">de uma loja</option><option value="outro">de outro site</option><option value="nossa">fotografia vossa</option></select></label>
-    <label><input type="checkbox" id="cat-sempreco" onchange="pintarCatalogo()"> sem preço</label>
-    <label title="O script propõe a adega que a página do Vivino mostra (só preenche — trocar um produtor é o Editar da app)"><input type="checkbox" id="cat-semprod" onchange="pintarCatalogo()"> sem produtor</label>
-    <label><input type="checkbox" id="cat-nunca" onchange="pintarCatalogo()"> nunca verificados</label>
-    <label title="Sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe"><input type="checkbox" id="cat-link" onchange="pintarCatalogo()"> link do Vivino suspeito</label></div>
-  <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
-  <div class="linha" style="margin-top:10px"><span id="cat-n" class="nota">0 escolhidos</span>
-    <button onclick="catMarcarVisiveis()">Marcar os que se veem</button><button onclick="catLimpar()">Limpar</button>
     <label title="Normalmente só se troca uma imagem que veio do Vivino. Ligado, os escolhidos ficam com a imagem da primeira loja que os tenha (ou do Vivino), seja qual for a que têm agora — menos a vossa fotografia."><input type="checkbox" id="cat-trocar"> trocar a imagem destes, venha de onde vier</label>
-    <button class="prim" onclick="correrEscolhidos('simular')">Simular escolhidos</button>
-    <button onclick="correrEscolhidos('enriquecer')">Enriquecer escolhidos</button></div>
+    <button class="prim corre" onclick="correrEscolhidos('simular')">Simular</button>
+    <button class="corre" onclick="correrEscolhidos('enriquecer')">Enriquecer (grava já)</button></div>
+  <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").</p>
 </div>
-<div class="card"><h2>Links do Vivino nas garrafeiras</h2>
-  <p class="nota" style="margin:0 0 10px">Compara o link de cada vinho das garrafeiras com o do catálogo. Só propõe trocar quando o da garrafeira <b>não tem o número do vinho</b> (<code>/wines/nº</code>, <code>/Wines/nome</code>…) ou <b>abre outro vinho</b>, ou quando está vazio — e só se o link do catálogo estiver confirmado (lido na página pelo script, ou escrito por ti). Um link para uma colheita do mesmo vinho fica como a pessoa o pôs.</p>
-  <div class="linha"><button class="prim" onclick="garrProcurar()">Procurar</button>
-    <span id="garr-n" class="nota"></span>
-    <button id="btn-garr" onclick="garrCorrigir()" disabled>Corrigir os marcados</button></div>
-  <div id="garr-lista" style="margin-top:10px"></div>
-</div>
-<div class="card"><h2>Fichas das garrafeiras × catálogo</h2>
-  <p class="nota" style="margin:0 0 10px">O resto da ficha (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova, harmonização…), <b>só da mesma colheita</b>. Propõe o que está <b>vazio</b> na garrafeira e o catálogo tem, e o que é <b>diferente</b> quando o do catálogo é <b>mais recente</b> do que a última vez que o dono gravou o vinho. Nunca a cor (cor diferente = outro vinho, não se toca), nunca a fotografia da pessoa, e as notas pessoais nem vão ao catálogo. O link do Vivino é no cartão de cima.</p>
-  <div class="linha"><button class="prim" onclick="fichProcurar()">Procurar</button>
-    <span id="fich-n" class="nota"></span>
-    <button id="btn-fich" onclick="fichCorrigir()" disabled>Corrigir os marcados</button></div>
-  <div id="fich-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
-</div>
-<div class="card"><h2>Produtores</h2>
-  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados da app.</p>
-  <div class="linha"><button class="prim" onclick="prodProcurar()">Procurar</button><span id="prod-n" class="nota"></span></div>
-  <div id="prod-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
-  <details style="margin-top:10px"><summary class="nota">Produtores oficiais já definidos</summary><div id="prod-oficiais" style="margin-top:6px"></div></details>
-</div>
-<div class="card"><h2>Nomes dos vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
-  <div class="linha"><button class="prim" onclick="nomesProcurar()">Simular</button>
-    <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label>
-    <span id="nomes-n" class="nota"></span>
-    <button id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button></div>
-  <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
-</div>
-<div class="card"><h2>Vinho novo</h2>
-  <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
-  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
-  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
-    <button class="prim" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
-</div>
-<div class="card"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div>
+<div class="card" id="c-registo"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div>
   <div class="prog" id="prog" hidden><div class="prog-barra"><div id="prog-b"></div></div>
     <div class="linha"><span class="nota" id="prog-t"></span>
       <button id="btn-parar" onclick="parar()" title="Pára no fim do vinho que está a tratar. Numa simulação, fica guardada com os que já foram tratados; no Enriquecer, esses já estão gravados.">⏹ Parar</button></div></div>
@@ -406,22 +404,122 @@ a{color:var(--bd)}
   <p class="nota">Desmarca o que não queres gravar — um vinho inteiro ou só um campo. Desmarcar um link novo do Vivino desmarca também a nota e as avaliações lidas nessa página. Ao gravar, fica no ficheiro o que decidiste.</p>
   <div id="tabela"></div>
 </div>
+<div class="card"><h2>Vinho novo</h2>
+  <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em Simulações. Se já existir, enriquece o que lá está.</p>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
+  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
+    <label>Procurar: <select id="novo-pesquisa">
+      <option value="completo">Tudo — Vivino e lojas</option>
+      <option value="vivino">Só o Vivino</option>
+      <option value="precos">Só preços (e imagem)</option>
+    </select></label>
+    <button class="prim corre" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
+</div>
+<p class="seccao">As garrafeiras × o catálogo</p>
+<div class="card"><h2>Links do Vivino nas garrafeiras</h2>
+  <p class="nota" style="margin:0 0 10px">Compara o link de cada vinho das garrafeiras com o do catálogo. Só propõe trocar quando o da garrafeira <b>não tem o número do vinho</b> (<code>/wines/nº</code>, <code>/Wines/nome</code>…) ou <b>abre outro vinho</b>, ou quando está vazio — e só se o link do catálogo estiver confirmado (lido na página pelo script, ou escrito por ti). Um link para uma colheita do mesmo vinho fica como a pessoa o pôs.</p>
+  <div class="linha"><button class="prim" onclick="garrProcurar()">Comparar</button>
+    <span id="garr-n" class="nota"></span>
+    <button id="btn-garr" onclick="garrCorrigir()" disabled>Corrigir os marcados</button></div>
+  <div id="garr-lista" style="margin-top:10px"></div>
+</div>
+<div class="card"><h2>Fichas das garrafeiras × catálogo</h2>
+  <p class="nota" style="margin:0 0 10px">O resto da ficha (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova, harmonização…), <b>só da mesma colheita</b>. Propõe o que está <b>vazio</b> na garrafeira e o catálogo tem, e o que é <b>diferente</b> quando o do catálogo é <b>mais recente</b> do que a última vez que o dono gravou o vinho. Nunca a cor (cor diferente = outro vinho, não se toca), nunca a fotografia da pessoa, e as notas pessoais nem vão ao catálogo. O link do Vivino é no cartão de cima.</p>
+  <div class="linha"><button class="prim" onclick="fichProcurar()">Comparar</button>
+    <span id="fich-n" class="nota"></span>
+    <button id="btn-fich" onclick="fichCorrigir()" disabled>Corrigir os marcados</button></div>
+  <div id="fich-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+</div>
+</section>
+<section class="tab" id="t-nomes" hidden>
+<div class="card"><h2>Nomes dos vinhos</h2>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
+  <div class="filtros"><input type="search" id="nomes-q" placeholder="procurar por nome, produtor, garrafeira, dono…" oninput="nomesPintar()">
+    <label>Onde <select id="nomes-onde" onchange="nomesPintar()"><option value="">catálogo e garrafeiras</option><option value="catalogo">só o catálogo</option><option value="garrafeira">só as garrafeiras</option></select></label>
+    <label>O que sai do nome <select id="nomes-mud" onchange="nomesPintar()"><option value="">qualquer coisa</option><option value="ano">a colheita</option><option value="produtor">o produtor</option><option value="cor">a cor</option><option value="avisos">só os com avisos</option></select></label>
+    <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label></div>
+  <div class="linha" style="margin-top:10px"><span id="nomes-n" class="nota"></span></div>
+  <div class="linha" style="margin-top:8px"><button onclick="nomesMarcar(true)">Marcar os que se veem</button><button onclick="nomesMarcar(false)">Desmarcar os que se veem</button>
+    <button class="prim" id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button>
+    <button onclick="nomesProcurar()" title="Volta a correr a regra sobre o catálogo e as garrafeiras de agora">🔄 Simular de novo</button></div>
+  <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+</div>
+</section>
+<section class="tab" id="t-produtores" hidden>
+<div class="card"><h2>Produtores</h2>
+  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados da app.</p>
+  <div class="filtros"><input type="search" id="prod-q" placeholder="procurar um produtor…" oninput="prodPintar()">
+    <button onclick="prodProcurar()">🔄 Atualizar</button><span id="prod-n" class="nota"></span></div>
+  <div class="passo">Sugestões por decidir</div>
+  <div id="prod-lista" style="max-height:640px;overflow:auto"></div>
+  <div class="passo">Produtores oficiais já definidos <span class="nota" id="prod-on"></span></div>
+  <div id="prod-oficiais"></div>
+</div>
+</section>
 </main>
 <script>
 const TOKEN="__TOKEN__";let visto=0,timer=null,sim=null,simNome=null;
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
+const palavras=el=>semAc(document.getElementById(el).value).split(/\\s+/).filter(Boolean);
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
+
+// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores)
+const TABS=["info","nomes","produtores"],ABERTOS=new Set();
+function abrirTab(t){
+  if(!TABS.includes(t))t="info";
+  for(const x of TABS)document.getElementById("t-"+x).hidden=x!==t;
+  document.querySelectorAll("nav.tabs button").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-selected",on?"true":"false");});
+  if(location.hash!=="#"+t)history.replaceState(null,"","#"+t);
+  // Os Nomes e os Produtores só leem a BD: carregam sozinhos da primeira vez.
+  if(!ABERTOS.has(t)){ABERTOS.add(t);if(t==="nomes")nomesProcurar();if(t==="produtores")prodProcurar();}
+}
+window.addEventListener("hashchange",()=>abrirTab(location.hash.slice(1)));
+
+// ── Escolher os vinhos ──
 let CAT=[];const ESC=new Set();
+// O critério. Cada filtro: o rótulo, as opções [valor, texto] e o teste. A
+// contagem de cada opção conta com a procura e os OUTROS filtros ligados,
+// não com o próprio — vê-se quantos há antes de mudar.
+const FILTROS=[
+  {id:"img",rot:"Imagem",ops:[["","todas"],["sem","sem imagem"],["vivino","do Vivino"],["loja","de uma loja"],["outro","de outro site"],["nossa","fotografia vossa"]],
+   t:(v,x)=>x==="sem"?!v.imagem_url:v.imagem_de===x},
+  {id:"preco",rot:"Preço",ops:[["","todos"],["sem","sem preço"],["com","com preço"]],t:(v,x)=>x==="sem"?!v.preco:!!v.preco},
+  {id:"prod",rot:"Produtor",ops:[["","todos"],["sem","sem produtor"]],t:v=>!String(v.produtor||"").trim(),
+   tit:"Sem produtor: o script propõe a adega que a página do Vivino mostra (só preenche — trocar um produtor é o Editar da app)"},
+  {id:"link",rot:"Link do Vivino",ops:[["","todos"],["sem","sem link"],["invalido","suspeito"],["por_limpar","por limpar"],["ok","certo"]],t:(v,x)=>x==="sem"?!v.link:v.link===x,
+   tit:"Suspeito: sem o número do vinho (/w/nº) — p. ex. /wines/nº, que é uma colheita, ou /Wines/nome, que não existe. Por limpar: tem o número, mas com país, língua ou ?year= (o script arruma-o quando passa)."},
+  {id:"visto",rot:"Verificado",ops:[["","quando for"],["nunca","nunca"],["30","nunca ou há mais de 30 dias"],["90","nunca ou há mais de 90 dias"]],
+   t:(v,x)=>x==="nunca"?!v.visto:(!v.visto||Date.now()-new Date(v.visto).getTime()>Number(x)*864e5)},
+  {id:"pedido",rot:"Pedidos na app",ops:[["","todos"],["sim","só os pedidos"]],t:v=>!!v.pedido,
+   tit:"Os vinhos que se pediram na ficha da app, com «🍷 Verificar no Vivino». Saem daqui quando o script os trata."},
+];
+function filtrosHTML(){
+  document.getElementById("cat-filtros").innerHTML=FILTROS.map(f=>'<label'+(f.tit?' title="'+esc(f.tit)+'"':'')+'>'+esc(f.rot)+
+    ' <select id="f-'+f.id+'" onchange="pintarCatalogo()">'+f.ops.map(([v,t])=>'<option value="'+v+'">'+esc(t)+'</option>').join("")+'</select></label>').join("");
+}
+const valorF=f=>document.getElementById("f-"+f.id).value;
+// Os que passam a procura e os filtros; "sem" deixa um filtro de fora (para as contagens).
+function catPool(sem){
+  const q=palavras("cat-q"),ativos=FILTROS.filter(f=>f!==sem&&valorF(f));
+  return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
+    return q.every(p=>t.includes(p))&&ativos.every(f=>f.t(v,valorF(f)));});
+}
+function catContagens(){
+  for(const f of FILTROS){
+    const base=catPool(f),sel=document.getElementById("f-"+f.id);
+    [...sel.options].forEach((o,i)=>{const [v,t]=f.ops[i];o.textContent=t+" ("+(v?base.filter(x=>f.t(x,v)).length:base.length)+")";});
+    sel.classList.toggle("ativo",!!sel.value);
+  }
+}
+// A lista: os que passam os filtros, ou só os escolhidos (pela ordem em que correm).
+function catVisiveis(){
+  if(document.getElementById("cat-so").checked){const por=new Map(CAT.map(v=>[v.id,v]));return [...ESC].map(id=>por.get(id)).filter(Boolean);}
+  return catPool();
+}
 async function carregarCatalogo(){
   try{const r=await fetch("/catalogo",{headers:{"X-Painel":TOKEN}});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);CAT=j;pintarCatalogo();}
   catch(e){document.getElementById("cat-lista").innerHTML='<p class="nota" style="padding:10px">Não consegui ler o catálogo: '+esc(e.message)+'</p>';}
-}
-const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").toLowerCase();
-function catVisiveis(){
-  const q=semAc(document.getElementById("cat-q").value).split(/\\s+/).filter(Boolean);
-  const im=document.getElementById("cat-img").value,sp=document.getElementById("cat-sempreco").checked,spr=document.getElementById("cat-semprod").checked,nv=document.getElementById("cat-nunca").checked,lk=document.getElementById("cat-link").checked;
-  return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
-    return q.every(p=>t.includes(p))&&(!im||(im==="sem"?!v.imagem_url:v.imagem_de===im))&&(!sp||!v.preco)&&(!spr||!String(v.produtor||"").trim())&&(!nv||!v.visto)&&(!lk||v.link==="invalido");});
 }
 function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
 // Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
@@ -454,31 +552,58 @@ function miniatura(v){
     '<small class="'+(v.imagem_de==="vivino"?"v":"")+'">'+esc(IMG_DE[v.imagem_de]||"")+'</small>';
 }
 function pintarCatalogo(){
-  const l=catVisiveis();
+  catContagens();
+  const so=document.getElementById("cat-so").checked,pool=catPool(),l=catVisiveis();
+  const ligados=FILTROS.filter(valorF).length+(palavras("cat-q").length?1:0);
+  document.getElementById("cat-passam").textContent=ligados?"— "+pool.length+" de "+CAT.length+" vinhos passam":"— sem filtros: o catálogo todo ("+CAT.length+" vinhos)";
   const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
     '<td class="mini">'+miniatura(v)+'</td>'+
-    '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
+    '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+(v.pedido?' <span class="tag" title="pedido na app, com «🍷 Verificar no Vivino»">🍷 pedido</span>':'')+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
     '<td>'+precosHTML(v)+'</td>'+
     '<td class="ic">'+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
     '<td class="ic">'+(v.visto?"visto "+esc(String(v.visto).slice(0,10)):"nunca visto")+'</td></tr>');
-  document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':''):'<p class="nota" style="padding:10px">Nenhum vinho com estes filtros.</p>';
+  document.getElementById("cat-lista").innerHTML=l.length?'<table>'+linhas.join("")+'</table>'+(l.length>400?'<p class="nota" style="padding:8px">…e mais '+(l.length-400)+' — afina a procura.</p>':'')
+    :'<p class="nota" style="padding:10px">'+(so?"Ainda não escolheste nenhum vinho.":"Nenhum vinho com estes filtros.")+'</p>';
   catContar();
 }
 function catMarca(id,el){if(el.checked){if(ESC.size>=50){el.checked=false;return alert("Até 50 de cada vez.");}ESC.add(id);}else ESC.delete(id);el.closest("tr").classList.toggle("sel",el.checked);catContar();}
-function catMarcarVisiveis(){for(const v of catVisiveis()){if(ESC.size>=50)break;ESC.add(v.id);}pintarCatalogo();}
-function catLimpar(){ESC.clear();pintarCatalogo();}
-function catContar(){document.getElementById("cat-n").textContent=ESC.size+" escolhido"+(ESC.size===1?"":"s");}
+function catMarcarVisiveis(){
+  const pool=catPool();let fora=0;
+  for(const v of pool){if(ESC.has(v.id))continue;if(ESC.size>=50){fora++;continue;}ESC.add(v.id);}
+  pintarCatalogo();
+  if(fora)alert("Só cabem 50 de cada vez — ficaram de fora "+fora+". Afina os filtros, ou sorteia.");
+}
+// Ao acaso entre os que passam os filtros: troca a escolha de agora e mostra
+// só os sorteados, para se ver o que vai correr (e desmarcar algum).
+function catSortear(){
+  const pool=catPool();
+  if(!pool.length)return alert("Nenhum vinho passa os filtros.");
+  const n=Math.min(pool.length,Math.max(1,Math.min(50,parseInt(document.getElementById("cat-acaso").value,10)||10)));
+  if(ESC.size&&!confirm("Trocar os "+ESC.size+" escolhidos por "+n+" ao acaso?"))return;
+  const a=pool.slice();
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  ESC.clear();for(const v of a.slice(0,n))ESC.add(v.id);
+  document.getElementById("cat-so").checked=true;
+  pintarCatalogo();
+}
+function catLimpar(){ESC.clear();document.getElementById("cat-so").checked=false;pintarCatalogo();}
+function catLimparFiltros(){document.getElementById("cat-q").value="";for(const f of FILTROS)document.getElementById("f-"+f.id).value="";document.getElementById("cat-so").checked=false;pintarCatalogo();}
+function catContar(){
+  const t=ESC.size+" escolhido"+(ESC.size===1?"":"s");
+  document.getElementById("cat-n").textContent=t;
+  document.getElementById("cat-n2").textContent=ESC.size?"— "+t:"— escolhe primeiro os vinhos (passo 2)";
+}
 async function correrEscolhidos(modo){
-  if(!ESC.size)return alert("Marca pelo menos um vinho.");
+  if(!ESC.size)return alert("Escolhe primeiro os vinhos (passo 2).");
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,ids:[...ESC],limite:ESC.size,pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar();}catch(e){alert(e.message);}
+  try{await post("/correr",{modo,ids:[...ESC],pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar(true);}catch(e){alert(e.message);}
 }
-async function correr(modo){
-  if(modo==="enriquecer"&&!confirm("Gravar já no catálogo, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,limite:+document.getElementById("limite").value,pesquisa:document.getElementById("pesquisa").value});comecar();}
-  catch(e){alert(e.message);}
+
+// ── Registo ──
+function comecar(ir){
+  visto=0;document.getElementById("log").textContent="";clearInterval(timer);timer=setInterval(seguir,1000);seguir();
+  if(ir){abrirTab("info");document.getElementById("c-registo").scrollIntoView({behavior:"smooth",block:"start"});}
 }
-function comecar(){visto=0;document.getElementById("log").textContent="";clearInterval(timer);timer=setInterval(seguir,1000);seguir();}
 async function seguir(){
   const r=await fetch("/estado?desde="+visto).then(r=>r.json()).catch(()=>null);
   if(!r)return;
@@ -490,7 +615,9 @@ async function seguir(){
     :r.parado?'<b class="ok">⏹ '+nomes[r.modo]+' parada a pedido.</b>'+(r.modo==="enriquecer"?" Os vinhos já tratados ficaram gravados.":" A simulação ficou com os vinhos já tratados.")
     :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
   progresso(r);
-  document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer|Procurar/))b.disabled=r.fim==null;});
+  // Só os botões que põem o script a correr; o separador diz que está a correr.
+  document.querySelectorAll("button.corre").forEach(b=>b.disabled=r.fim==null);
+  document.getElementById("tab-corre").textContent=r.fim==null?" ⏳":"";
   if(r.fim!=null){clearInterval(timer);timer=null;carregarCatalogo();if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
 }
 // A barra: quantos vinhos já foram tratados (o script escreve "[3/20] …"
@@ -518,6 +645,8 @@ async function parar(){
   if(!confirm("Parar no fim do vinho que está a tratar? Numa simulação, fica guardada com os vinhos já tratados."))return;
   try{await post("/parar",{});seguir();}catch(e){alert(e.message);}
 }
+
+// ── Simulações ──
 async function listarSims(abrirPrimeira){
   const l=await fetch("/simulacoes").then(r=>r.json());const s=document.getElementById("sims");
   const atual=abrirPrimeira?l[0]:(s.value||l[0]);
@@ -569,8 +698,10 @@ async function gravar(){
     if(c.dataset.c==null)escolhas[i].vinho=c.checked;else escolhas[i].campos[c.dataset.c]=c.checked;});
   const n=Object.values(escolhas).filter(e=>e.vinho!==false).length;
   if(!confirm("Gravar "+n+" vinho(s) desta simulação no catálogo?"))return;
-  try{await post("/gravar",{nome:simNome,escolhas});comecar();}catch(e){alert(e.message);}
+  try{await post("/gravar",{nome:simNome,escolhas});comecar(true);}catch(e){alert(e.message);}
 }
+
+// ── As garrafeiras × o catálogo ──
 let GARR=null;
 const GARR_CASO={formato_invalido:"sem o nº do vinho",outro_vinho:"outro vinho",vazio:"sem link"};
 const GARR_CONTA={mesmo_vinho:"com o mesmo vinho do catálogo",catalogo_sem_link:"sem link no catálogo",sem_catalogo:"fora do catálogo",cor_diferente:"cor diferente da do catálogo (não se toca)"};
@@ -592,14 +723,20 @@ function garrPintar(){
   if(P.length)h+='<p class="nota" style="margin-top:12px"><b>Por confirmar</b> — o link da garrafeira parece errado, mas o do catálogo ainda não foi confirmado. Abre os dois: se o do catálogo for o certo, marca <b>usar o do catálogo</b> e vai com «Corrigir os marcados». Na dúvida, verifica primeiro o vinho do catálogo no Vivino:</p><table>'+P.map(x=>
     '<tr><td>'+(x.catalogo_url?'<label class="nota" style="white-space:nowrap"><input type="checkbox" class="garr-f" data-id="'+x.vinho_id+'" onchange="garrBotao()"> usar o do catálogo</label>':'')+'</td>'+
     '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+' · '+esc(x.dono)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>→ catálogo #'+x.catalogo_id+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
-    '</table><button style="margin-top:6px" onclick="garrParaCatalogo()">Marcar estes em "Escolher no catálogo"</button>';
+    '</table><button style="margin-top:6px" onclick="garrParaCatalogo()">Escolher estes para verificar no Vivino</button>';
   if(ficam)h+='<p class="nota">Ficam como estão: '+esc(ficam)+'.</p>';
   document.getElementById("garr-lista").innerHTML=h;
   document.getElementById("garr-n").textContent=L.length+" a corrigir"+(P.length?" · "+P.length+" por confirmar":"");
   garrBotao();
 }
 function garrBotao(){document.getElementById("btn-garr").disabled=!document.querySelectorAll(".garr-c:checked,.garr-f:checked").length;}
-function garrParaCatalogo(){for(const x of GARR.por_confirmar||[]){if(ESC.size>=50)break;ESC.add(x.catalogo_id);}pintarCatalogo();alert("Marcados em «Escolher no catálogo». Corre-os com «Só o Vivino» e volta aqui.");}
+// Os "Por confirmar" passam para a escolha lá em cima, já com «Só o Vivino».
+function garrParaCatalogo(){
+  for(const x of GARR.por_confirmar||[]){if(ESC.size>=50)break;ESC.add(x.catalogo_id);}
+  document.getElementById("cat-so").checked=true;document.getElementById("pesquisa").value="vivino";
+  pintarCatalogo();document.getElementById("c-escolher").scrollIntoView({behavior:"smooth",block:"start"});
+  alert("Ficaram escolhidos lá em cima, com «Só o Vivino». Simula-os (ou enriquece) e volta aqui a comparar.");
+}
 async function garrCorrigir(){
   const ids=[...document.querySelectorAll(".garr-c:checked")].map(c=>+c.dataset.id);
   const forcar=[...document.querySelectorAll(".garr-f:checked")].map(c=>+c.dataset.id);
@@ -653,6 +790,79 @@ async function fichCorrigir(){
     const erros=r.erros||[];await fichProcurar();if(erros.length){FICH.erros=erros;fichPintar();}}
   catch(e){alert(e.message);}
 }
+
+// ── Vinho novo ──
+const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
+function novaLinha(){
+  const tr=document.createElement("tr");
+  tr.innerHTML='<td><input class="n-nome" placeholder="ex.: Quinta do Crasto Reserva Vinhas Velhas"></td><td><input class="n-prod"></td>'+
+    '<td style="width:80px"><input class="n-ano" inputmode="numeric" maxlength="4"></td>'+
+    '<td style="width:130px"><select class="n-cor"><option value="">— cor —</option>'+CORES.map(c=>"<option>"+c+"</option>").join("")+'</select></td>'+
+    '<td><input class="n-links" placeholder="cola aqui o link do Vivino, da loja…"></td>'+
+    '<td style="width:30px"><button title="Tirar" onclick="this.closest(\\'tr\\').remove()">✕</button></td>';
+  document.getElementById("novos").appendChild(tr);
+}
+async function procurarNovos(){
+  const vinhos=[...document.querySelectorAll("#novos tr")].slice(1).map(tr=>({
+    nome:tr.querySelector(".n-nome").value.trim(),produtor:tr.querySelector(".n-prod").value.trim(),
+    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value,
+    links:tr.querySelector(".n-links").value.trim()})).filter(x=>x.nome);
+  if(!vinhos.length)return alert("Escreve pelo menos um nome.");
+  if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
+  if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
+  try{await post("/novo",{vinhos,pesquisa:document.getElementById("novo-pesquisa").value});comecar(true);}catch(e){alert(e.message);}
+}
+
+// ── Nomes de vinhos ──
+let NOMES=null;const NOMES_OFF=new Set();   // os desmarcados à mão (sobrevivem aos filtros)
+const NOMES_MUD={ano:"colheita",produtor:"produtor",cor:"cor"};
+const nomesChave=x=>x.fonte+":"+x.id;
+async function nomesProcurar(){
+  document.getElementById("nomes-lista").innerHTML='<p class="nota">A simular…</p>';
+  try{NOMES=await post("/nomes",{});NOMES_OFF.clear();nomesPintar();}
+  catch(e){document.getElementById("nomes-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function nomesMuda(x){return x.novo_nome!==x.nome||String(x.novo_ano??"")!==String(x.ano??"");}
+function nomesVisiveis(){
+  const so=document.getElementById("nomes-so").checked,onde=document.getElementById("nomes-onde").value,mud=document.getElementById("nomes-mud").value,q=palavras("nomes-q");
+  return (NOMES.linhas||[]).filter(x=>(!so||nomesMuda(x))&&(!onde||x.fonte===onde)
+    &&(!mud||(mud==="avisos"?(x.avisos||[]).length>0:(x.mudancas||[]).includes(mud)))
+    &&(!q.length||(t=>q.every(p=>t.includes(p)))(semAc([x.nome,x.novo_nome,x.produtor,x.garrafeira,x.dono,x.ano,x.fonte==="catalogo"?"catalogo #"+x.id:""].join(" ")))));
+}
+const nomesMarcados=()=>nomesVisiveis().filter(x=>nomesMuda(x)&&!NOMES_OFF.has(nomesChave(x)));
+function nomesContar(){
+  const todos=NOMES.linhas||[],vis=nomesVisiveis().length,m=nomesMarcados().length;
+  document.getElementById("nomes-n").textContent=todos.filter(nomesMuda).length+" a mudar agora · "+todos.length+" com alguma coisa · "+vis+" à vista · "+m+" marcado"+(m===1?"":"s");
+  const b=document.getElementById("btn-nomes");b.disabled=!m;b.textContent="Aplicar os marcados"+(m?" ("+m+")":"");
+}
+function nomesPintar(){
+  if(!NOMES)return;
+  const L=nomesVisiveis();
+  document.getElementById("nomes-lista").innerHTML=L.length?'<table><tr><th></th><th>Onde</th><th>Agora</th><th>Fica</th></tr>'+L.map(x=>{
+    const m=nomesMuda(x),on=m&&!NOMES_OFF.has(nomesChave(x));
+    const av=(x.avisos||[]).length?'<br><span class="tag">'+x.avisos.map(esc).join(' · ')+'</span>':'';
+    const mud=(x.mudancas||[]).map(k=>'<span class="tag">'+esc(NOMES_MUD[k]||k)+'</span>').join(' ');
+    return '<tr'+(on?'':' class="off"')+'><td>'+(m?'<input type="checkbox" class="nomes-c" data-f="'+x.fonte+'" data-id="'+x.id+'"'+(on?' checked':'')+' onchange="nomesMarca(this)">':'')+'</td>'+
+      '<td>'+(x.fonte==="catalogo"?'catálogo #'+x.id:esc(x.garrafeira||"garrafeira")+'<br><span class="nota">'+esc(x.dono||"")+'</span>')+'</td>'+
+      '<td><span class="antes">'+esc(x.nome)+'</span>'+(x.ano?' · '+esc(x.ano):'')+'<br><span class="nota">'+esc(x.produtor||"(sem produtor)")+' · '+esc(x.tipo||"sem cor")+'</span></td>'+
+      '<td><b>'+esc(x.novo_nome)+'</b>'+(x.novo_ano?' · '+esc(x.novo_ano):'')+' '+mud+av+'</td></tr>';}).join("")+'</table>'
+    :'<p class="nota">'+((NOMES.linhas||[]).length?"Nenhum com estes filtros.":"Nada a mudar.")+'</p>';
+  nomesContar();
+}
+function nomesMarca(el){const k=el.dataset.f+":"+el.dataset.id;if(el.checked)NOMES_OFF.delete(k);else NOMES_OFF.add(k);el.closest("tr").classList.toggle("off",!el.checked);nomesContar();}
+function nomesMarcar(on){for(const x of nomesVisiveis())if(nomesMuda(x)){if(on)NOMES_OFF.delete(nomesChave(x));else NOMES_OFF.add(nomesChave(x));}nomesPintar();}
+async function nomesAplicar(){
+  // Só os que se veem: o que os filtros escondem não vai, mesmo marcado.
+  const itens=nomesMarcados().map(x=>({fonte:x.fonte,id:x.id}));
+  if(!itens.length)return alert("Marca pelo menos um vinho.");
+  if(!confirm("Aplicar o nome novo a "+itens.length+" vinho(s) — os marcados que se veem? Fica no histórico do catálogo e no registo da Garrafeira."))return;
+  try{const r=await post("/nomes",{itens,aplicar:true});const d=r.duplicados||[];
+    alert(r.catalogo+" no catálogo e "+r.garrafeiras+" nas garrafeiras."+(d.length?"\\n\\nFicaram por mexer "+d.length+" do catálogo, porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos Duplicados da app:\\n"+d.map(x=>"#"+x.id+" "+x.nome+(x.ano?" "+x.ano:"")+" → #"+x.com).join("\\n"):""));
+    await nomesProcurar();}
+  catch(e){alert(e.message);}
+}
+
+// ── Produtores ──
 let PROD=null;
 // As sugestões vêm aos pares; juntam-se em grupos (os três Carlos Alonso
 // num só) para se escolher o oficial uma vez. Os pares ficam guardados para
@@ -668,13 +878,17 @@ function prodGrupos(pares){
 }
 async function prodProcurar(){
   document.getElementById("prod-lista").innerHTML='<p class="nota">A procurar…</p>';
-  try{PROD=await post("/produtores",{acao:"listar"});prodPintar();}
+  try{PROD=await post("/produtores",{acao:"listar"});PROD._grupos=prodGrupos(PROD.sugestoes||[]);prodPintar();}
   catch(e){document.getElementById("prod-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
 }
 function prodPintar(){
-  const G=prodGrupos(PROD.sugestoes||[]);
-  document.getElementById("prod-n").textContent=G.length+" grupo"+(G.length===1?"":"s")+" por decidir";
-  document.getElementById("prod-lista").innerHTML=G.length?G.map((g,i)=>{
+  if(!PROD)return;
+  // A procura filtra os grupos e os oficiais; o índice de cada grupo fica o
+  // do grupo inteiro (é por ele que o Juntar e o "são diferentes" o acham).
+  const q=palavras("prod-q"),bate=t=>q.every(p=>semAc(t).includes(p));
+  const G=PROD._grupos.map((g,i)=>({g,i})).filter(({g})=>!q.length||bate(g.grafias.map(s=>s.produtor+" "+(s.oficial||"")).join(" ")));
+  document.getElementById("prod-n").textContent=PROD._grupos.length+" grupo"+(PROD._grupos.length===1?"":"s")+" por decidir"+(q.length?" · "+G.length+" à vista":"");
+  document.getElementById("prod-lista").innerHTML=G.length?G.map(({g,i})=>{
     const oficial=g.grafias.find(s=>s.oficial)?.oficial||"";
     return '<div class="prod-g" data-i="'+i+'" style="border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px">'+
       g.grafias.map((s,j)=>'<div class="linha" style="gap:8px;margin:2px 0">'+
@@ -687,13 +901,13 @@ function prodPintar(){
         (g.pares.length===1&&!g.pares[0].mesmaChave?'<button onclick="prodDiferentes('+i+',0)">São diferentes</button>':'')+
         '</div>'+(g.pares.length>1?'<div class="nota" style="margin-top:6px">Se algum par não for o mesmo produtor: '+g.pares.map((p,k)=>p.mesmaChave?'':
           '<a href="#" onclick="prodDiferentes('+i+','+k+');return false">'+esc(p.a.produtor)+' ≠ '+esc(p.b.produtor)+'</a>').filter(Boolean).join(" · ")+'</div>':'')+'</div>';
-  }).join(""):'<p class="nota">Nada por decidir.</p>';
-  PROD._grupos=G;
-  const O=PROD.oficiais||[];
+  }).join(""):'<p class="nota">'+(PROD._grupos.length?"Nenhum com esta procura.":"Nada por decidir.")+'</p>';
+  const O=(PROD.oficiais||[]).filter(p=>!q.length||bate([p.nome,p.nome_completo,...(p.variantes||[]).map(v=>v.escrito)].join(" ")));
+  document.getElementById("prod-on").textContent="— "+(PROD.oficiais||[]).length+(q.length?" · "+O.length+" à vista":"");
   document.getElementById("prod-oficiais").innerHTML=O.length?'<table><tr><th>Oficial</th><th>Nome completo</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td><b>'+esc(p.nome)+'</b></td><td>'+
     '<input id="prod-compl-'+p.id+'" value="'+esc(p.nome_completo||"")+'" placeholder="opcional" style="width:220px"> <button onclick="prodCompleto('+p.id+')">Guardar</button></td><td>'+
     (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+'</td></tr>').join("")+'</table>'
-    :'<p class="nota">Ainda nenhum.</p>';
+    :'<p class="nota">'+((PROD.oficiais||[]).length?"Nenhum com esta procura.":"Ainda nenhum.")+'</p>';
 }
 async function prodCompleto(id){
   const v=document.getElementById("prod-compl-"+id).value.trim();
@@ -725,61 +939,10 @@ async function prodTirar(chave){
   if(!confirm("Deixar de trocar esta grafia pelo nome oficial? O que já foi corrigido fica como está."))return;
   try{await post("/produtores",{acao:"tirar",chave});await prodProcurar();}catch(e){alert(e.message);}
 }
-let NOMES=null;
-const NOMES_MUD={ano:"colheita",produtor:"produtor",cor:"cor"};
-async function nomesProcurar(){
-  document.getElementById("nomes-lista").innerHTML='<p class="nota">A simular…</p>';
-  try{NOMES=await post("/nomes",{});nomesPintar();}
-  catch(e){document.getElementById("nomes-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
-}
-function nomesMuda(x){return x.novo_nome!==x.nome||String(x.novo_ano??"")!==String(x.ano??"");}
-function nomesPintar(){
-  if(!NOMES)return;
-  const so=document.getElementById("nomes-so").checked;
-  const L=(NOMES.linhas||[]).filter(x=>!so||nomesMuda(x));
-  const n=L.filter(nomesMuda).length;
-  document.getElementById("nomes-n").textContent=n+" a mudar agora · "+(NOMES.linhas||[]).length+" com alguma coisa";
-  document.getElementById("btn-nomes").disabled=!n;
-  document.getElementById("nomes-lista").innerHTML=L.length?'<table><tr><th></th><th>Onde</th><th>Agora</th><th>Fica</th></tr>'+L.map(x=>{
-    const m=nomesMuda(x);
-    const av=(x.avisos||[]).length?'<br><span class="tag">'+x.avisos.map(esc).join(' · ')+'</span>':'';
-    const mud=(x.mudancas||[]).map(k=>'<span class="tag">'+esc(NOMES_MUD[k]||k)+'</span>').join(' ');
-    return '<tr'+(m?'':' class="off"')+'><td>'+(m?'<input type="checkbox" class="nomes-c" data-f="'+x.fonte+'" data-id="'+x.id+'" checked>':'')+'</td>'+
-      '<td>'+(x.fonte==="catalogo"?'catálogo #'+x.id:esc(x.garrafeira||"garrafeira")+'<br><span class="nota">'+esc(x.dono||"")+'</span>')+'</td>'+
-      '<td><span class="antes">'+esc(x.nome)+'</span>'+(x.ano?' · '+esc(x.ano):'')+'<br><span class="nota">'+esc(x.produtor||"(sem produtor)")+' · '+esc(x.tipo||"sem cor")+'</span></td>'+
-      '<td><b>'+esc(x.novo_nome)+'</b>'+(x.novo_ano?' · '+esc(x.novo_ano):'')+' '+mud+av+'</td></tr>';}).join("")+'</table>'
-    :'<p class="nota">Nada a mudar.</p>';
-}
-async function nomesAplicar(){
-  const itens=[...document.querySelectorAll(".nomes-c:checked")].map(c=>({fonte:c.dataset.f,id:+c.dataset.id}));
-  if(!itens.length)return alert("Marca pelo menos um vinho.");
-  if(!confirm("Aplicar o nome novo a "+itens.length+" vinho(s)? Fica no histórico do catálogo e no registo da Garrafeira."))return;
-  try{const r=await post("/nomes",{itens,aplicar:true});const d=r.duplicados||[];
-    alert(r.catalogo+" no catálogo e "+r.garrafeiras+" nas garrafeiras."+(d.length?"\\n\\nFicaram por mexer "+d.length+" do catálogo, porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos Duplicados da app:\\n"+d.map(x=>"#"+x.id+" "+x.nome+(x.ano?" "+x.ano:"")+" → #"+x.com).join("\\n"):""));
-    await nomesProcurar();}
-  catch(e){alert(e.message);}
-}
-const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
-function novaLinha(){
-  const tr=document.createElement("tr");
-  tr.innerHTML='<td><input class="n-nome" placeholder="ex.: Quinta do Crasto Reserva Vinhas Velhas"></td><td><input class="n-prod"></td>'+
-    '<td style="width:80px"><input class="n-ano" inputmode="numeric" maxlength="4"></td>'+
-    '<td style="width:130px"><select class="n-cor"><option value="">— cor —</option>'+CORES.map(c=>"<option>"+c+"</option>").join("")+'</select></td>'+
-    '<td><input class="n-links" placeholder="cola aqui o link do Vivino, da loja…"></td>'+
-    '<td style="width:30px"><button title="Tirar" onclick="this.closest(\\'tr\\').remove()">✕</button></td>';
-  document.getElementById("novos").appendChild(tr);
-}
-async function procurarNovos(){
-  const vinhos=[...document.querySelectorAll("#novos tr")].slice(1).map(tr=>({
-    nome:tr.querySelector(".n-nome").value.trim(),produtor:tr.querySelector(".n-prod").value.trim(),
-    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value,
-    links:tr.querySelector(".n-links").value.trim()})).filter(x=>x.nome);
-  if(!vinhos.length)return alert("Escreve pelo menos um nome.");
-  if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
-  if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
-  try{await post("/novo",{vinhos,pesquisa:document.getElementById("pesquisa").value});comecar();}catch(e){alert(e.message);}
-}
+
+filtrosHTML();
 novaLinha();
+abrirTab(location.hash.slice(1));
 carregarCatalogo();
 listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
 </script></body></html>`;

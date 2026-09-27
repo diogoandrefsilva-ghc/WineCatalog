@@ -669,14 +669,23 @@ CREATE OR REPLACE FUNCTION winecatalog.vivino_catalogo()
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
 AS $$
+DECLARE
+  v_fila bigint[];
 BEGIN
   IF COALESCE(auth.role(), '') <> 'service_role' THEN
     RAISE EXCEPTION 'Só o batch (service_role) chama isto.';
   END IF;
+  -- Os pedidos da app ("🍷 Verificar no Vivino", a `vivino_fila`): desde
+  -- 27/09/2026 o painel escolhe sempre os vinhos na lista (por critério ou
+  -- ao acaso) e deixou de correr a fila às cegas — um filtro "pedidos na
+  -- app" é o que os mantém à vista.
+  v_fila := ARRAY(SELECT value::bigint FROM jsonb_array_elements_text(
+              COALESCE((SELECT valor::jsonb FROM winecatalog.config WHERE chave = 'vivino_fila'), '[]')));
   RETURN COALESCE((
     SELECT jsonb_agg(jsonb_build_object(
       'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
       'tipo', v.ficha ->> 'tipo', 'regiao', v.ficha ->> 'regiao',
+      'pedido', v.id = ANY(v_fila),
       'imagem', v.ficha ? 'imagem_url', 'preco', v.ficha ? 'preco_medio', 'vivino', v.ficha ? 'vivino_url',
       -- A imagem em si (o painel mostra-a em miniatura, para se escolher a
       -- olho quais trocar) e de onde veio: do Vivino, de uma loja, a nossa
