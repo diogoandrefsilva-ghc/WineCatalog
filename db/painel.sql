@@ -18,6 +18,93 @@
 -- Corre depois de db/cor-na-chave.sql e db/historico.sql.
 -- =====================================================================
 
+-- ---------------------------------------------------------------------
+-- QUEM criou e QUEM alterou (27/09/2026, o dono: "dava-me jeito ver quem
+-- criou cada vinho e quem atualizou pela última vez"). O histórico
+-- (`alteracoes.quem`) diz um processo ("script no PC…", "nomes:
+-- normalização"), o email do admin, ou uma de duas coisas que não dizem
+-- QUEM: "Edge Function (service_role)" (uma pesquisa com IA de uma das
+-- apps — a Edge Function escreve com a service_role, sem email) e "uma
+-- garrafeira" (o trigger de lá — sem email de propósito, invariante 2).
+--
+-- O catálogo continua sem guardar quem é quem. É AQUI, só no painel do PC
+-- (service_role — a mesma exceção de "Links do Vivino nas garrafeiras", onde
+-- o admin já vê a garrafeira e o dono), que se vai ver aos registos das
+-- apps quem foi, pela hora:
+--   · Edge Function → o `sync_log` da app que chamou (pela origem: vinho-info
+--     é a Garrafeira, ws-* a WineSelection, catalogo-* esta), a linha da
+--     função mais perto dessa hora (de 5 s antes a 90 s depois — a função
+--     regista depois de escrever no catálogo);
+--   · uma garrafeira → o vinho da garrafeira gravado nesse instante (±20 s):
+--     criado → quem o criou; alterado → a garrafeira (a de lá não guarda
+--     quem alterou, só quem criou);
+--   · sem histórico (antes de 25/09/2026) → as duas coisas, pela hora da
+--     criação.
+-- É um cruzamento pela hora, não um registo: duas pessoas a pesquisar no
+-- mesmo minuto podem trocar-se. O ecrã diz isto.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.painel_autor(
+  p_quem text, p_origem text, p_quando timestamptz, p_ano integer DEFAULT NULL)
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  q text := NULLIF(btrim(COALESCE(p_quem, '')), '');
+  o text := COALESCE(p_origem, '');
+  r text;
+  g record;
+BEGIN
+  IF q IS NOT NULL AND q NOT IN ('Edge Function (service_role)', 'uma garrafeira') THEN
+    RETURN q;
+  END IF;
+  IF p_quando IS NULL THEN RETURN q; END IF;
+
+  IF q IS DISTINCT FROM 'uma garrafeira' THEN
+    IF o ~ '^catalogo' OR q IS NULL THEN
+      SELECT s.quem INTO r FROM winecatalog.sync_log s
+       WHERE s.origem = 'function' AND COALESCE(s.quem, '') <> ''
+         AND s.criado_em BETWEEN p_quando - interval '5 seconds' AND p_quando + interval '90 seconds'
+       ORDER BY abs(extract(epoch FROM s.criado_em - p_quando)) LIMIT 1;
+      IF r IS NOT NULL THEN RETURN r || ' · WineCatalog'; END IF;
+    END IF;
+    IF (o ~ '^ws-' OR q IS NULL) AND to_regclass('wineselection.sync_log') IS NOT NULL THEN
+      SELECT s.quem INTO r FROM wineselection.sync_log s
+       WHERE COALESCE(s.quem, '') <> ''
+         AND s.criado_em BETWEEN p_quando - interval '5 seconds' AND p_quando + interval '90 seconds'
+       ORDER BY abs(extract(epoch FROM s.criado_em - p_quando)) LIMIT 1;
+      IF r IS NOT NULL THEN RETURN r || ' · WineSelection'; END IF;
+    END IF;
+    IF o !~ '^(catalogo|ws-)' AND to_regclass('garrafeira.sync_log') IS NOT NULL THEN
+      SELECT s.quem INTO r FROM garrafeira.sync_log s
+       WHERE s.origem = 'function' AND s.acao IN ('vinho-info', 'importar-vinhos')
+         AND COALESCE(s.quem, '') <> ''
+         AND s.criado_em BETWEEN p_quando - interval '5 seconds' AND p_quando + interval '90 seconds'
+       ORDER BY abs(extract(epoch FROM s.criado_em - p_quando)) LIMIT 1;
+      IF r IS NOT NULL THEN RETURN r || ' · Garrafeira'; END IF;
+    END IF;
+  END IF;
+
+  IF (q IS NULL OR q = 'uma garrafeira') AND to_regclass('garrafeira.vinhos') IS NOT NULL THEN
+    SELECT gv.criado_por, gv.criado_em, gv.atualizado_em, ga.nome AS garrafeira INTO g
+      FROM garrafeira.vinhos gv
+      LEFT JOIN garrafeira.garrafeiras ga ON ga.id = gv.garrafeira_id
+     WHERE (p_ano IS NULL OR gv.ano IS NOT DISTINCT FROM p_ano)
+       AND (gv.criado_em BETWEEN p_quando - interval '20 seconds' AND p_quando + interval '20 seconds'
+            OR gv.atualizado_em BETWEEN p_quando - interval '20 seconds' AND p_quando + interval '20 seconds')
+     ORDER BY LEAST(abs(extract(epoch FROM gv.criado_em - p_quando)),
+                    abs(extract(epoch FROM COALESCE(gv.atualizado_em, gv.criado_em) - p_quando)))
+     LIMIT 1;
+    IF FOUND THEN
+      IF abs(extract(epoch FROM g.criado_em - p_quando)) <= 20 AND COALESCE(g.criado_por, '') <> '' THEN
+        RETURN g.criado_por || ' · Garrafeira';
+      END IF;
+      IF COALESCE(g.garrafeira, '') <> '' THEN RETURN g.garrafeira; END IF;
+    END IF;
+  END IF;
+  RETURN q;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION winecatalog.painel_vinho(p_id bigint)
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
@@ -37,6 +124,13 @@ BEGIN
     'id', r.id, 'nome', r.nome, 'produtor', r.produtor, 'ano', r.ano, 'cor', r.cor,
     'ficha', r.ficha, 'origens', r.origens, 'fontes', r.fontes,
     'vezes', r.vezes, 'criado', r.criado_em, 'atualizado', r.atualizado_em,
+    -- quem o criou e quem mexeu por último (a `painel_autor`, acima)
+    'criado_por', COALESCE(
+      (SELECT winecatalog.painel_autor(h.quem, h.origem, h.quando, r.ano) FROM winecatalog.alteracoes h
+        WHERE h.vinho_id = r.id AND h.campo = '_criado' ORDER BY h.quando LIMIT 1),
+      winecatalog.painel_autor(NULL, NULL, r.criado_em, r.ano), 'antes do histórico'),
+    'alterado_por', (SELECT winecatalog.painel_autor(h.quem, h.origem, h.quando, r.ano) FROM winecatalog.alteracoes h
+                      WHERE h.vinho_id = r.id AND h.campo <> '_criado' ORDER BY h.quando DESC, h.id DESC LIMIT 1),
     'produtor_completo', (SELECT p.nome_completo FROM winecatalog.produtores p
                            WHERE p.nome = winecatalog.produtor_oficial(r.produtor) LIMIT 1),
     -- As grafias que os Duplicados já juntaram nesta.
@@ -50,11 +144,13 @@ BEGIN
         FROM (SELECT * FROM winecatalog.vivino_verificacoes
                WHERE vinho_id = r.id ORDER BY verificado_em DESC LIMIT 5) x), '[]'::jsonb),
     -- O histórico deste vinho (e das linhas fundidas nele), o mais recente
-    -- primeiro. O "quem" é o da `quem_escreve`: nunca o email de quem não é
-    -- o admin (invariante 2).
+    -- primeiro. O "quem" gravado é o da `quem_escreve` (nunca o email de
+    -- quem não é o admin, invariante 2); o `autor` é o que a `painel_autor`
+    -- descobre pela hora, só aqui no painel.
     'historico', COALESCE((
       SELECT jsonb_agg(jsonb_build_object('campo', a.campo, 'antes', a.antes, 'depois', a.depois,
-                                          'origem', a.origem, 'quem', a.quem, 'quando', a.quando)
+                                          'origem', a.origem, 'quem', a.quem, 'quando', a.quando,
+                                          'autor', winecatalog.painel_autor(a.quem, a.origem, a.quando, r.ano))
                        ORDER BY a.quando DESC, a.id DESC)
         FROM (SELECT * FROM winecatalog.alteracoes
                WHERE vinho_id = r.id
@@ -87,8 +183,10 @@ END;
 $$;
 
 -- Cada função nova nasce com EXECUTE para PUBLIC; tira-se sempre.
+REVOKE ALL ON FUNCTION winecatalog.painel_autor(text, text, timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.painel_vinho(bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.painel_editar(bigint, jsonb, text, text, integer, boolean, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.painel_autor(text, text, timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.painel_vinho(bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.painel_editar(bigint, jsonb, text, text, integer, boolean, text) TO service_role;
 

@@ -1611,7 +1611,7 @@ AS $$
 DECLARE
   v_a text; v_b text;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode decidir isto.';
   END IF;
   SELECT chave INTO v_a FROM winecatalog.vinhos WHERE id = p_id_a;
@@ -1620,7 +1620,8 @@ BEGIN
     RAISE EXCEPTION 'Par inválido.';
   END IF;
   INSERT INTO winecatalog.distintos (chave_a, chave_b, quem)
-  VALUES (LEAST(v_a, v_b), GREATEST(v_a, v_b), auth.email())
+  VALUES (LEAST(v_a, v_b), GREATEST(v_a, v_b),
+          COALESCE(auth.email(), NULLIF(current_setting('winecatalog.quem', true), '')))
   ON CONFLICT (chave_a, chave_b) DO NOTHING;
   RETURN 'ok';
 END;
@@ -1707,7 +1708,9 @@ DECLARE
   f_de  integer;
   f_para integer;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  -- O painel do PC (service_role, a `corresponde` em db/parecidos.sql)
+  -- também funde: é o admin, no computador dele (27/09/2026).
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode fundir linhas.';
   END IF;
   IF p_id_de IS NULL OR p_id_para IS NULL OR p_id_de = p_id_para THEN
@@ -1770,8 +1773,13 @@ BEGIN
     ficha    = v_ficha,
     origens  = v_origens,
     fontes   = v_fontes,
-    -- o nome mais COMPRIDO fica, como na `juntar`
-    nome     = CASE WHEN length(COALESCE(de.nome,'')) > length(nome) THEN de.nome ELSE nome END,
+    -- o nome mais COMPRIDO fica, como na `juntar` — a não ser que quem
+    -- funde tenha dito que o certo é o da alvo (a `corresponde`: "este
+    -- vinho é aquele" — o "Cristo vinhas velhas" não pode dar o nome ao
+    -- "Crasto Reserva" só por ser mais comprido).
+    nome     = CASE WHEN length(COALESCE(de.nome,'')) > length(nome)
+                     AND COALESCE(current_setting('winecatalog.manter_nome', true), '') <> 'sim'
+                    THEN de.nome ELSE nome END,
     produtor = CASE WHEN produtor = '' THEN COALESCE(de.produtor,'') ELSE produtor END,
     ano      = COALESCE(ano, de.ano),
     atualizado_em = now()
@@ -1779,7 +1787,8 @@ BEGIN
 
   INSERT INTO winecatalog.alias (chave_de, chave_para, id_de, id_para,
                                  nome_de, ano_de, campos_movidos, quem)
-  VALUES (de.chave, para.chave, de.id, para.id, de.nome, de.ano, v_mov, auth.email())
+  VALUES (de.chave, para.chave, de.id, para.id, de.nome, de.ano, v_mov,
+          COALESCE(auth.email(), NULLIF(current_setting('winecatalog.quem', true), '')))
   ON CONFLICT (chave_de) DO UPDATE
     SET chave_para = EXCLUDED.chave_para, id_para = EXCLUDED.id_para,
         campos_movidos = EXCLUDED.campos_movidos, quem = EXCLUDED.quem,

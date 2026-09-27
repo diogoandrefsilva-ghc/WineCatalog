@@ -718,7 +718,17 @@ BEGIN
       -- no `atualizado_em`, e o histórico só começa a 25/09/2026).
       'criado', v.criado_em,
       'alterado', GREATEST(v.atualizado_em,
-                           (SELECT max(h.quando) FROM winecatalog.alteracoes h WHERE h.vinho_id = v.id)))
+                           (SELECT max(h.quando) FROM winecatalog.alteracoes h WHERE h.vinho_id = v.id)),
+      -- Quem o criou e quem mexeu por último (27/09/2026): a `painel_autor`
+      -- (db/painel.sql) vai aos registos das apps ver quem estava por trás de
+      -- uma "Edge Function" ou de "uma garrafeira". Sem histórico (antes de
+      -- 25/09/2026), pela hora da criação.
+      'criado_por', COALESCE(
+        (SELECT winecatalog.painel_autor(h.quem, h.origem, h.quando, v.ano) FROM winecatalog.alteracoes h
+          WHERE h.vinho_id = v.id AND h.campo = '_criado' ORDER BY h.quando LIMIT 1),
+        winecatalog.painel_autor(NULL, NULL, v.criado_em, v.ano), 'antes do histórico'),
+      'alterado_por', (SELECT winecatalog.painel_autor(h.quem, h.origem, h.quando, v.ano) FROM winecatalog.alteracoes h
+                        WHERE h.vinho_id = v.id AND h.campo <> '_criado' ORDER BY h.quando DESC, h.id DESC LIMIT 1))
       ORDER BY lower(v.nome), v.ano NULLS FIRST)
     FROM winecatalog.vinhos v
     WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)), '[]'::jsonb);

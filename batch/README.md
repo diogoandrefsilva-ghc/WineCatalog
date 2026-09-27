@@ -63,9 +63,10 @@ De cada vez que quiseres correr — **duplo clique em `vinhos.bat`** (Windows):
 3. abre o **painel** no browser (`http://127.0.0.1:8787`). Deixa a janela
    preta aberta enquanto o usas; fechá-la desliga o painel.
 
-O painel tem **três separadores**: **Informação de vinhos**, **Nomes de
-vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
-`#nomes`, `#produtores` —, e recarregar a página não o perde).
+O painel tem **quatro separadores**: **Informação de vinhos**, **Nomes de
+vinhos**, **Produtores** e **Duplicados** (o separador aberto fica no
+endereço — `#info`, `#nomes`, `#produtores`, `#duplicados` —, e recarregar a
+página não o perde).
 
 ### Informação de vinhos
 
@@ -175,7 +176,16 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
   força de uma correção à mão (4 no rótulo, 3 na nota, no preço e na
   imagem), e fica no histórico como "painel do PC (admin)". Se a identidade
   nova for a de outro vinho que já existe, não grava e diz qual — juntam-se
-  nos Duplicados da app. Esvaziar um campo apaga-o.
+  nos Duplicados. Esvaziar um campo apaga-o. **🔗 É o mesmo que…** procura
+  o outro vinho na lista e faz o mesmo que o **É este** dos Duplicados.
+- **Quem criou e quem alterou** — na lista, debaixo de cada data ("por
+  pedro_barrona · Garrafeira", "por script no PC"…), no topo da ficha e no
+  histórico dela; dá para filtrar (**Criado por**, **Alterado por**) e para
+  procurar ("pedro"). Quando o histórico só diz "Edge Function" (uma
+  pesquisa com IA de uma das apps) ou "uma garrafeira", o painel vai aos
+  registos das apps ver quem foi, **pela hora** — duas pessoas no mesmo
+  minuto podem trocar-se. Os vinhos de antes de 25/09/2026 dizem "(antes do
+  histórico)".
 - **As garrafeiras × o catálogo**:
   - **Links do Vivino nas garrafeiras** — **Comparar** compara o link de
     cada vinho das garrafeiras de toda a gente com o do catálogo e mostra os
@@ -217,7 +227,27 @@ ficam como estão**, com ✕ para tirar).
 As grafias do mesmo produtor ("Ramos Pinto" e "Adriano Ramos Pinto"):
 escolhe o oficial e **Juntar**, ou **São diferentes**. Carrega sozinho
 quando abres o separador; a procura filtra as sugestões e os oficiais já
-definidos (onde também se escreve o nome completo).
+definidos. Em cada oficial: **Mudar** troca o nome oficial (em todos os
+vinhos dele, no catálogo e nas garrafeiras; o nome antigo fica como grafia),
+**+ Acrescentar** junta-lhe outra maneira de o escrever (a lista sugere as
+que existem, com quantos vinhos têm e de que oficial já são), ✕ tira uma
+grafia, e ao lado escreve-se o nome completo.
+
+### Duplicados
+
+Vinhos que parecem o mesmo — o número no separador é o alerta (carrega ao
+abrir o painel):
+
+- **Uma letra de diferença** — um nome com uma letra trocada, a mais ou a
+  menos ("Cristo" / "Crasto"), **em qualquer colheita**; o de cima é o
+  suspeito (a palavra mais rara), por baixo os vinhos que ele pode ser.
+- **Mesma colheita, nome parecido** — os pares dos Duplicados da app.
+
+**É este** / **São o mesmo**: ficam o nome, o produtor e a cor do outro, e a
+colheita de cada um. Da mesma colheita juntam-se num só (desfaz-se na app,
+em Duplicados › Fusões); de outra colheita, este passa a ser essa colheita
+do outro vinho (colheitas diferentes nunca se juntam). **Nenhum destes** /
+**Não são** fica gravado e o par não volta.
 
 Tudo o que é gravado (pelas duas vias) fica em **Alertas › Alterações ao
 catálogo** na app, com "Repor".

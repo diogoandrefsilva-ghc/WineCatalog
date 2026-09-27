@@ -371,3 +371,84 @@ REVOKE ALL ON FUNCTION winecatalog.produtor_nome_completo(bigint, text) FROM PUB
 REVOKE ALL ON FUNCTION winecatalog.produtores_completos()               FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION winecatalog.produtor_nome_completo(bigint, text) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.produtores_completos()               TO authenticated, service_role;
+
+
+-- ---------------------------------------------------------------------
+-- MUDAR O NOME OFICIAL e ACRESCENTAR GRAFIAS a um que já existe
+-- (27/09/2026, o dono das apps: "gostava de poder mudar o nome principal e
+-- de poder adicionar outras grafias"). Acrescentar é a `produtor_definir`
+-- com o oficial que já lá está — não precisa de função nova. Mudar o nome
+-- precisa: pela `produtor_definir` com o nome novo nascia OUTRO oficial, e
+-- as grafias do antigo ficavam penduradas nele.
+--
+-- O nome antigo fica como grafia (quem o escrever continua a cair aqui), e
+-- o resto é a `produtor_definir`: o catálogo com as chaves recalculadas, as
+-- garrafeiras com uma linha no `sync_log`, os duplicados devolvidos.
+-- Se o nome novo já for de OUTRO oficial (o nome, ou uma grafia dele), é
+-- juntar dois produtores e não mudar um nome: recusa, e diz qual é.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.produtor_renomear(p_id bigint, p_nome text)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v_novo  text := btrim(regexp_replace(COALESCE(p_nome, ''), '\s+', ' ', 'g'));
+  v_velho text;
+  v_outro bigint;
+BEGIN
+  IF NOT winecatalog.produtores_autorizado() THEN
+    RAISE EXCEPTION 'Só o admin do catálogo.';
+  END IF;
+  SELECT nome INTO v_velho FROM winecatalog.produtores WHERE id = p_id;
+  IF v_velho IS NULL THEN RAISE EXCEPTION 'Produtor não encontrado.'; END IF;
+  IF v_novo = '' OR winecatalog.chave_produtor(v_novo) = '' THEN
+    RAISE EXCEPTION 'Falta o nome oficial.';
+  END IF;
+  BEGIN v_novo := winecatalog.nome_proprio(v_novo); EXCEPTION WHEN OTHERS THEN NULL; END;
+  IF v_novo = v_velho THEN
+    RETURN jsonb_build_object('ok', true, 'id', p_id, 'oficial', v_novo,
+      'catalogo', 0, 'garrafeiras', 0, 'duplicados', '[]'::jsonb);
+  END IF;
+
+  SELECT id INTO v_outro FROM winecatalog.produtores WHERE lower(nome) = lower(v_novo) AND id <> p_id;
+  IF v_outro IS NULL THEN
+    SELECT produtor_id INTO v_outro FROM winecatalog.produtor_variantes
+     WHERE chave = winecatalog.chave_produtor(v_novo) AND produtor_id <> p_id;
+  END IF;
+  IF v_outro IS NOT NULL THEN
+    RAISE EXCEPTION '"%" já é do produtor oficial "%" — para os juntar, acrescenta lá as grafias deste.',
+      v_novo, (SELECT nome FROM winecatalog.produtores WHERE id = v_outro);
+  END IF;
+
+  UPDATE winecatalog.produtores SET nome = v_novo WHERE id = p_id;
+  RETURN winecatalog.produtor_definir(v_novo, ARRAY[v_velho]);
+END;
+$$;
+
+-- As grafias que existem (catálogo e garrafeiras), com o oficial de cada
+-- uma, se já tiver — é a lista de onde se escolhem as grafias a acrescentar.
+CREATE OR REPLACE FUNCTION winecatalog.produtores_grafias_lista()
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF NOT winecatalog.produtores_autorizado() THEN
+    RAISE EXCEPTION 'Só o admin do catálogo.';
+  END IF;
+  RETURN (
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'produtor', g.produtor, 'chave', g.chave, 'catalogo', g.n_catalogo,
+             'garrafeiras', g.n_garrafeiras, 'oficial', p.nome)
+           ORDER BY lower(g.produtor)), '[]'::jsonb)
+      FROM winecatalog.produtores_grafias() g
+      LEFT JOIN winecatalog.produtor_variantes pv ON pv.chave = g.chave
+      LEFT JOIN winecatalog.produtores p ON p.id = pv.produtor_id
+     WHERE g.chave <> ''
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION winecatalog.produtor_renomear(bigint, text)   FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.produtores_grafias_lista()        FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.produtor_renomear(bigint, text) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.produtores_grafias_lista()      TO authenticated, service_role;

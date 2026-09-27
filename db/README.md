@@ -41,7 +41,11 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 14. db/nomes-manter.sql    (os produtores que ficam no nome e a `libertar_chave` — antes de voltar a correr o
                             nomes-normalizar.sql, o trigger do cor-na-chave.sql e o produtores.sql, que as usam)
 15. db/painel.sql          (o back-office do painel do PC: `painel_vinho` e `painel_editar`, só service_role —
-                            depois do cor-na-chave.sql, cuja `editar` aceita a service_role, e do historico.sql)
+                            depois do cor-na-chave.sql, cuja `editar` aceita a service_role, e do historico.sql;
+                            e a `painel_autor`, quem criou/alterou, que a `vivino_catalogo` do vivino.sql chama)
+16. db/parecidos.sql       ("este vinho é aquele": os `parecidos` — uma letra de diferença, qualquer colheita —,
+                            a `corresponde` e a `nao_correspondem`; depois do painel.sql. A `fundir`, a
+                            `marcar_distintos` e a `candidatos` aceitam a service_role desde este dia)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

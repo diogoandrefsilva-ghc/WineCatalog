@@ -51,7 +51,8 @@ tudo o que aqui está foi pago com um erro.
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
   marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) → `painel.sql`
-  (o back-office do painel do PC: `painel_vinho`/`painel_editar`, só `service_role`) (+ `README.md`
+  (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor`, só `service_role`) →
+  `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -649,7 +650,7 @@ O que existe agora, **sem IA**, com DOIS motores no mesmo script:
   os vinhos pedidos à mão vêm primeiro; depois os nunca verificados,
   depois os verificados há mais tempo; quem tem uma proposta por decidir
   fica de fora. É a ordem do Actions e do `npm run vivino`; **o painel já
-  não a corre** (27/09/2026, ver "Os três separadores") — lá os pedidos são
+  não a corre** (27/09/2026, ver "Os separadores e UM menu") — lá os pedidos são
   o filtro "Pedidos na app" (`pedido` na `vivino_catalogo`).
 
 **Desde 25/09/2026 o script ESCREVE no catálogo** (a pedido do dono,
@@ -1041,13 +1042,13 @@ site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
 `git pull` pode trocá-lo a meio.
 
-**Os três separadores e UM menu para escolher os vinhos** (27/09/2026,
+**Os separadores e UM menu para escolher os vinhos** (27/09/2026,
 pedido do dono: "hoje isso está separado e faz-me confusão"). O painel era
 uma página corrida, e escolher os vinhos a enriquecer vivia em dois cartões,
 cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
 `vivino_a_tratar` — o script escolhia sozinho, e não se via quais) e o
-**"Escolher no catálogo"**. Agora são três separadores (`#info`, `#nomes`,
-`#produtores`, no endereço):
+**"Escolher no catálogo"**. Agora são separadores (`#info`, `#nomes`,
+`#produtores`, `#duplicados`, no endereço):
 - **Informação de vinhos** — "Escolher os vinhos a enriquecer ou corrigir"
   em três passos: **1 Critério** (a procura e os filtros, cada opção com a
   contagem feita com os OUTROS filtros, como os da app), **2 Escolha**
@@ -1073,9 +1074,14 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
   nome" (a lista `produtores_no_nome`, ver "Os produtores que ficam no
   nome") leva os PRODUTORES dos desmarcados que se veem e a quem a regra
   tirava o produtor;
-- **Produtores** — as sugestões e os oficiais, com uma procura.
+- **Produtores** — as sugestões e os oficiais, com uma procura; num
+  oficial, **Mudar** o nome e **+ Acrescentar** uma grafia (ver "Mudar o nome
+  de um produtor", abaixo);
+- **Duplicados** (o 4.º, desde a tarde de 27/09) — ver "Este vinho é aquele",
+  abaixo.
 Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
-que se abrem. Enquanto o script corre, só os botões que o põem a correr
+que se abrem; os Duplicados carregam ao abrir o painel (o número no
+separador é o alerta). Enquanto o script corre, só os botões que o põem a correr
 (`button.corre`) ficam desligados, e o separador mostra ⏳.
 
 **A ficha de um vinho no painel — o back-office** (27/09/2026, pedido do
@@ -1097,8 +1103,72 @@ chave do batch), e continua a recusar quem tem sessão e não é o admin. A
 leitura é a `painel_vinho`, também só da `service_role` — a `ver` e a
 `historico` da app confirmam o admin pelo email, que a `service_role` não tem.
 
+**Quem criou e quem alterou** (27/09/2026, o dono: "dava-me jeito ver quem
+criou cada vinho e quem atualizou pela última vez"). Na lista (por baixo de
+cada data), no topo da ficha e no histórico dela, com os filtros **Criado
+por** / **Alterado por** e a procura. O histórico (`alteracoes.quem`) diz um
+processo, o email do admin, ou duas coisas que não dizem QUEM: "Edge Function
+(service_role)" (uma pesquisa com IA de uma das apps, que escreve com a
+service_role) e "uma garrafeira" (sem email de propósito, invariante 2). **O
+catálogo continua sem guardar quem é quem** — é a `winecatalog.painel_autor`
+(`db/painel.sql`, só `service_role`) que, no painel, vai aos registos das
+apps pela HORA: a Edge Function ao `sync_log` da app que chamou (pela origem:
+`vinho-info-*` Garrafeira, `ws-*` WineSelection, `catalogo-*` esta; a linha
+da função de 5 s antes a 90 s depois), "uma garrafeira" ao vinho da
+garrafeira gravado nesse instante (±20 s: criado → quem o criou; alterado →
+a garrafeira, que não guarda quem altera), e sem histórico (antes de
+25/09/2026) as duas pela hora da criação. É a exceção de "Links do Vivino nas
+garrafeiras" (o admin, no PC, já vê a garrafeira e o dono), não uma nova — e
+é um cruzamento pela hora, não um registo: duas pessoas no mesmo minuto podem
+trocar-se, e o ecrã di-lo. A 1.ª leitura: 18 vinhos criados pela pesquisa
+da Garrafeira de um amigo, 156 "(antes do histórico)", ~0,2 s a lista toda.
+
+**Mudar o nome de um produtor e acrescentar grafias** (27/09/2026, o dono).
+Acrescentar é a `produtor_definir` com o oficial que já lá está. Mudar o
+nome precisou de uma função (`produtor_renomear`, `db/produtores.sql`): pela
+`definir` com o nome novo nascia OUTRO oficial e as grafias do antigo
+ficavam penduradas nele. O nome antigo fica como grafia (quem o escrever
+continua a cair aqui) e o resto é a `definir` (catálogo com as chaves,
+garrafeiras com `sync_log`, duplicados devolvidos). Se o nome novo já for de
+outro oficial (o nome, ou uma grafia dele), é juntar dois produtores: recusa
+e diz qual. A lista de onde se escolhem as grafias é a
+`produtores_grafias_lista` (com quantos vinhos e de que oficial já são).
+
+**Este vinho é aquele** (27/09/2026, `db/parecidos.sql`, o dono: "alguém
+criou um vinho chamado 'Cristo Vinhas Velhas', que na verdade corresponde ao
+Crasto Reserva"). O caso: a pesquisa com IA da Garrafeira (`vinho-info`)
+grava no catálogo com o nome TAL COMO FOI ESCRITO, antes de a pessoa gravar o
+vinho; o vinho era da lista de desejos (que não vai ao catálogo) e ficou
+"Crasto Vinhas Velhas" só na garrafeira — o #216 ficou órfão, sem produtor.
+Os Duplicados não o apanhavam: só propõem a MESMA colheita com palavras
+IGUAIS. Duas peças:
+- **`parecidos`** — uma palavra (≥5 letras, sem as genéricas) a UMA letra de
+  outra (trocada, a mais, a menos, vizinhas trocadas — pelas "palavras sem
+  uma letra", em SQL, sem extensões) ou o princípio dela com 2–3 letras a
+  menos ("Harvest"/"Harvested"); a mais rara é a suspeita; e TODAS as
+  palavras distintivas do suspeito têm de estar no outro, iguais ou a uma
+  letra — é o que cala "Alves"/"Caves" e "Ermos"/"Ramos". Qualquer colheita,
+  cores diferentes nunca, os "não são" da `distintos` fora. Medido: de 16
+  pares de palavras a uma letra, ficaram o Cristo × os quatro Crasto e o
+  Carvalhais × Carvalhas (que são vinhos diferentes). Devolve também os
+  `candidatos` (mesma colheita), que passaram a aceitar a `service_role`.
+- **`corresponde(p_id, p_alvo)`** — a identidade certa é a do alvo, a
+  colheita é a de cada um: a MESMA colheita → `fundir` (reversível; e o nome
+  que fica é o do alvo, mesmo que o outro seja mais comprido — a
+  `winecatalog.manter_nome` na transação, que a `fundir` respeita); OUTRA
+  colheita → este passa a ser essa colheita do vinho do alvo (`editar` com o
+  interruptor da identidade), e se essa colheita já existir noutra linha,
+  funde-se nela. Colheitas diferentes continuam a nunca se fundir. O que não
+  resolve: mudado o nome, a grafia errada sai do catálogo e, se voltar a ser
+  escrita, nasce outra linha (na fusão não — a perdedora guarda a chave).
+  **A causa fica no repo Garrafeira**: a `vinho-info` escrever no catálogo
+  antes de o vinho ser gravado, com o nome por confirmar.
+A `fundir` e a `marcar_distintos` passaram a aceitar a `service_role` (e a
+gravar o `winecatalog.quem` quando não há email), como a `editar`. No
+painel: o separador **Duplicados** e, na ficha, **🔗 É o mesmo que…**.
+
 **Escolher no catálogo pelo painel** (25/09/2026; desde 27/09/2026 é o
-único caminho — ver "Os três separadores"): o painel lista o
+único caminho — ver "Os separadores e UM menu"): o painel lista o
 catálogo (`vivino_catalogo` — leve: tem fotografia? preço? link? quando foi
 visto; sem os fundidos) e os vinhos marcados (até 50) correm com
 `IDS=1,2,3` em vez da fila (`vivino_estes`, pela ordem marcada; um id

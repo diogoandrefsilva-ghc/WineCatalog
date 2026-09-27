@@ -838,7 +838,8 @@ DECLARE
   v_lim integer := LEAST(GREATEST(COALESCE(p_limite, 40), 1), 200);
   v_res jsonb;
 BEGIN
-  IF NOT winecatalog.pode_ler() THEN
+  -- O painel do PC (service_role) também os mostra (27/09/2026).
+  IF NOT (winecatalog.pode_ler() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Sem acesso ao catálogo.';
   END IF;
 

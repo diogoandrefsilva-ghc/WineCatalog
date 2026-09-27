@@ -224,7 +224,14 @@ const servidor = http.createServer(async (req, res) => {
         return json(res, 200, {
           sugestoes: await sbDados("winecatalog", "produtores_sugestoes", {}),
           oficiais: await sbDados("winecatalog", "produtores_listar", {}),
+          // as grafias que existem, para escolher as que se acrescentam a um oficial
+          grafias: await sbDados("winecatalog", "produtores_grafias_lista", {}),
         });
+      }
+      // mudar o nome oficial (o antigo fica como grafia; db/produtores.sql)
+      if (b.acao === "renomear") {
+        if (!txt(b.nome)) return json(res, 400, { erro: "Falta o nome oficial." });
+        return sbRpc(res, "winecatalog", "produtor_renomear", { p_id: Number(b.id) || 0, p_nome: txt(b.nome) });
       }
       if (b.acao === "definir") {
         const grafias = (Array.isArray(b.grafias) ? b.grafias : []).map(g => txt(g)).filter(Boolean).slice(0, 30);
@@ -235,6 +242,23 @@ const servidor = http.createServer(async (req, res) => {
       if (b.acao === "tirar") return sbRpc(res, "winecatalog", "produtor_tirar_variante", { p_chave: txt(b.chave) });
       // o nome por extenso ao lado do oficial (só para se ler na ficha)
       if (b.acao === "completo") return sbRpc(res, "winecatalog", "produtor_nome_completo", { p_id: Number(b.id) || 0, p_nome_completo: txt(b.completo) });
+      return json(res, 400, { erro: "acao" });
+    }
+    if (req.method === "POST" && url.pathname === "/duplicados") {
+      // Os vinhos parecidos (db/parecidos.sql): uma letra de diferença, em
+      // qualquer colheita, e os pares da mesma colheita dos Duplicados da app.
+      // "É este" é a `corresponde` (funde, ou passa a ser outra colheita do
+      // mesmo vinho); "nenhum destes" grava os pares como diferentes.
+      const b = await lerCorpo(req);
+      const id = Number(b.id) || 0;
+      if (b.acao === "listar") return sbRpc(res, "winecatalog", "parecidos", { p_limite: 80 });
+      if (b.acao === "corresponde")
+        return sbRpc(res, "winecatalog", "corresponde", { p_id: id, p_alvo: Number(b.alvo) || 0, p_quem: "painel do PC (admin)" });
+      if (b.acao === "nao") {
+        const outros = (Array.isArray(b.outros) ? b.outros : []).map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 50);
+        if (!outros.length) return json(res, 400, { erro: "Nenhum par." });
+        return sbRpc(res, "winecatalog", "nao_correspondem", { p_id: id, p_outros: outros, p_quem: "painel do PC (admin)" });
+      }
       return json(res, 400, { erro: "acao" });
     }
     if (req.method === "POST" && url.pathname === "/nomes") {
@@ -391,7 +415,7 @@ label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;ver
 .mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
 .mini small{display:block;font-size:10px;color:var(--mu);margin-top:2px}.mini small.v{color:var(--er)}
 .prc{font-size:11.5px;line-height:1.35;white-space:nowrap;color:var(--mu)}.prc a{color:inherit;text-decoration:none}.prc a:hover{text-decoration:underline}
-.prc .l{display:inline-block;width:78px}.prc .n{color:#bbb}.prc .med{color:var(--bd);font-weight:700}.prc .med .l:after{content:" ★"}.prc .out{color:var(--bd);font-weight:700}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}.ic.datas div{line-height:1.35}.ic.datas .ord{color:var(--bd);font-weight:700}
+.prc .l{display:inline-block;width:78px}.prc .n{color:#bbb}.prc .med{color:var(--bd);font-weight:700}.prc .med .l:after{content:" ★"}.prc .out{color:var(--bd);font-weight:700}#cat-lista tr.sel td{background:#f6ecef}.ic{font-size:12px;color:var(--mu);white-space:nowrap}.ic.datas div{line-height:1.35}.ic.datas .ord{color:var(--bd);font-weight:700}.ic.datas .por{font-size:11px;max-width:170px;overflow:hidden;text-overflow:ellipsis;margin:-1px 0 2px}
 #novos input,#novos select{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}#novos td{border:0;padding:3px}
 input[type=number]{width:80px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 select{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;max-width:100%}
@@ -434,6 +458,8 @@ body.com-modal{overflow:hidden}
 .lista{margin:0;padding-left:18px}.lista li{margin:3px 0}.lista label.ret{font-size:12px;color:var(--er)}
 .hist td{font-size:12.5px}
 .aviso{background:#fff7e6;border:1px solid #f0d9a8;border-radius:10px;padding:8px 10px;font-size:12.5px;margin:12px 0}
+.dup-g{border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px}.dup-g table td{border:0;padding:4px 6px}
+#prod-oficiais input,#mv-mesmo-q{padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit}
 .ident{border:1px dashed var(--bo);border-radius:10px;padding:8px 10px}.ident .linha label{flex:1 1 200px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mu)}
 </style></head><body>
 <header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
@@ -441,13 +467,14 @@ body.com-modal{overflow:hidden}
   <button role="tab" data-tab="info" onclick="abrirTab('info')">Informação de vinhos<span id="tab-corre"></span></button>
   <button role="tab" data-tab="nomes" onclick="abrirTab('nomes')">Nomes de vinhos</button>
   <button role="tab" data-tab="produtores" onclick="abrirTab('produtores')">Produtores</button>
+  <button role="tab" data-tab="duplicados" onclick="abrirTab('duplicados')" title="Vinhos que parecem o mesmo">Duplicados<span id="tab-dup"></span></button>
 </nav>
 <main>
 <section class="tab" id="t-info">
 <div class="card" id="c-escolher"><h2>Escolher os vinhos a enriquecer ou corrigir</h2>
   <p class="nota" style="margin:0">Carrega no <b>nome</b> de um vinho para ver a ficha inteira e corrigir à mão. Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois ordenas a lista e marcas <b>à mão</b>, <b>os primeiros</b> pela ordem (os alterados há mais tempo, os criados há menos…), <b>alguns ao acaso</b>, ou <b>todos</b> os que passam. Corre só o que estiver marcado — até 50 de cada vez.</p>
   <div class="passo"><span class="num">1</span>Critério <span class="nota" id="cat-passam"></span></div>
-  <div class="filtros"><input type="search" id="cat-q" placeholder="procurar por nome, produtor, região, cor, ano…" oninput="pintarCatalogo()">
+  <div class="filtros"><input type="search" id="cat-q" placeholder="procurar por nome, produtor, região, cor, ano, quem criou…" oninput="pintarCatalogo()">
     <span id="cat-filtros" class="filtros"></span>
     <button onclick="catLimparFiltros()">Limpar filtros</button></div>
   <div class="passo"><span class="num">2</span>Escolha</div>
@@ -531,13 +558,23 @@ body.com-modal{overflow:hidden}
 </section>
 <section class="tab" id="t-produtores" hidden>
 <div class="card"><h2>Produtores</h2>
-  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados da app.</p>
+  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados. Nos oficiais, <b>Mudar</b> troca o nome oficial (o antigo fica como grafia) e <b>+ Acrescentar</b> junta-lhe outra maneira de o escrever.</p>
   <div class="filtros"><input type="search" id="prod-q" placeholder="procurar um produtor…" oninput="prodPintar()">
     <button onclick="prodProcurar()">🔄 Atualizar</button><span id="prod-n" class="nota"></span></div>
   <div class="passo">Sugestões por decidir</div>
   <div id="prod-lista" style="max-height:640px;overflow:auto"></div>
   <div class="passo">Produtores oficiais já definidos <span class="nota" id="prod-on"></span></div>
   <div id="prod-oficiais"></div>
+</div>
+</section>
+<section class="tab" id="t-duplicados" hidden>
+<div class="card"><h2>Vinhos que parecem o mesmo</h2>
+  <p class="nota" style="margin:0 0 10px">Quando um vinho é o mesmo que outro, carrega em <b>É este</b>. Ficam o nome, o produtor e a cor do outro; a colheita é a de cada um. <b>Da mesma colheita</b>, juntam-se num só (desfaz-se na app, em Duplicados › Fusões). <b>De outra colheita</b>, este passa a ser essa colheita do outro vinho — colheitas diferentes nunca se juntam, são linhas diferentes do mesmo vinho. <b>Nenhum destes</b> / <b>Não são</b> fica gravado e o par não volta (nem nos Duplicados da app). Para o que isto não apanha, a ficha de cada vinho tem <b>🔗 É o mesmo que…</b>.</p>
+  <div class="linha"><button onclick="dupProcurar()">🔄 Procurar de novo</button><span id="dup-n" class="nota"></span></div>
+  <div class="passo">Uma letra de diferença <span class="nota">— um nome com uma letra trocada, a mais ou a menos ("Cristo" / "Crasto"), em qualquer colheita; o de cima é o suspeito (a palavra mais rara)</span></div>
+  <div id="dup-letra"><p class="nota">A procurar…</p></div>
+  <div class="passo">Mesma colheita, nome parecido <span class="nota">— os pares dos Duplicados da app</span></div>
+  <div id="dup-colheita"></div>
 </div>
 </section>
 </main>
@@ -554,8 +591,8 @@ const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").t
 const palavras=el=>semAc(document.getElementById(el).value).split(/\\s+/).filter(Boolean);
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
 
-// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores)
-const TABS=["info","nomes","produtores"],ABERTOS=new Set();
+// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores, #duplicados)
+const TABS=["info","nomes","produtores","duplicados"],ABERTOS=new Set();
 function abrirTab(t){
   if(!TABS.includes(t))t="info";
   for(const x of TABS)document.getElementById("t-"+x).hidden=x!==t;
@@ -583,7 +620,25 @@ const FILTROS=[
    t:(v,x)=>x==="nunca"?!v.visto:(!v.visto||Date.now()-new Date(v.visto).getTime()>Number(x)*864e5)},
   {id:"pedido",rot:"Pedidos na app",ops:[["","todos"],["sim","só os pedidos"]],t:v=>!!v.pedido,
    tit:"Os vinhos que se pediram na ficha da app, com «🍷 Verificar no Vivino». Saem daqui quando o script os trata."},
+  // As opções destes dois vêm da lista (filtrosDinamicos), a mais frequente primeiro.
+  {id:"criou",rot:"Criado por",ops:[["","todos"]],din:v=>autorCurto(v.criado_por)||"—",t:(v,x)=>(autorCurto(v.criado_por)||"—")===x,
+   tit:"Quem criou o vinho no catálogo. Por trás de uma pesquisa com IA (Edge Function) ou de uma garrafeira, descobre-se pela hora nos registos de cada app."},
+  {id:"alterou",rot:"Alterado por",ops:[["","todos"]],din:v=>autorCurto(v.alterado_por)||"—",t:(v,x)=>(autorCurto(v.alterado_por)||"—")===x,
+   tit:"Quem fez a última alteração registada no histórico (desde 25/09/2026)."},
 ];
+// Quem criou / alterou (27/09/2026): o email fica só com o que vem antes da
+// arroba; o nome do processo do script fica curto. O completo vai no title.
+const autorCurto=a=>String(a||"").replace(/([^\\s@·]+)@[^\\s·]+/g,"$1").replace(/^script no PC \\(.*\\)$/,"script no PC");
+function filtrosDinamicos(){
+  for(const f of FILTROS.filter(x=>x.din)){
+    const sel=document.getElementById("f-"+f.id),atual=sel.value,n={};
+    for(const v of CAT){const k=f.din(v);n[k]=(n[k]||0)+1;}
+    const vals=Object.keys(n).sort((a,b)=>n[b]-n[a]||a.localeCompare(b,"pt"));
+    f.ops=[["","todos"]].concat(vals.map(x=>[x,x]));
+    sel.innerHTML=f.ops.map(([v,t])=>'<option value="'+esc(v)+'">'+esc(t)+'</option>').join("");
+    sel.value=vals.includes(atual)?atual:"";
+  }
+}
 function filtrosHTML(){
   document.getElementById("cat-filtros").innerHTML=FILTROS.map(f=>'<label'+(f.tit?' title="'+esc(f.tit)+'"':'')+'>'+esc(f.rot)+
     ' <select id="f-'+f.id+'" onchange="pintarCatalogo()">'+f.ops.map(([v,t])=>'<option value="'+v+'">'+esc(t)+'</option>').join("")+'</select></label>').join("");
@@ -592,7 +647,7 @@ const valorF=f=>document.getElementById("f-"+f.id).value;
 // Os que passam a procura e os filtros; "sem" deixa um filtro de fora (para as contagens).
 function catPool(sem){
   const q=palavras("cat-q"),ativos=FILTROS.filter(f=>f!==sem&&valorF(f));
-  return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo].join(" "));
+  return CAT.filter(v=>{const t=semAc([v.nome,v.produtor,v.regiao,v.ano,v.tipo,autorCurto(v.criado_por),autorCurto(v.alterado_por)].join(" "));
     return q.every(p=>t.includes(p))&&ativos.every(f=>f.t(v,valorF(f)));});
 }
 function catContagens(){
@@ -649,7 +704,7 @@ function catVisiveis(){
   return ordenar(catPool());
 }
 async function carregarCatalogo(){
-  try{const r=await fetch("/catalogo",{headers:{"X-Painel":TOKEN}});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);CAT=j;pintarCatalogo();}
+  try{const r=await fetch("/catalogo",{headers:{"X-Painel":TOKEN}});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);CAT=j;filtrosDinamicos();pintarCatalogo();}
   catch(e){document.getElementById("cat-lista").innerHTML='<p class="nota" style="padding:10px">Não consegui ler o catálogo: '+esc(e.message)+'</p>';}
 }
 function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">✕</span>';}
@@ -688,8 +743,12 @@ function dataCurta(x,rot,sem,ord){
   const t=data(x);
   return '<div'+(ord?' class="ord"':'')+(t!=null?' title="'+esc(rot+" "+DMAH.format(t))+'"':'')+'>'+(t!=null?esc(rot+" "+DMA.format(t)):esc(sem))+'</div>';
 }
+// "antes do histórico": o vinho nasceu antes de 25/09/2026 e ninguém sabe quem.
+const porTexto=a=>a==="antes do histórico"?"(antes do histórico)":"por "+autorCurto(a);
+const porHTML=a=>a?'<div class="por" title="'+esc(a)+'">'+esc(porTexto(a))+'</div>':'';
 function datasHTML(v,col){
-  return dataCurta(v.alterado,"alterado","",col==="alterado")+dataCurta(v.criado,"criado","",col==="criado")+dataCurta(v.visto,"visto","nunca visto",col==="visto");
+  return dataCurta(v.alterado,"alterado","",col==="alterado")+porHTML(v.alterado_por)+
+    dataCurta(v.criado,"criado","",col==="criado")+porHTML(v.criado_por)+dataCurta(v.visto,"visto","nunca visto",col==="visto");
 }
 function pintarCatalogo(){
   catContagens();
@@ -773,7 +832,7 @@ const ORIGEM_TXT={"catalogo-admin":"à mão (admin)","catalogo-pesquisa":"pesqui
 const NOME_LOJA={garrafeira_nacional:"Garrafeira Nacional",granvine:"Granvine",vinha:"Vinha.pt",portugal_vineyards:"Portugal Vineyards",vivino:"Vivino"};
 const PRIORIDADE=["garrafeira_nacional","granvine","vinha","portugal_vineyards","vivino"];
 const JANELA=["beber_de","beber_ate"];
-let VINHO=null,EDITAR=false;
+let VINHO=null,EDITAR=false,MESMO=false;
 const dataFmt=x=>{const t=data(x);return t==null?"":DMA.format(t);};
 const dataHora=x=>{const t=data(x);return t==null?"":DMAH.format(t);};
 function origemHTML(o){
@@ -797,7 +856,7 @@ async function abrirVinho(id){
   m.hidden=false;document.body.classList.add("com-modal");
   document.getElementById("mv-topo").innerHTML='<div><h3>A carregar…</h3></div>';
   document.getElementById("mv-corpo").innerHTML="";
-  try{VINHO=await post("/vinho",{acao:"ver",id});EDITAR=false;pintarVinho();}
+  try{VINHO=await post("/vinho",{acao:"ver",id});EDITAR=false;MESMO=false;pintarVinho();}
   catch(e){document.getElementById("mv-topo").innerHTML='<div><h3>Não consegui abrir o vinho</h3><div class="sub">'+esc(e.message)+'</div></div><div class="acoes"><button onclick="fecharVinho(true)">✕ Fechar</button></div>';}
 }
 function fecharVinho(forcar){
@@ -813,15 +872,18 @@ function pintarVinho(){
   const v=VINHO,f=v.ficha||{},o=v.origens||{};
   const img=f.imagem_url?'<img src="'+esc(f.imagem_url)+'" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.textContent=\\'a imagem não abre\\'">':'sem imagem';
   document.getElementById("mv-topo").innerHTML='<div class="garrafa">'+img+'</div>'+
-    '<div class="tit"><div class="sub">#'+esc(v.id)+' · criado '+esc(dataFmt(v.criado))+' · alterado '+esc(dataFmt(v.atualizado))+(v.vezes?' · escrito '+esc(v.vezes)+'×':'')+'</div>'+
+    '<div class="tit"><div class="sub">#'+esc(v.id)+' · criado '+esc(dataFmt(v.criado))+(v.criado_por?' <span title="'+esc(v.criado_por)+'">'+esc(porTexto(v.criado_por))+'</span>':'')+
+      ' · alterado '+esc(dataFmt(v.atualizado))+(v.alterado_por?' por <span title="'+esc(v.alterado_por)+'">'+esc(autorCurto(v.alterado_por))+'</span>':'')+(v.vezes?' · escrito '+esc(v.vezes)+'×':'')+'</div>'+
     '<h3 id="mv-titulo">'+esc(v.nome)+(f.tipo?' <span class="cor">'+esc(String(f.tipo).toLowerCase())+'</span>':'')+'</h3>'+
     '<div class="sub"><i>'+esc(v.produtor||"(sem produtor)")+'</i>'+(v.produtor_completo?' — '+esc(v.produtor_completo):'')+' · '+(v.ano?esc(v.ano):'sem colheita')+'</div>'+
     (f.vivino_url?'<div class="sub"><a href="'+esc(f.vivino_url)+'" target="_blank" rel="noopener noreferrer">abrir no Vivino ↗</a></div>':'')+'</div>'+
     '<div class="acoes">'+(EDITAR
       ?'<button class="prim" id="mv-guardar" onclick="guardarVinho()">Guardar</button><button onclick="editarVinho(false)">Cancelar</button>'
-      :'<button class="prim" onclick="editarVinho(true)">✏️ Editar</button><button onclick="abrirVinho('+v.id+')" title="Voltar a ler da BD">🔄</button>')+
+      :'<button class="prim" onclick="editarVinho(true)">✏️ Editar</button><button onclick="mesmoQue()" title="Este vinho é outro que já está no catálogo (escrito de outra maneira): junta-os, ou passa a ser outra colheita dele">🔗 É o mesmo que…</button><button onclick="abrirVinho('+v.id+')" title="Voltar a ler da BD">🔄</button>')+
     '<button onclick="fecharVinho()">✕ Fechar</button></div>';
   let h='';
+  if(MESMO&&!EDITAR)h+='<div class="aviso"><b>Este vinho é o mesmo que…</b> <input id="mv-mesmo-q" placeholder="procura o outro (nome, produtor, ano)" oninput="mesmoProcurar()" style="width:min(360px,100%)">'+
+    '<div id="mv-mesmo-l" style="margin-top:6px"></div><p class="nota">Ficam o nome, o produtor e a cor do outro. Da mesma colheita, juntam-se num só (reversível na app); de outra colheita, este passa a ser essa colheita do outro vinho.</p></div>';
   if(EDITAR){
     h+='<p class="aviso">O que corrigires fica com <b>força 4</b> nos campos de rótulo (cor, castas, teor, região…) — ninguém lhes passa por cima — e <b>3</b> na nota do Vivino, no preço e na imagem. <b>Esvaziar um campo apaga-o</b>, e apagar não o fixa: a próxima escrita de uma garrafeira pode voltar a preenchê-lo. Só vai o que mudares; fica no histórico como "painel do PC (admin)".</p>'+
       '<div class="ident"><label><input type="checkbox" id="mv-ident" onchange="document.getElementById(\\'mv-ident-c\\').hidden=!this.checked"> Mexer na identidade (nome, produtor, colheita)</label>'+
@@ -853,7 +915,8 @@ function pintarVinho(){
   if((v.fundidos||[]).length)h+='<h4>Fundidos nesta linha</h4><ul class="lista">'+v.fundidos.map(x=>'<li>#'+esc(x.id)+' '+esc(x.nome)+(x.produtor?' · '+esc(x.produtor):'')+(x.ano?' · '+esc(x.ano):'')+'</li>').join("")+'</ul>';
   const hist=v.historico||[];
   h+='<h4>Histórico'+(hist.length?' <span class="nota">(as últimas '+hist.length+')</span>':'')+'</h4>'+(hist.length
-    ?'<table class="hist"><tr><th>Quando</th><th>Campo</th><th>Antes → depois</th><th>Quem</th></tr>'+hist.map(a=>'<tr><td class="ic">'+esc(dataHora(a.quando))+'</td><td>'+esc(a.campo==="_criado"?"criado":a.campo)+'</td><td><span class="antes">'+curto(a.antes,60)+'</span> → '+curto(a.depois,60)+(a.origem?' <span class="og">'+esc(ORIGEM_TXT[a.origem]||a.origem)+'</span>':'')+'</td><td class="nota">'+esc(a.quem||"")+'</td></tr>').join("")+'</table>'
+    ?'<table class="hist"><tr><th>Quando</th><th>Campo</th><th>Antes → depois</th><th>Quem</th></tr>'+hist.map(a=>'<tr><td class="ic">'+esc(dataHora(a.quando))+'</td><td>'+esc(a.campo==="_criado"?"criado":a.campo)+'</td><td><span class="antes">'+curto(a.antes,60)+'</span> → '+curto(a.depois,60)+(a.origem?' <span class="og">'+esc(ORIGEM_TXT[a.origem]||a.origem)+'</span>':'')+'</td><td class="nota"'+(a.autor&&a.autor!==a.quem?' title="no histórico: '+esc(a.quem||"")+'"':'')+'>'+esc(a.autor||a.quem||"")+'</td></tr>').join("")+'</table>'+
+      '<p class="nota">Por trás de uma "Edge Function" (uma pesquisa com IA) ou de "uma garrafeira", quem foi descobre-se pela hora, nos registos de cada app — duas pessoas no mesmo minuto podem trocar-se.</p>'
     :'<p class="nota">Ainda sem alterações registadas (o histórico começou a 25/09/2026).</p>');
   document.getElementById("mv-corpo").innerHTML=h;
 }
@@ -947,6 +1010,23 @@ async function guardarVinho(){
   }catch(e){alert("Não gravou: "+e.message);if(b){b.disabled=false;b.textContent="Guardar";}}
 }
 const idLink=id=>'<a href="#" onclick="abrirVinho('+Number(id)+');return false" title="Abrir a ficha do vinho">#'+esc(id)+'</a>';
+// "🔗 É o mesmo que…": procura o outro vinho na lista (a do separador
+// Informação) e passa pela mesma "corresponde" dos Duplicados.
+function mesmoQue(){MESMO=!MESMO;pintarVinho();if(MESMO)setTimeout(()=>{const q=document.getElementById("mv-mesmo-q");if(q)q.focus();},0);}
+function mesmoProcurar(){
+  const q=semAc(document.getElementById("mv-mesmo-q").value).split(/\\s+/).filter(Boolean),box=document.getElementById("mv-mesmo-l");
+  if(!q.length){box.innerHTML="";return;}
+  const cor=String((VINHO.ficha||{}).tipo||"").toLowerCase();
+  const l=CAT.filter(x=>x.id!==VINHO.id&&q.every(p=>semAc([x.nome,x.produtor,x.ano,x.regiao].join(" ")).includes(p)))
+    .sort((a,b)=>(String(b.tipo||"").toLowerCase()===cor)-(String(a.tipo||"").toLowerCase()===cor)||(b.campos||0)-(a.campos||0)).slice(0,10);
+  box.innerHTML=l.length?'<table>'+l.map(x=>'<tr><td>'+idLink(x.id)+' <b>'+esc(x.nome)+'</b>'+(x.tipo?' <i class="nota">'+esc(String(x.tipo).toLowerCase())+'</i>':'')+' · '+(x.ano?esc(x.ano):'sem colheita')+
+    '<br><span class="nota">'+esc(x.produtor||"(sem produtor)")+' · '+esc(x.campos||0)+' campos</span></td><td style="width:110px;text-align:right"><button class="prim" onclick="mesmoE('+Number(x.id)+')">É este</button></td></tr>').join("")+'</table>'
+    :'<p class="nota">Nenhum com esta procura.</p>';
+}
+async function mesmoE(alvo){
+  const r=await dupE(VINHO.id,alvo);
+  if(r)await abrirVinho(r.id);
+}
 
 // ── Onde procurar ── (um visto por sítio; por omissão, todos)
 const SITIOS_P=[["vivino","Vivino"],["garrafeira_nacional","Garrafeira Nacional"],["granvine","Granvine"],["vinha","Vinha.pt"],["portugal_vineyards","Portugal Vineyards"]];
@@ -1293,9 +1373,13 @@ function prodPintar(){
   }).join(""):'<p class="nota">'+(PROD._grupos.length?"Nenhum com esta procura.":"Nada por decidir.")+'</p>';
   const O=(PROD.oficiais||[]).filter(p=>!q.length||bate([p.nome,p.nome_completo,...(p.variantes||[]).map(v=>v.escrito)].join(" ")));
   document.getElementById("prod-on").textContent="— "+(PROD.oficiais||[]).length+(q.length?" · "+O.length+" à vista":"");
-  document.getElementById("prod-oficiais").innerHTML=O.length?'<table><tr><th>Oficial</th><th>Nome completo</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td><b>'+esc(p.nome)+'</b></td><td>'+
+  // As grafias que existem (catálogo e garrafeiras), para o "+ Acrescentar" sugerir.
+  const dl='<datalist id="prod-grafias">'+(PROD.grafias||[]).map(g=>'<option value="'+esc(g.produtor)+'">'+esc(g.catalogo+' no catálogo · '+g.garrafeiras+' nas garrafeiras'+(g.oficial?' · já é de '+g.oficial:''))+'</option>').join("")+'</datalist>';
+  document.getElementById("prod-oficiais").innerHTML=O.length?dl+'<table><tr><th>Nome oficial</th><th>Nome completo</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td>'+
+    '<input id="prod-nome-'+p.id+'" value="'+esc(p.nome)+'" style="width:190px;font-weight:600"> <button onclick="prodRenomear('+p.id+')" title="Muda o nome oficial em todos os vinhos deste produtor, no catálogo e nas garrafeiras. O nome antigo fica como grafia.">Mudar</button></td><td>'+
     '<input id="prod-compl-'+p.id+'" value="'+esc(p.nome_completo||"")+'" placeholder="opcional" style="width:220px"> <button onclick="prodCompleto('+p.id+')">Guardar</button></td><td>'+
-    (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+'</td></tr>').join("")+'</table>'
+    (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+
+    '<div class="linha" style="gap:6px;margin-top:6px"><input id="prod-graf-'+p.id+'" list="prod-grafias" placeholder="outra grafia deste produtor" style="width:220px"> <button onclick="prodAcrescentar('+p.id+')">+ Acrescentar</button></div></td></tr>').join("")+'</table>'
     :'<p class="nota">'+((PROD.oficiais||[]).length?"Nenhum com esta procura.":"Ainda nenhum.")+'</p>';
 }
 async function prodCompleto(id){
@@ -1312,11 +1396,38 @@ async function prodJuntar(i){
   if(grafias.filter(x=>x!==oficial).length<1&&grafias.length<2&&oficial===grafias[0])return alert("Marca pelo menos duas grafias.");
   const tot=g.grafias.filter(s=>grafias.includes(s.produtor)).reduce((a,s)=>a+s.catalogo+s.garrafeiras,0);
   if(!confirm('Passar a "'+oficial+'" as grafias: '+grafias.join(" · ")+'?\\n\\n'+tot+' vinho(s) no catálogo e nas garrafeiras ficam com este nome.'))return;
-  try{const r=await post("/produtores",{acao:"definir",oficial,grafias});
-    const d=r.duplicados||[];
-    alert('"'+r.oficial+'": '+r.catalogo+' vinho(s) no catálogo e '+r.garrafeiras+' nas garrafeiras.'+
-      (d.length?'\\n\\nFicaram por mexer '+d.length+', porque já existe o mesmo vinho e colheita com o nome oficial — junta-os nos Duplicados da app:\\n'+d.map(x=>'#'+x.id+' '+x.nome+(x.ano?' '+x.ano:'')+' → #'+x.com).join("\\n"):''));
-    await prodProcurar();}
+  try{prodResultado(await post("/produtores",{acao:"definir",oficial,grafias}));await prodProcurar();}
+  catch(e){alert(e.message);}
+}
+function prodResultado(r){
+  const d=r.duplicados||[];
+  alert('"'+r.oficial+'": '+r.catalogo+' vinho(s) no catálogo e '+r.garrafeiras+' nas garrafeiras.'+
+    (d.length?'\\n\\nFicaram por mexer '+d.length+', porque já existe o mesmo vinho e colheita com o nome oficial — junta-os no separador Duplicados:\\n'+d.map(x=>'#'+x.id+' '+x.nome+(x.ano?' '+x.ano:'')+' → #'+x.com).join("\\n"):''));
+  // os nomes dos vinhos mudaram: a lista e os Duplicados voltam a ler
+  carregarCatalogo();dupProcurar();
+}
+// Mudar o nome oficial (27/09/2026): o antigo fica como grafia, e os vinhos
+// dele passam ao novo no catálogo e nas garrafeiras (produtor_renomear).
+async function prodRenomear(id){
+  const p=(PROD.oficiais||[]).find(x=>x.id===id),nome=document.getElementById("prod-nome-"+id).value.trim();
+  if(!p)return;
+  if(!nome)return alert("Escreve o nome oficial.");
+  if(nome===p.nome)return alert("O nome não mudou.");
+  if(!confirm('Mudar o nome oficial "'+p.nome+'" para "'+nome+'"?\\n\\nOs vinhos deste produtor, no catálogo e em todas as garrafeiras, passam a "'+nome+'". "'+p.nome+'" fica como grafia: quem o escrever continua a cair aqui.'))return;
+  try{prodResultado(await post("/produtores",{acao:"renomear",id,nome}));await prodProcurar();}
+  catch(e){alert(e.message);}
+}
+// Acrescentar uma grafia a um oficial que já existe: é a mesma "definir".
+async function prodAcrescentar(id){
+  const p=(PROD.oficiais||[]).find(x=>x.id===id),g=document.getElementById("prod-graf-"+id).value.trim();
+  if(!p)return;
+  if(!g)return alert("Escreve (ou escolhe da lista) a outra grafia.");
+  const info=(PROD.grafias||[]).find(x=>x.produtor.toLowerCase()===g.toLowerCase());
+  if(info&&info.oficial===p.nome)return alert('"'+g+'" já é de "'+p.nome+'".');
+  const onde=info?info.catalogo+' vinho(s) no catálogo e '+info.garrafeiras+' nas garrafeiras'+(info.oficial?' — hoje é de "'+info.oficial+'" e passa para este':'')
+    :'ainda não há vinhos escritos assim — fica para os que vierem';
+  if(!confirm('"'+g+'" é o produtor "'+p.nome+'"? ('+onde+')\\n\\nO que estiver escrito assim passa a "'+p.nome+'", no catálogo e nas garrafeiras, agora e em qualquer escrita futura.'))return;
+  try{prodResultado(await post("/produtores",{acao:"definir",oficial:p.nome,grafias:[g]}));await prodProcurar();}
   catch(e){alert(e.message);}
 }
 async function prodDiferentes(i,k){
@@ -1329,11 +1440,75 @@ async function prodTirar(chave){
   try{await post("/produtores",{acao:"tirar",chave});await prodProcurar();}catch(e){alert(e.message);}
 }
 
+// ── Duplicados (27/09/2026) ──
+// db/parecidos.sql: os nomes a uma letra de outro (qualquer colheita) e os
+// pares da mesma colheita. "É este" é a "corresponde": da mesma colheita,
+// junta; de outra, este passa a ser essa colheita do outro vinho. Carrega ao
+// abrir a página: o número no separador é o alerta.
+let DUP=null;
+async function dupProcurar(){
+  try{DUP=await post("/duplicados",{acao:"listar"});dupPintar();}
+  catch(e){document.getElementById("dup-letra").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+function acharVinho(id){
+  id=Number(id);
+  const c=CAT.find(x=>x.id===id);if(c)return c;
+  for(const g of (DUP&&DUP.letra)||[])for(const x of [g.vinho,...g.candidatos])if(Number(x.id)===id)return x;
+  for(const p of (DUP&&DUP.colheita)||[])for(const x of [p.a,p.b])if(Number(x.id)===id)return x;
+  return {id,nome:"#"+id};
+}
+function dupVinhoHTML(v){
+  const c=CAT.find(x=>x.id===Number(v.id));
+  return idLink(v.id)+' <a href="#" class="nm" onclick="abrirVinho('+Number(v.id)+');return false"><b>'+esc(v.nome)+'</b></a>'+(v.tipo?' <i class="nota">'+esc(String(v.tipo).toLowerCase())+'</i>':'')+' · '+(v.ano?esc(v.ano):'sem colheita')+
+    '<br><span class="nota">'+esc(v.produtor||"(sem produtor)")+' · '+esc(v.campos||0)+' campos'+(c?' · criado '+esc(dataFmt(c.criado))+(c.criado_por?' '+esc(porTexto(c.criado_por)):''):'')+'</span>';
+}
+function dupPintar(){
+  const L=(DUP&&DUP.letra)||[],C=(DUP&&DUP.colheita)||[],n=L.length+C.length;
+  document.getElementById("tab-dup").textContent=n?" ("+n+")":"";
+  document.getElementById("dup-n").textContent=n?n+" por decidir":"nada por decidir";
+  document.getElementById("dup-letra").innerHTML=L.length?L.map((g,i)=>'<div class="dup-g"><div>'+dupVinhoHTML(g.vinho)+'</div>'+
+    '<div class="nota" style="margin:6px 0 2px">…é algum destes?</div><table>'+g.candidatos.map(c=>'<tr><td>'+dupVinhoHTML(c)+
+      '<br><span class="tag">'+(c.palavras||[]).map(w=>esc(w.de)+' → '+esc(w.para)).join(" · ")+'</span>'+(c.mesma_colheita?' <span class="tag">mesma colheita</span>':'')+'</td>'+
+      '<td style="width:110px;text-align:right"><button class="prim" onclick="dupE('+Number(g.vinho.id)+','+Number(c.id)+')">É este</button></td></tr>').join("")+'</table>'+
+    '<div class="linha" style="margin-top:4px"><button onclick="dupNenhum('+i+')">Nenhum destes</button></div></div>').join("")
+    :'<p class="nota">Nada — nenhum nome a uma letra de outro.</p>';
+  document.getElementById("dup-colheita").innerHTML=C.length?C.map(p=>{const fica=(p.a.campos||0)>=(p.b.campos||0);
+    return '<div class="dup-g"><table><tr><td>'+dupVinhoHTML(p.a)+'</td><td>'+dupVinhoHTML(p.b)+'</td></tr></table>'+
+      '<div class="linha" style="margin-top:4px"><span class="nota">em comum: '+esc((p.fortes||[]).join(", ")||"a chave")+'</span>'+
+      '<button'+(fica?' class="prim"':'')+' onclick="dupE('+Number(p.b.id)+','+Number(p.a.id)+')">São o mesmo — fica o #'+esc(p.a.id)+'</button>'+
+      '<button'+(fica?'':' class="prim"')+' onclick="dupE('+Number(p.a.id)+','+Number(p.b.id)+')">São o mesmo — fica o #'+esc(p.b.id)+'</button>'+
+      '<button onclick="dupNao('+Number(p.a.id)+','+Number(p.b.id)+')">Não são</button></div></div>';}).join("")
+    :'<p class="nota">Nada.</p>';
+}
+function correspondeTexto(de,al){
+  const nm=v=>'"'+v.nome+'"'+(v.produtor?' ('+v.produtor+')':'')+' '+(v.ano||'sem colheita');
+  if((de.ano||null)===(al.ano||null))return 'Juntar '+nm(de)+' em '+nm(al)+'?\\n\\nSão a mesma colheita: ficam um só vinho, o #'+al.id+', com o nome dele. O que o #'+de.id+' sabia passa para lá, campo a campo, pela força de cada um. Desfaz-se na app, em Duplicados › Fusões.';
+  return nm(de)+' é a colheita '+(de.ano||'sem colheita')+' de '+nm(al)+'?\\n\\nO #'+de.id+' passa a chamar-se "'+al.nome+'"'+(al.produtor?', produtor '+al.produtor:'')+', com a sua colheita ('+(de.ano||'nenhuma')+'). Colheitas diferentes nunca se juntam: são linhas diferentes do mesmo vinho. Se essa colheita já existir no catálogo, junta-se nela.';
+}
+async function dupE(id,alvo){
+  if(!confirm(correspondeTexto(acharVinho(id),acharVinho(alvo))))return null;
+  try{const r=await post("/duplicados",{acao:"corresponde",id,alvo});
+    alert(r.acao==="fundido"?'Juntos: ficou o #'+r.id+(r.campos?' ('+r.campos+' campo(s) passaram para lá)':'')+'. Fica no histórico.'
+      :'Feito: o #'+r.id+' é agora "'+r.nome+'"'+(r.produtor?' ('+r.produtor+')':'')+(r.ano?' '+r.ano:'')+'. Fica no histórico.');
+    await Promise.all([dupProcurar(),carregarCatalogo()]);return r;}
+  catch(e){alert("Não consegui: "+e.message);return null;}
+}
+async function dupNenhum(i){
+  const g=DUP.letra[i];
+  if(!confirm('"'+g.vinho.nome+'" não é nenhum destes? Os pares ficam gravados como diferentes e não voltam.'))return;
+  try{await post("/duplicados",{acao:"nao",id:g.vinho.id,outros:g.candidatos.map(c=>c.id)});await dupProcurar();}catch(e){alert(e.message);}
+}
+async function dupNao(a,b){
+  if(!confirm("São vinhos diferentes? O par fica gravado e não volta."))return;
+  try{await post("/duplicados",{acao:"nao",id:a,outros:[b]});await dupProcurar();}catch(e){alert(e.message);}
+}
+
 filtrosHTML();
 ordensHTML();
 sitiosHTML("cat");sitiosHTML("novo");
 novaLinha();
 abrirTab(location.hash.slice(1));
 carregarCatalogo();
+dupProcurar();
 listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
 </script></body></html>`;
