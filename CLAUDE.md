@@ -828,6 +828,21 @@ valores errados que deixou foram corrigidos à mão (no histórico):
 - E é o exemplo da nota a dobrar: o 2018 tinha 4,3 com **77 469** avaliações
   na nota da colheita — era a de todas as colheitas (77 657 no Vivino); a de
   2018 é 4,3 com 5 836. O 2020 (2 274) já era a da colheita.
+- **A Cartuxa nunca aparecia em loja nenhuma** — e a GN tem o
+  `/2018-cartuxa-tinto.html`, o 2019, o 2020 e o `/2017-cartuxa-reserva-tinto.html`.
+  O filtro do que não é produto (`produtosDaPagina`) procurava "cart" em
+  qualquer ponto do endereço, e "**cart**uxa" tem "cart": das três lojas só
+  sobravam os vinhos da casa com outro nome no endereço (Pêra-Manca, Scala
+  Coeli, Foral de Évora). Agora é por SEGMENTO do caminho (`/checkout/cart/`
+  é lixo, `/2018-cartuxa-tinto.html` não). As regras de nome já estavam
+  certas: o Colheita escolhe a mesma colheita e recusa o Reserva, e o
+  "Herdade da Cartuxa Reserva" 2017 fica com o Reserva.
+- **A Granvine deu 200 sem produto nenhum durante horas**, a meio de uma
+  corrida (a partir do 26.º vinho às 08:23, os três Cartuxa às 08:34, e os
+  primeiros 43 às 11:54) — o `bloqueio` não a reconheceu, e ficou "não
+  encontrado". Uma procura sem produtos passou a guardar o que a página era
+  (`paginaVazia`: título, endereço final, o princípio do texto); é o que diz,
+  na próxima vez, se é uma recusa a reconhecer.
 
 **Três modos de procurar** (`MODO`, escolhido no painel; 26/09/2026, pelo
 dono). **Tudo** (`completo`): Vivino e lojas, a ficha toda. **Só o Vivino**
