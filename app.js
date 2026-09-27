@@ -765,17 +765,26 @@ function wcPrecoTxt(p){
 /* O NOME É O VINHO; a cor e o produtor são campos à parte (fase 4 dos
    nomes) e dizem-se como tal — o mesmo desenho da Garrafeira: a cor em
    itálico logo a seguir ao nome, o produtor em itálico por baixo. */
+/* [cor] [região] [ano], por esta ordem (pedido do dono das apps,
+   27/09/2026; igual na Garrafeira, `vinhoMetaHTML`). Na LISTA vai colada ao
+   nome e quebra com ele quando o nome é comprido — cada pedaço em `nowrap`,
+   para a quebra cair ENTRE eles; na GRELHA é a linha de baixo do nome. O
+   produtor fica sempre numa linha só dele. */
+function wcMetaHTML(v){
+  const p=[];
+  if(v.tipo)p.push(`<span class="cat-cor">${esc(v.tipo)}</span>`);
+  if(v.regiao)p.push(`<span class="cm-reg">${esc(v.regiao)}</span>`);
+  if(v.ano)p.push(`<span class="cm-ano">${esc(String(v.ano))}</span>`);
+  return p.length?`<span class="cat-meta">${p.join('<span class="cm-sep"> · </span>')}</span>`:'';
+}
 function wcLinhaHTML(v){
-  const sub=v.regiao||'';
   const castas=Array.isArray(v.castas)?v.castas.join(', '):'';
-  const cor=WC_VIDRO[v.tipo]||'#8a7a7d';
   const preco=wcPrecoTxt(v.preco);
   return `<div class="cat-row" onclick="wcVerFicha(${v.id})">
     ${wcMiniGarrafa(v,'cat-g')}
     <div class="cat-main">
-      <div class="cat-nome">${esc(v.nome||'(sem nome)')}${v.tipo?` <span class="cat-cor">${esc(v.tipo)}</span>`:''}${v.ano?` <span class="cat-ano">${esc(String(v.ano))}</span>`:''}</div>
+      <div class="cat-nome">${esc(v.nome||'(sem nome)')} ${wcMetaHTML(v)}</div>
       ${v.produtor?`<div class="cat-prod">${esc(v.produtor)}</div>`:''}
-      <div class="cat-sub">${v.tipo?`<i class="cf-ponto" style="background:${esc(cor)}"></i>`:''}${esc(sub||'—')}</div>
       ${castas?`<div class="cat-castas">${esc(castas)}</div>`:''}
     </div>
     <div class="cat-lado">
@@ -790,8 +799,8 @@ function wcCartaoHTML(v){
   return `<div class="cat-cartao" onclick="wcVerFicha(${v.id})">
     ${wcMiniGarrafa(v,'cat-g gr')}
     <div class="cat-nome">${esc(v.nome||'(sem nome)')}</div>
-    ${v.tipo?`<div class="cat-cor-l">${esc(v.tipo)}</div>`:''}
-    <div class="cat-sub">${[v.produtor?`<span class="cat-prod-i">${esc(v.produtor)}</span>`:'',esc(v.regiao||''),v.ano?esc(String(v.ano)):''].filter(Boolean).join(' · ')||'—'}</div>
+    <div class="cat-sub">${wcMetaHTML(v)||'—'}</div>
+    ${v.produtor?`<div class="cat-prod">${esc(v.produtor)}</div>`:''}
     <div class="cat-cartao-n">
       ${wcNotaLinhaHTML(v)}
       ${preco?`<span class="cat-preco">${esc(preco)}</span>`:''}

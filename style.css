@@ -284,16 +284,23 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 }
 .cat-row:active{background:#fdfbfa}
 .cat-main{min-width:0;flex:1}
-.cat-nome{font-family:'Playfair Display',serif;font-size:15px;font-weight:700;line-height:1.25;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* O nome QUEBRA de linha (já não corta com reticências): ao lado dele vão a
+   cor, a região e o ano (`wcMetaHTML`), e um nome comprido não os pode
+   esconder. */
+.cat-nome{font-family:'Playfair Display',serif;font-size:15px;font-weight:700;line-height:1.3;
+  overflow-wrap:anywhere}
+.cat-meta{font-family:'Playfair Display',serif;font-weight:400;font-size:12.5px;color:var(--mu)}
+.cat-meta>span{white-space:nowrap}
+.cat-meta .cat-cor{font-size:inherit}
+.cm-ano{font-variant-numeric:lining-nums}
+.cm-sep{opacity:.6}
 .cat-ano{font-family:'Inter',sans-serif;font-size:11.5px;font-weight:600;color:var(--mu)}
 .cat-sub{font-size:11.5px;color:var(--mu);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cat-sub em{font-style:normal}
 /* A cor e o produtor em itálico, mais pequenos (fase 4 dos nomes). */
-.cat-cor,.cat-cor-l,.cat-prod,.cat-prod-i,.mhero-cor,.mhero-p{font-family:'Playfair Display',serif;font-style:italic;font-weight:400}
+.cat-cor,.cat-prod,.mhero-cor,.mhero-p{font-family:'Playfair Display',serif;font-style:italic;font-weight:400}
 .cat-cor{font-size:12.5px;color:var(--mu)}
 .cat-prod{font-size:12.5px;color:var(--mu);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cat-cor-l{font-size:11.5px;color:var(--mu);margin-top:1px}
 .mhero-cor{font-size:14px;color:rgba(255,255,255,.75)}
 .mhero-pc{font-size:11.5px;color:rgba(255,255,255,.65);margin-top:2px;font-style:italic}
 .prod-compl{display:flex;gap:6px;align-items:center;margin:4px 0}
@@ -319,6 +326,8 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .cat-cartao:active{background:#fdfbfa}
 .cat-cartao .cat-nome{font-size:13.5px;white-space:normal;margin-top:10px}
 .cat-cartao .cat-sub{white-space:normal}
+.cat-cartao .cat-meta{font-size:11.5px}
+.cat-cartao .cat-prod{font-size:11.5px;white-space:normal}
 .cat-cartao-n{display:flex;align-items:center;gap:6px;margin-top:8px}
 .cat-nota{background:#fdf6e8;border:1px solid #f0e0b8;color:#7a5b0a;font-size:11.5px;font-weight:700;padding:3px 7px;border-radius:20px}
 /* "todas": a nota que se mostra é a de todas as colheitas (`wcNotaVivino`). */
