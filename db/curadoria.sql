@@ -701,7 +701,17 @@ BEGIN
   -- ter outra colheita do mesmo vinho. Isso é uma resposta útil para os
   -- factos estáveis — e a UI diz de que colheita é, como já faz na
   -- WineSelection.
-  v_id := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, false);
+  --
+  -- Mas a MESMA colheita, quando existe, ganha à mais preenchida (27/09/2026):
+  -- a `achar` sem exigir ano ordena por quantos campos tem cada linha, e
+  -- com o Morais Rocha Reserva 2020 e 2021 no catálogo uma pergunta pelo de
+  -- 2021 podia receber o de 2020 — a nota e o preço de outra garrafa. É
+  -- também o que deixa a Garrafeira escolher UMA colheita (`colheitas`, a
+  -- seguir) e depois pedi-la aqui pelo nome e ano dessa linha.
+  IF p_ano IS NOT NULL THEN
+    v_id := winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, true);
+  END IF;
+  v_id := COALESCE(v_id, winecatalog.achar(p_nome, COALESCE(p_produtor,''), p_ano, false));
   IF v_id IS NULL THEN
     RETURN jsonb_build_object('encontrado', false);
   END IF;
@@ -752,6 +762,80 @@ BEGIN
 END;
 $$;
 
+
+-- ---------------------------------------------------------------------
+-- COLHEITAS — que linhas do catálogo são ESTE vinho (27/09/2026)
+--
+-- A `comparar` devolve UMA linha, e há duas perguntas que ela não responde:
+--   · "Morais Rocha Reserva Tinto", escrito assim numa garrafeira, não
+--     casava com o "Morais Rocha Reserva" (tinto) do catálogo: a cor fica
+--     dentro da chave ("a mudança da cor na chave", decidida e por fazer).
+--     Aqui, sem mexer na chave, tira-se a cor dos DOIS lados e casa-se —
+--     mas só com linhas da MESMA cor (ou sem cor), que é a trave que a
+--     mudança prevê: duas cores conhecidas e diferentes nunca casam;
+--   · com duas colheitas no catálogo (2020 e 2021) e nenhum ano do lado de
+--     quem procura, escolher a mais preenchida era escolher por ele. Esta
+--     devolve-as TODAS, e é quem procura que escolhe.
+-- Aberta a quem tem sessão, como a `comparar`, e pela mesma razão: só
+-- responde a um NOME, não enumera o catálogo. Devolve o mínimo para
+-- escolher — nome, produtor, ano, cor, quantos campos sabe, a nota — e a
+-- ficha pede-se depois à `comparar`, com o nome e o ano da linha escolhida.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.sem_cor(p_chave text)
+  RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT NULLIF(array_to_string(ARRAY(
+           SELECT t FROM unnest(string_to_array(COALESCE(p_chave,''), '-')) t
+            WHERE t NOT IN ('tinto','branco','rose')), '-'), '');
+$$;
+
+CREATE OR REPLACE FUNCTION winecatalog.colheitas(
+  p_nome text, p_produtor text DEFAULT '', p_tipo text DEFAULT NULL
+) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF COALESCE(auth.email(), '') = '' AND COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Precisa de sessão iniciada.';
+  END IF;
+  IF btrim(COALESCE(p_nome,'')) = '' THEN RETURN '[]'::jsonb; END IF;
+  RETURN (
+    WITH q AS MATERIALIZED (
+      SELECT winecatalog.chave_base(p_nome, COALESCE(p_produtor,''))               AS b,
+             winecatalog.base_nome(p_nome)                                         AS bn,
+             winecatalog.sem_cor(winecatalog.chave_base(p_nome, COALESCE(p_produtor,''))) AS bs,
+             winecatalog.sem_cor(winecatalog.base_nome(p_nome))                    AS bns,
+             winecatalog.tokens(COALESCE(p_tipo,''))                               AS cor
+    ),
+    cand AS (
+      SELECT DISTINCT COALESCE(a.id_para, v.id) AS id
+        FROM q, winecatalog.vinhos v
+        LEFT JOIN winecatalog.alias a ON a.id_de = v.id
+       WHERE -- as mesmas combinações da `achar` sem exigir colheita…
+             v.chave_base = q.b
+          OR (q.bn IS NOT NULL AND v.chave_base = q.bn)
+          OR (v.base_nome IS NOT NULL AND v.base_nome IN (q.b, q.bn))
+          -- …e as mesmas sem a cor, só com a cor a bater (ou sem cor)
+          OR ((winecatalog.sem_cor(v.chave_base) IN (q.bs, q.bns)
+               OR (v.base_nome IS NOT NULL AND winecatalog.sem_cor(v.base_nome) IN (q.bs, q.bns)))
+              AND (cardinality(q.cor) = 0 OR COALESCE(v.ficha ->> 'tipo','') = ''
+                   OR winecatalog.tokens(v.ficha ->> 'tipo') = q.cor))
+    )
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+             'id', v.id, 'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano,
+             'tipo', v.ficha ->> 'tipo',
+             'campos', (SELECT count(*) FROM jsonb_object_keys(v.ficha)),
+             'vivino_nota', v.ficha -> 'vivino_nota',
+             'vivino_nota_global', v.ficha -> 'vivino_nota_global')
+           ORDER BY v.ano DESC NULLS LAST, v.id), '[]'::jsonb)
+      FROM cand JOIN winecatalog.vinhos v ON v.id = cand.id
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION winecatalog.colheitas(text, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.colheitas(text, text, text) TO authenticated, service_role;
 
 -- =====================================================================
 -- 6. REPORTAR — avisar o admin do catálogo

@@ -479,6 +479,15 @@ resolvem isto, e vivem em `curadoria.sql`:
   ver com esta app), e exigir-lhe uma conta aqui matava a funcionalidade à
   nascença. O que se abre é só a FICHA de UM vinho de cada vez — não
   enumera nada, não há como varrer o catálogo com isto.
+- **`winecatalog.colheitas`** (27/09/2026) — as linhas do catálogo que são
+  ESTE vinho, todas as colheitas, com a cor tirada dos dois lados e a casar
+  só com a mesma cor (ou sem cor): "Morais Rocha Reserva Tinto" acha o
+  "Morais Rocha Reserva" tinto sem mexer na chave (a mudança da cor na chave
+  continua por fazer). A Garrafeira usa-a para perguntar de que colheita é
+  o vinho quando há várias. Aberta a quem tem sessão, como a `comparar`: só
+  responde a um nome, não enumera. E a **`comparar`** passou a preferir a
+  MESMA colheita quando ela existe (`achar` com ano exigido primeiro) — antes
+  ganhava a mais preenchida, e o 2021 podia receber a nota do 2020.
 - **`winecatalog.igual`** decide se dois valores são "diferentes" a
   sério: "Tinto" e "tinto" não são, 13.5 e 13.50 não são, as mesmas castas
   por outra ordem não são. Sem isto a marca do lado da Garrafeira aparecia
