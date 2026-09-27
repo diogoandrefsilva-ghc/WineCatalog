@@ -169,6 +169,58 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
       <div id="prod-lista"></div>
     </div>
+
+    <!-- Os nomes dos vinhos (db/nomes-normalizar.sql + nomes-manter.sql): o
+         separador "Nomes de vinhos" do painel do PC, trazido para a app —
+         é a BD a comparar a BD, não abre site nenhum (`wcNomesCarregar`). -->
+    <div class="wc-card admin-only arr" id="fcard-nomes" style="display:none">
+      <h3>Nomes dos vinhos</h3>
+      <p class="wc-note">
+        O nome é o que distingue o vinho: o <strong>produtor</strong>, a <strong>cor</strong> e a
+        <strong>colheita</strong> são campos à parte. A regra tira-os do nome — o produtor só da frente, e só
+        se o que sobra se aguentar sozinho (“Cartuxa Colheita” fica: chama-se pelo produtor) — no catálogo
+        e em todas as garrafeiras. Os vinhos novos já passam por ela sozinhos; esta lista é a dos que já cá estavam.
+      </p>
+      <p class="wc-note">
+        Quando o nome que sobra fica vago (“1836 Grande Reserva”), desmarca-o e carrega em
+        <strong>Manter o produtor no nome</strong>: nos vinhos desse produtor, o produtor nunca mais sai da frente —
+        nos que já cá estão, nas garrafeiras e nos que vierem. Os avisos decidem-se à mão, no Editar.
+      </p>
+      <div class="arr-barra"><button class="btn-n" onclick="wcNomesCarregar()">Ver o que muda</button></div>
+      <div id="nomes-ctl" style="display:none">
+        <input type="text" id="nomes-q" placeholder="procurar nome, produtor, garrafeira…" oninput="wcNomesPintar()">
+        <div class="arr-filtros">
+          <select id="nomes-onde" onchange="wcNomesPintar()">
+            <option value="">todos</option>
+            <option value="catalogo">só o catálogo</option>
+            <option value="garrafeira">só as garrafeiras</option>
+          </select>
+          <select id="nomes-mud" onchange="wcNomesPintar()">
+            <option value="">qualquer mudança</option>
+            <option value="ano">sai a colheita</option>
+            <option value="produtor">sai o produtor</option>
+            <option value="cor">sai a cor</option>
+            <option value="avisos">só os com avisos</option>
+          </select>
+        </div>
+        <label class="arr-chk"><input type="checkbox" id="nomes-so" checked onchange="wcNomesPintar()"> só os que mudam agora</label>
+        <p class="wc-note" id="nomes-n"></p>
+        <div class="arr-barra">
+          <button class="btn-n" onclick="wcNomesMarcar(true)">Marcar os que se veem</button>
+          <button class="btn-n" onclick="wcNomesMarcar(false)">Desmarcar os que se veem</button>
+        </div>
+      </div>
+      <div id="nomes-lista"></div>
+      <div class="arr-barra" id="nomes-acoes" style="display:none">
+        <button class="btn-prim auto" id="btn-nomes" onclick="wcNomesAplicar()" disabled>Aplicar os marcados</button>
+        <button class="btn-n" id="btn-nomes-manter" onclick="wcNomesManter()" disabled
+          title="Os produtores dos desmarcados que se veem e a quem a regra tirava o produtor da frente">Manter o produtor no nome</button>
+      </div>
+      <details class="arr-det" ontoggle="if(this.open)wcNomesManterListar()">
+        <summary>Produtores que ficam no nome</summary>
+        <div id="nomes-manter"></div>
+      </details>
+    </div>
   </div>
 
   <!-- ═══ ALERTAS (admin) ═══ -->
@@ -209,6 +261,58 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
     <div id="viv-lista"></div>
+
+    <!-- As garrafeiras × o catálogo (db/garrafeiras-rever.sql, que chama as
+         funções das migrações 18 e 19 da Garrafeira): os dois cartões do
+         painel do PC que não abrem site nenhum. Só se comparam quando se pede
+         — são segundos, a varrer todas as garrafeiras. -->
+    <div class="wc-card arr">
+      <h3>Links do Vivino nas garrafeiras</h3>
+      <p class="wc-note">
+        Compara o link de cada vinho das garrafeiras com o do catálogo. Só propõe trocar quando o da
+        garrafeira <strong>não tem o número do vinho</strong> (<code>/wines/nº</code>, <code>/Wines/nome</code>…),
+        <strong>abre outro vinho</strong> ou está vazio — e só se o link do catálogo estiver confirmado (lido
+        na página pelo script, ou escrito por ti). Um link para uma colheita do mesmo vinho fica como a pessoa o pôs.
+      </p>
+      <div class="arr-barra">
+        <button class="btn-n" onclick="wcGlComparar()">Comparar</button>
+        <span class="wc-note" id="gl-n"></span>
+      </div>
+      <div id="gl-lista"></div>
+    </div>
+    <div class="wc-card arr">
+      <h3>Fichas das garrafeiras × catálogo</h3>
+      <p class="wc-note">
+        O resto da ficha (nota, avaliações, preço, castas, teor, estágio, janela, notas de prova,
+        harmonização…), <strong>só da mesma colheita</strong>. Propõe o que está <strong>vazio</strong> na garrafeira
+        e o catálogo tem, e o que é <strong>diferente</strong> quando o do catálogo é <strong>mais recente</strong>
+        do que a última vez que o dono gravou o vinho. Nunca a cor (cor diferente = outro vinho), nunca a
+        fotografia da pessoa; as notas pessoais nem vão ao catálogo.
+      </p>
+      <div class="arr-barra">
+        <button class="btn-n" onclick="wcFichComparar()">Comparar</button>
+        <span class="wc-note" id="fich-n"></span>
+      </div>
+      <div id="fich-ctl" style="display:none">
+        <input type="text" id="fich-q" placeholder="procurar vinho, garrafeira, dono…" oninput="wcFichPintar()">
+        <div class="arr-filtros">
+          <select id="fich-campo" onchange="wcFichPintar()"></select>
+          <select id="fich-caso" onchange="wcFichPintar()">
+            <option value="">todos os casos</option>
+            <option value="vazio">vazios na garrafeira</option>
+            <option value="mais_recente">mais recentes no catálogo</option>
+          </select>
+        </div>
+        <div class="arr-barra">
+          <button class="btn-n" onclick="wcFichMarcar(true)">Marcar os que se veem</button>
+          <button class="btn-n" onclick="wcFichMarcar(false)">Desmarcar os que se veem</button>
+        </div>
+      </div>
+      <div id="fich-lista"></div>
+      <div class="arr-barra" id="fich-acoes" style="display:none">
+        <button class="btn-prim auto" id="btn-fich" onclick="wcFichTrazer()" disabled>Trazer os marcados</button>
+      </div>
+    </div>
 
     <!-- O histórico campo a campo do catálogo todo (db/historico.sql). Na
          ficha de cada vinho está o dele. -->
