@@ -3648,6 +3648,20 @@ function wcVivGlobalHTML(x){
   if(!x||(x.vivino_nota_global==null&&x.vivino_avaliacoes_global==null))return '';
   return `<span class="viv-sub">todas as colheitas: ${wcVivNum(x.vivino_nota_global,1)} ★ · ${wcVivNum(x.vivino_avaliacoes_global)} avaliações</span>`;
 }
+/* Os "outros resultados" da procura — sem o que já é a proposta e sem o
+   vinho do link que está no catálogo: esse foi aberto e não passou, e
+   propô-lo como alternativa era propor o que já lá está (o "Ermelinda
+   Freitas Syrah", 27/09/2026). As verificações de antes da correção do
+   script ainda o trazem, por isso tira-se aqui também. Pelo NÚMERO do
+   vinho: o mesmo /w/<nº> com outro texto no endereço é o mesmo vinho. */
+const wcVivId=u=>(String(u||'').match(/\/w\/(\d+)/)||[])[1]||null;
+function wcVivCands(r){
+  const p=r.proposta||null;
+  const atual=wcVivId((r.agora||{}).vivino_url)||wcVivId(r.urlAntes);
+  const todos=(Array.isArray(r.candidatos)?r.candidatos:[]).filter(c=>c&&c.vivino_url&&(!p||c.vivino_url!==p.vivino_url));
+  const cands=todos.filter(c=>!atual||wcVivId(c.vivino_url)!==atual);
+  return {cands, mesmo:cands.length<todos.length||!!(r.detalhe&&r.detalhe.procura&&r.detalhe.procura.mesmo_link)};
+}
 function wcVivinoHTML(r,i){
   const [rot,desc]=WC_VIV_ESTADO[r.estado]||[r.estado,''];
   const a=r.agora||{}, p=r.proposta||null;
@@ -3655,8 +3669,14 @@ function wcVivinoHTML(r,i){
   const pesq='https://www.vivino.com/search/wines?q='+encodeURIComponent(
     [r.nome,r.produtor&&!String(r.nome||'').toLowerCase().includes(String(r.produtor).toLowerCase())?r.produtor:'']
       .join(' ').replace(/\(.*?\)/g,' ').trim());
-  const cands=(Array.isArray(r.candidatos)?r.candidatos:[]).filter(c=>c&&c.vivino_url&&(!p||c.vivino_url!==p.vivino_url));
+  const {cands,mesmo}=wcVivCands(r);
   const pend=r.revisao==='pendente';
+  // "Abre OUTRO vinho" sem proposta: o que há a decidir é se o link que lá
+  // está é o certo. "O link está certo" grava-o como confirmado, e o script
+  // deixa de o recusar pelo nome (ver `confirmados` na `vivino_linha`).
+  // (Só se o link de agora for o que foi verificado: confirma-se o `url_antes`.)
+  const confirmar=r.estado==='errado'&&!p&&!!wcVivId(a.vivino_url)&&wcVivId(a.vivino_url)===wcVivId(r.urlAntes);
+  const porque=r.estado==='errado'&&r.detalhe&&r.detalhe.atual&&Array.isArray(r.detalhe.atual.porque)?r.detalhe.atual.porque:[];
   return `<div class="wc-card rep">
     <div class="rep-cab">
       <div>
@@ -3666,6 +3686,8 @@ function wcVivinoHTML(r,i){
       <span class="rep-est viv-${esc(r.estado)}" title="${esc(desc)}">${esc(rot)}</span>
     </div>
     <p class="wc-note" style="margin-top:6px">${esc(desc)}${r.nomePagina?` — a página diz <strong>“${esc(r.nomePagina)}”</strong>`:''}</p>
+    ${porque.length?`<p class="wc-note">O que não bate: ${porque.map(esc).join(' · ')}.</p>`:''}
+    ${mesmo&&r.estado==='errado'?`<p class="wc-note">A procura no Vivino voltou a dar <strong>este mesmo vinho</strong> — não encontrou outro melhor. Se é mesmo este, “O link está certo”${porque.some(x=>/menção|palavras a mais|casta/.test(x))?' (ou corrige o nome no catálogo, em “Abrir a ficha”)':''}.</p>`:''}
     <div class="rep-vals">
       <div><span>no catálogo agora</span><b class="viv-url">${wcVivLink(a.vivino_url)}</b>
         <b>${wcVivNum(a.vivino_nota,1)} ★ · ${wcVivNum(a.vivino_avaliacoes)} avaliações</b>
@@ -3681,13 +3703,14 @@ function wcVivinoHTML(r,i){
     ${cands.length?`<div class="viv-cands"><span class="viv-sub">Outros resultados da procura no Vivino:</span>
       ${cands.map((c,k)=>`<div class="viv-cand">
         <a href="${esc(c.vivino_url)}" target="_blank" rel="noopener">${esc(c.texto||c.vivino_url)}</a>
-        <span class="viv-sub">${c.parecenca!=null?Math.round(Number(c.parecenca)*100)+'%':''}${c.cor_bate===false?' · outra cor':''}</span>
+        <span class="viv-sub">${c.parecenca!=null?Math.round(Number(c.parecenca)*100)+'%':''}${c.cor_bate===false?' · outra cor':''}${c.cor_bate!==false&&c.nome_bate===false?' · o nome não bate':''}</span>
         ${pend?`<button class="btn-n" onclick="wcVivinoUsar(${i},${k})">Usar este</button>`:''}
       </div>`).join('')}</div>`:''}
     <p class="wc-note">${esc(dataFmt(r.quando))}${r.revisao!=='pendente'?` · ${esc(r.revisao)}${r.revistoPor?' por '+esc(r.revistoPor):''}`:''}</p>
     <div class="rep-acoes">
       ${pend&&p?`<button class="btn-prim auto" onclick="wcVivinoResolver(${r.id},'aceite')">${apagar?'Apagar o link':'Aplicar'}</button>`:''}
-      ${pend?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'recusado')">Deixar como está</button>`:''}
+      ${pend&&confirmar?`<button class="btn-prim auto" onclick="wcVivinoConfirmar(${r.id})">O link está certo</button>`:''}
+      ${pend&&!confirmar?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'recusado')">Deixar como está</button>`:''}
       ${a.vivino_url&&!(pend&&apagar)?`<button class="btn-n" onclick="wcVivinoRetirar(${r.id})">Retirar o link</button>`:''}
       ${!pend&&r.revisao!=='sem_acao'?`<button class="btn-n" onclick="wcVivinoResolver(${r.id},'pendente')">Reabrir</button>`:''}
       <a class="btn-n" href="${esc(pesq)}" target="_blank" rel="noopener">Procurar no Vivino ↗</a>
@@ -3696,13 +3719,22 @@ function wcVivinoHTML(r,i){
   </div>`;
 }
 
-async function wcVivinoResolver(id,decisao,campos){
+async function wcVivinoResolver(id,decisao,campos,msg){
   try{
     await catRpc('vivino_resolver',{p_id:id,p_decisao:decisao,p_campos:campos||null});
-    toast(decisao==='aceite'?'Aplicado ✓':decisao==='pendente'?'Reaberto':'Fica como está ✓');
+    toast(msg||(decisao==='aceite'?'Aplicado ✓':decisao==='pendente'?'Reaberto':'Fica como está ✓'));
     wcVivinoLista(_wcVivRev);
     wcContarAlertas();
   }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* O link que lá está é o certo — as regras do nome é que não o reconhecem
+   (uma menção que o nome do catálogo não diz, uma palavra a mais). Fica
+   'recusado' sem proposta, que é o que a `vivino_linha` lê como confirmado:
+   o script não o volta a dar como "outro vinho". */
+function wcVivinoConfirmar(id){
+  if(!confirm('Confirmar que este link é deste vinho? O script deixa de o dar como "outro vinho" (a cor e a colheita continuam a ser conferidas).'))return;
+  wcVivinoResolver(id,'recusado',null,'Confirmado ✓ — o script deixa de o recusar');
 }
 
 /* Retirar o link que está no catálogo, haja proposta ou não — para o link
@@ -3723,9 +3755,7 @@ function wcVivinoRetirar(id){
 function wcVivinoUsar(i,k){
   const r=_wcVivLista[i];
   if(!r)return;
-  const p=r.proposta||null;
-  const cands=(Array.isArray(r.candidatos)?r.candidatos:[]).filter(c=>c&&c.vivino_url&&(!p||c.vivino_url!==p.vivino_url));
-  const c=cands[k];
+  const c=wcVivCands(r).cands[k];
   if(!c)return;
   wcVivinoResolver(r.id,'aceite',{vivino_url:c.vivino_url});
 }

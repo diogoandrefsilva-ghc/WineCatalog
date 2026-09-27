@@ -531,6 +531,23 @@ function castasBatem(v, titulo) {
   const deles = new Set(castasDe(titulo));
   return castasDe(v.nome).every(c => deles.has(c));
 }
+// PORQUE é que um título não passou (as mesmas regras, pela mesma ordem, da
+// `bateNome` e do link atual): é o que o alerta mostra ao admin. Sem isto, o
+// "Ermelinda Freitas Syrah" ia para Alertas como "abre OUTRO vinho" com a
+// página a dizer "…Syrah Reserva" e nada que dissesse que era a menção.
+function porqueNao(v, titulo, txt, recusado) {
+  const t = tituloLimpo(titulo), m = [];
+  if (recusado) m.push("o admin já recusou este link");
+  if (parecenca(v, txt) < LIMIAR) m.push("o nome do catálogo não está no da página");
+  if (!corBate(v, txt)) m.push("a cor não bate");
+  if (!mencaoBate(v, t)) m.push(`a menção não bate (catálogo: ${mencao(v.nome) || "nenhuma"} · página: ${mencao(t) || "nenhuma"})`);
+  if (!castasBatem(v, t)) m.push("falta na página uma casta do nome");
+  if (castaAMais(v, t)) m.push("a página tem uma casta que o catálogo não diz");
+  const limite = distintivas(v.nome).length <= 1 ? 0 : MAX_A_MAIS;
+  const extra = aMaisSemAsNossasCastas(v, t);
+  if (extra.length > limite) m.push(`palavras a mais na página: ${extra.join(", ")}`);
+  return m;
+}
 
 // ── Um vinho ──────────────────────────────────────────────────────────
 async function verificar(page, v) {
@@ -538,6 +555,12 @@ async function verificar(page, v) {
   let estado = null, nomePagina = null, proposta = null;
   // Os do Vivino que o admin já recusou para este vinho não voltam.
   const recusados = new Set((Array.isArray(v.recusados) ? v.recusados : []).map(String));
+  // Os links que o admin disse que ESTÃO certos ("O link está certo" num
+  // alerta de "abre OUTRO vinho"): o nome não os recusa, só a cor e a
+  // colheita — como um link colado no Vinho novo. Sem isto o mesmo alerta
+  // voltava a cada corrida, com as mesmas regras a dizer o mesmo.
+  const confirmados = new Set((Array.isArray(v.confirmados) ? v.confirmados : []).map(String));
+  let atualId = null;
 
   if (v.vivino_url && pareceVivino(v.vivino_url) && !/\s/.test(v.vivino_url)) {
     const a = await abrir(page, comAno(v.vivino_url, v.ano));
@@ -552,8 +575,10 @@ async function verificar(page, v) {
       det.atual.parecenca = Math.round(p * 100) / 100;
       // Um link colado pelo admin no painel ("Vinho novo"): foi ele que o
       // abriu, e o nome não o recusa — só a cor (e a colheita, lá em baixo).
-      const confiado = v.vivino_confiado && idDoVinho(a.final) === idDoVinho(v.vivino_url);
-      if (confiado) det.atual.colado = true;
+      atualId = idDoVinho(a.final);
+      const confirmado = confirmados.has(String(idDoVinho(v.vivino_url)));
+      const confiado = (v.vivino_confiado || confirmado) && atualId === idDoVinho(v.vivino_url);
+      if (confiado) det.atual[v.vivino_confiado ? "colado" : "confirmado"] = true;
       if (confiado ? corBate(v, txt)
           : p >= LIMIAR && corBate(v, txt) && bateNome(v, nomePagina || a.info.titulo || "") && !recusados.has(idDoVinho(a.final))) {
         estado = "certo";
@@ -570,6 +595,7 @@ async function verificar(page, v) {
         semOutraColheita(v, proposta, det, nomePagina, a.final);
       } else {
         estado = "errado";
+        det.atual.porque = porqueNao(v, nomePagina || a.info.titulo || "", txt, recusados.has(atualId));
       }
     }
   } else {
@@ -603,6 +629,15 @@ async function verificar(page, v) {
         candidatos = candidatos.concat(novos).sort((x, y) => (y.cor_bate - x.cor_bate) || (y.nome_bate - x.nome_bate)
           || (y.parecenca - x.parecenca) || (x.a_mais.length - y.a_mais.length));
       } catch (e) { det.procura.serper = { erro: String(e.message || e).slice(0, 200) }; }
+    }
+    // O link atual já foi aberto e não passou: a procura devolvê-lo como
+    // "outro resultado" era propor o que já lá está (o "Ermelinda Freitas
+    // Syrah", 27/09/2026). Fica de fora, e o alerta diz que a procura só
+    // deu este.
+    if (atualId) {
+      const antes = candidatos.length;
+      candidatos = candidatos.filter(c => idDoVinho(c.vivino_url) !== atualId);
+      if (candidatos.length < antes) det.procura.mesmo_link = true;
     }
     if (recusados.size) {
       const antes = candidatos.length;
@@ -1884,7 +1919,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { canon, resumoProcuras, palavrasDaRegiao, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { canon, porqueNao, resumoProcuras, palavrasDaRegiao, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

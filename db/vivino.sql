@@ -310,6 +310,18 @@ AS $$
         FROM winecatalog.vivino_verificacoes vv
        WHERE vv.vinho_id = v.id AND vv.revisao = 'recusado'
          AND vv.proposta ->> 'vivino_url' ~ '/w/\d+'), '[]'::jsonb),
+    -- E os que o admin disse que ESTÃO certos: um alerta "abre OUTRO vinho"
+    -- sem proposta, resolvido com "O link está certo" (antes "Deixar como
+    -- está" — dizia o mesmo). O script deixa de os recusar pelo nome (a cor
+    -- e a colheita continuam). O "Ermelinda Freitas Syrah" (27/09/2026): a
+    -- página diz "…Syrah Reserva", a menção não bate, e sem isto o mesmo
+    -- alerta voltava a cada corrida.
+    'confirmados', COALESCE((
+      SELECT jsonb_agg(DISTINCT substring(vv.url_antes FROM '/w/(\d+)'))
+        FROM winecatalog.vivino_verificacoes vv
+       WHERE vv.vinho_id = v.id AND vv.estado = 'errado' AND vv.revisao = 'recusado'
+         AND (vv.proposta IS NULL OR jsonb_typeof(vv.proposta) = 'null')
+         AND vv.url_antes ~ '/w/\d+'), '[]'::jsonb),
     'ficha', v.ficha);
 $$;
 

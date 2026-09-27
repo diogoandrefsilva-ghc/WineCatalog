@@ -1241,6 +1241,21 @@ a mesma função leva o `precos` (cada sítio, com colheita e data), o
 que ficou como preço médio a negrito (★), e uma linha "médio" quando ele
 veio de fora das lojas e do Vivino (uma garrafeira, `reposto`…).
 
+**"Abre OUTRO vinho" e a procura só dá o mesmo** (27/09/2026, o dono:
+"o primeiro vinho que sugeres é exatamente o que já lá está"). O
+"Ermelinda Freitas Syrah" tinha o link do "…Syrah Reserva": a menção não
+bate, o link é recusado, e a procura devolvia esse MESMO vinho como 1.º
+"outro resultado". Agora: o script tira dos candidatos o vinho do link atual
+(`det.procura.mesmo_link`; a app também, pelo `/w/<nº>`, para as verificações
+de antes), e diz PORQUE é que o link não passou (`det.atual.porque`,
+`porqueNao`: a menção, as castas, as palavras a mais…). Sem proposta, o
+alerta tem **"O link está certo"** em vez de "Deixar como está": fica
+`recusado` sem proposta, e a `vivino_linha` passa esse `url_antes` ao script
+em `confirmados` — o nome deixa de o recusar (a cor e a colheita não), como
+um link colado no Vinho novo. Os "Deixar como está" antigos sem proposta
+contam também (eram isso mesmo). Nos outros resultados, "o nome não bate"
+ao lado da parecença: 100% de parecença não quer dizer que passe.
+
 **Um vinho fundido depois de verificado perde a proposta.** Ela foi
 procurada pelo nome antigo: o "Post", fundido no "Post Scriptum", tinha à
 espera o link de um "Post Reserve Cabernet Sauvignon" americano, e
