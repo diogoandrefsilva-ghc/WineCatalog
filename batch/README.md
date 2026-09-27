@@ -181,7 +181,10 @@ Filtros: a procura, **Onde** (catálogo ou garrafeiras), **O que sai do
 nome** (a colheita, o produtor, a cor, ou só os com avisos) e **só os que
 mudam agora**. **Marcar/Desmarcar os que se veem** e **Aplicar os
 marcados** — só os marcados que se veem; um desmarcado fica desmarcado ao
-mudar os filtros.
+mudar os filtros. Quando o nome que sobra fica vago ("1836 Grande
+Reserva"), desmarca-o e carrega em **Manter o nome dos desmarcados**: o
+produtor nunca mais sai da frente desse nome (a lista está em **Nomes que
+ficam como estão**, com ✕ para tirar).
 
 ### Produtores
 

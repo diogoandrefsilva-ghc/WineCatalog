@@ -70,6 +70,7 @@ DECLARE
   ok       boolean;
   resto    text[];
   cor_fim  text;
+  v_manter text;
   regioes  text[] := ARRAY['douro','duriense','alentejo','alentejano','dao','bairrada','tejo','lisboa',
                            'setubal','peninsula','minho','verde','verdes','madeira','porto','algarve',
                            'beira','beiras','interior','tras','montes','transmontano','tavora','varosa',
@@ -78,7 +79,7 @@ DECLARE
                            'regional','ipr','preta','branca','portugal'];
 BEGIN
   IF btrim(COALESCE(p_nome,'')) = '' THEN
-    RETURN jsonb_build_object('nome', p_nome, 'ano', p_ano, 'nome_sem_cor', p_nome, 'mudancas', '[]'::jsonb, 'avisos', '[]'::jsonb);
+    RETURN jsonb_build_object('nome', p_nome, 'ano', p_ano, 'nome_sem_cor', p_nome, 'mudancas', '[]'::jsonb, 'avisos', '[]'::jsonb, 'chave_manter', '');
   END IF;
 
   -- 1. O ANO. Só uma palavra que É um ano (19xx/20xx), e nunca a única.
@@ -112,6 +113,10 @@ BEGIN
     END IF;
   END IF;
 
+  -- Um nome da lista do admin (`nomes_manter`, ver nomes-manter.sql) fica
+  -- com o produtor à frente: "1836 Grande Reserva" sozinho é vago.
+  v_manter := winecatalog.chave_manter(w);
+
   -- 3. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e as
   -- variantes da oficial. Fica a mais comprida que case palavra a palavra.
   cand := ARRAY[COALESCE(p_produtor,''), COALESCE(winecatalog.produtor_oficial(p_produtor),'')];
@@ -129,6 +134,9 @@ BEGIN
     END LOOP;
     IF ok AND array_length(cw, 1) > melhor THEN melhor := array_length(cw, 1); END IF;
   END LOOP;
+  IF melhor > 0 AND EXISTS (SELECT 1 FROM winecatalog.nomes_manter m WHERE m.chave = v_manter) THEN
+    melhor := 0;
+  END IF;
   IF melhor > 0 THEN
     resto := w[melhor+1:];
     WHILE array_length(resto, 1) > 0 AND winecatalog.palavra_norm(resto[1]) = '' LOOP resto := resto[2:]; END LOOP;
@@ -150,7 +158,8 @@ BEGIN
     'ano', v_ano,
     'nome_sem_cor', array_to_string(w, ' '),   -- igual ao nome desde a fase 4
     'mudancas', to_jsonb(mud),
-    'avisos', to_jsonb(avisos));
+    'avisos', to_jsonb(avisos),
+    'chave_manter', v_manter);
 END;
 $$;
 REVOKE ALL ON FUNCTION winecatalog.nome_normal(text, text, text, integer) FROM PUBLIC, anon;
@@ -200,7 +209,7 @@ BEGIN
       escolhe := COALESCE(p_itens, '[]'::jsonb) @> jsonb_build_array(jsonb_build_object('fonte', 'catalogo', 'id', r.id));
       CONTINUE WHEN NOT escolhe OR (v_nome = r.nome AND v_ano IS NOT DISTINCT FROM r.ano);
       v_chave := winecatalog.chave(v_nome, r.produtor, v_ano, r.tipo);
-      IF EXISTS (SELECT 1 FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id) THEN
+      IF NOT winecatalog.libertar_chave(v_chave, r.id) THEN   -- um fundido nesta não trava (nomes-manter.sql)
         v_dup := v_dup || jsonb_build_object('id', r.id, 'nome', r.nome, 'ano', r.ano,
                    'com', (SELECT o.id FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id));
         CONTINUE;

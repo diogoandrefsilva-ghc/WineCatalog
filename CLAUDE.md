@@ -50,7 +50,7 @@ tudo o que aqui está foi pago com um erro.
   `produtores.sql` → `nomes-normalizar.sql` → **`cor-na-chave.sql`** (a cor na
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
-  marcadas como substituídas) (+ `README.md`
+  marcadas como substituídas) → `nomes-manter.sql` (os nomes que ficam como estão) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -859,6 +859,20 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   procura com o ANO (`qAno`: as palavras distintivas + a colheita, "cartuxa
   2018"); sem ela, fica a mais recente das duas. Custa uma página a mais por
   loja nos vinhos cuja colheita a loja não mostra à primeira.
+  **E nem assim a GN deu o 2018** (a corrida seguinte, com a regra já no
+  PC). O que resolve é o ENDEREÇO: a GN põe a colheita nele
+  (`/2008-cartuxa-tinto.html`), e antes da procura com o ano abre-se o mesmo
+  endereço com o nosso (`outraColheitaPeloEndereco`) — serve se abrir, se o
+  endereço final ainda tiver o ano e se o NOME da página (`nomeDoProduto`: o
+  do JSON-LD ou o `h1`, nunca o título do separador, que leva "| Garrafeira
+  Nacional" e "Garrafeira" é uma menção) tiver a nossa colheita e passar as
+  regras de nome. Uma procura que SALTA para a página do produto
+  (`produtoDaProcura`: outro caminho, uma página que É de um produto —
+  `ehProduto`, pelo JSON-LD, `og:type` ou a classe do `body` do
+  Magento/WooCommerce — e um preço) conta esse produto como o resultado, em
+  vez dos "relacionados" que lá estão. E quando a colheita não bate, o
+  registo diz o que cada procura deu (`resumoProcuras`) — era o que faltava
+  para se saber porquê sem abrir o ficheiro da simulação.
 - **"1,5Lt" não era uma garrafa grande** (`NAO_E_GARRAFA`): a Granvine
   escreve assim, e o "Cartuxa Tinto 2020 1,5Lt" (48,89 €) passou no 2020. O
   regex conhecia só algumas grafias (1,5L, 3L, 37,5cl…); agora é qualquer
@@ -1016,7 +1030,9 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
 - **Nomes de vinhos** — a simulação da regra do nome, com procura, "Onde"
   (catálogo/garrafeiras) e "O que sai do nome" (colheita/produtor/cor/com
   avisos). Um desmarcado fica desmarcado ao mudar os filtros (`NOMES_OFF`),
-  e "Aplicar" leva só os marcados **que se veem**;
+  e "Aplicar" leva só os marcados **que se veem**; "Manter o nome dos
+  desmarcados" (a lista `nomes_manter`, ver "Os nomes que ficam como estão")
+  leva os desmarcados que se veem e a quem a regra tirava o produtor;
 - **Produtores** — as sugestões e os oficiais, com uma procura.
 Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
 que se abrem. Enquanto o script corre, só os botões que o põem a correr
@@ -1314,6 +1330,30 @@ nome fez nascer um duplicado (a `juntar` da garrafeira já não achava a linha
 velha). Recalcularam-se as chaves todas (`cor_na_chave_recalcular`). A lição
 é a do costume: um trigger que engole erros tem de ser testado a ver o que
 ESCREVE, não só a ver que não rebenta.
+
+**Os nomes que ficam como estão** (27/09/2026, `db/nomes-manter.sql`). A
+regra tira o produtor da frente quando o resto tem uma palavra "distintiva"
+— e um número ou uma expressão comum passam por isso sem o serem: "1836
+Grande Reserva", "Clássico 80 anos", "1255 Grande Villae", "Colecção da
+Família". O dono das apps: "eu sei que é complicado fazer uma regra a partir
+disto" — por isso não há regra, há uma LISTA (`nomes_manter`), que ele
+enche no painel ("Manter o nome dos desmarcados"). Um nome da lista não
+perde o produtor da frente, no catálogo, nas garrafeiras e nas escritas
+futuras (a `nome_normal` é a mesma para todos); a colheita e a cor no fim
+continuam a sair. A chave da lista é o nome sem ano nem cor, palavra a
+palavra normalizada.
+
+**A chave de um fundido não trava a alvo** (`libertar_chave`, no mesmo
+ficheiro). A `chave` é única e uma perdedora de um `alias` guarda a sua: o
+"Carlos Alonso Piano 17" (#92) não podia passar a "Piano 17" com o produtor
+oficial porque essa chave era a do #116, fundido NELE — era recusado como
+duplicado de si próprio, e o painel só dizia "ficaram por mexer". Agora a
+chave da perdedora estaciona (`~<id>` no fim) e a alvo fica com ela; a
+`achar` casa pela `chave_base`/`base_nome`, que não mudam. Vale no trigger
+dos nomes, na `nomes_rever` e na `produtor_definir`. Uma linha VIVA com a
+mesma chave continua a ser um duplicado para os Duplicados — foi o caso do
+"Quinta dos Sentidos Tinto" (#185) × "Quinta dos Sentidos" (#191), fundidos
+a 27/09 (o #191 no #185, que tinha o produtor).
 
 **Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
 produtor no mesmo saco de palavras. Mudam as chaves só-do-nome
