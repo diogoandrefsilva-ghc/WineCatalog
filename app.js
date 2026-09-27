@@ -754,7 +754,7 @@ function wcPintarLista(){
 function wcMiniGarrafa(v,cls){
   const img=String(v.imagem||'').trim();
   return `<div class="${cls}">${wcGarrafaSVG(v.tipo,v.ano)}${
-    img?`<img src="${esc(img)}" alt="" loading="lazy" onerror="this.remove()">`:''}</div>`;
+    img?`<img src="${esc(img)}" alt="" loading="lazy" onload="this.parentNode.classList.add('com-foto')" onerror="this.remove()">`:''}</div>`;
 }
 function wcPrecoTxt(p){
   const n=Number(p);
@@ -999,7 +999,7 @@ function wcFichaHTML(v){
     <button class="mx" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
     <div class="mhero-in">
       <div class="mhero-g${isAdmin()?' mhero-edit':''}"${isAdmin()?` onclick="wcAbrirEditar()" title="Mudar a imagem"`:''}>
-        ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onerror="this.remove()">`:''}
+        ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onload="this.parentNode.classList.add('com-foto')" onerror="this.remove()">`:''}
         ${isAdmin()?'<i class="mhero-lapis">✏️</i>':''}
       </div>
       <div class="mhero-tx">

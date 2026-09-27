@@ -785,3 +785,7 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .prod-ofi{margin:4px 0}
 .prod-ofi a{color:inherit}
 .prod-acoes .btn-n{font-size:12px;padding:7px 10px}
+
+/* A foto carregou: a garrafa desenhada sai de trás. As fotos das lojas são
+   PNG com fundo transparente e o desenho via-se pelos buracos. */
+.com-foto>svg{visibility:hidden}
