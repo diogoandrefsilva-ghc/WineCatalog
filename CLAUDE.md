@@ -849,6 +849,20 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   encontrado". Uma procura sem produtos passou a guardar o que a página era
   (`paginaVazia`: título, endereço final, o princípio do texto); é o que diz,
   na próxima vez, se é uma recusa a reconhecer.
+- **Com a Cartuxa à vista, a GN deu a colheita errada**: "Cartuxa Colheita
+  Tinto" devolveu as colheitas que calharam, e das que passaram só a de 2008
+  (49,95 €) — com o 2018 e o 2020 lá à venda. A regra "a mesma colheita,
+  senão a mais recente" só escolhe entre o que a loja mostrou. Por isso,
+  quando a colheita certa não vem, a de outra fica guardada e há uma última
+  procura com o ANO (`qAno`: as palavras distintivas + a colheita, "cartuxa
+  2018"); sem ela, fica a mais recente das duas. Custa uma página a mais por
+  loja nos vinhos cuja colheita a loja não mostra à primeira.
+- **"1,5Lt" não era uma garrafa grande** (`NAO_E_GARRAFA`): a Granvine
+  escreve assim, e o "Cartuxa Tinto 2020 1,5Lt" (48,89 €) passou no 2020. O
+  regex conhecia só algumas grafias (1,5L, 3L, 37,5cl…); agora é qualquer
+  volume que não seja 0,75 L / 75 cl / 750 ml (a GN tem 5L, 6L, 15L). O único
+  que tinha chegado ao catálogo — o Duas Quintas 2022 na Granvine a 45,49 € —
+  foi apagado do `precos` (no histórico).
 
 **Três modos de procurar** (`MODO`, escolhido no painel; 26/09/2026, pelo
 dono). **Tudo** (`completo`): Vivino e lojas, a ficha toda. **Só o Vivino**
