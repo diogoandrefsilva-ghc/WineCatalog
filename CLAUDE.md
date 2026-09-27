@@ -1203,6 +1203,49 @@ chamada à mão em cada porta.)
   garrafeiras) ficou no histórico (quem: "correção: nomes em maiúsculas") e
   no `garrafeira.sync_log` (`nome_capitalizado`).
 
+### Os produtores oficiais e o nome normalizado (27/09/2026, o dono das apps)
+O mesmo vinho escrito de maneiras diferentes nas garrafeiras e no catálogo:
+o produtor inteiro ou abreviado ("Ramos Pinto" / "Adriano Ramos Pinto"), o
+produtor dentro do nome, a cor e o ano no nome. A decisão: **o nome é o que
+distingue o vinho; o produtor, a cor e a colheita são campos à parte**, e
+vale no catálogo E em todas as garrafeiras. Em quatro fases:
+
+1. **Produtores oficiais** (`db/produtores.sql`; a tabela e a
+   `produtor_oficial` estão no `catalogo.sql`, porque a chave as usa). O
+   admin escolhe o nome oficial e as grafias que são ele — no painel do PC
+   (cartão "Produtores") ou na app (Duplicados › Produtores). A partir daí:
+   a **`chave_base` usa o oficial** (e por isso deixou de ser IMMUTABLE), o
+   trigger dos nomes troca a grafia pela oficial em qualquer escrita (aqui e
+   na Garrafeira, migração 23), e o que já lá estava é corrigido no momento
+   (`produtor_definir`: no catálogo com as chaves recalculadas; nas
+   garrafeiras com uma linha no `sync_log`). Uma linha que fique com a
+   chave de outra que já existe NÃO se mexe: é devolvida para se juntar nos
+   Duplicados. As sugestões são pares em que as palavras de uma grafia estão
+   todas na outra — **nunca se junta sozinho** ("Quinta Nova" parece-se com
+   "Herdade da Malhadinha Nova"), e o "são diferentes" fica gravado.
+2. **A regra do nome** (`winecatalog.nome_normal`, `db/nomes-normalizar.sql`):
+   tira a colheita do nome (quando é a do vinho; sem colheita, passa a sê-la)
+   e o produtor da FRENTE do nome — **só se o que sobra se aguentar
+   sozinho**: uma palavra que não seja gama, cor, casta (a `generico`) nem
+   região. "Cartuxa Colheita", "Morais Rocha Reserva", "Quinta da Carolina
+   Douro" ficam: esses vinhos chamam-se pelo produtor. A cor no fim também
+   sai, mas só na fase 4 (ver abaixo). O duvidoso (a cor a meio do nome, um
+   ano no nome diferente da colheita) é aviso, não muda.
+3. **Os dados de agora**: `nomes_rever` sem `p_aplicar` é a simulação (o
+   cartão "Nomes dos vinhos" do painel); com ele aplica só o que o admin
+   marcou, no catálogo (chaves recalculadas, colisões para os Duplicados) e
+   nas garrafeiras (`sync_log`, acao `nome_normalizado`).
+4. **A cor na chave** (a "mudança da cor na chave", abaixo em "O que
+   falta"): a cor passa a campo da chave e obrigatória. Só depois disto a cor
+   sai do nome — antes, o "Papa Figos Tinto" e o "Papa Figos Branco" sem a
+   cor no nome eram a mesma chave. É também aí que a regra do nome passa a
+   um trigger (cada escrita futura), e que a Garrafeira grava o nome do
+   catálogo quando o vinho vem de um candidato.
+
+**Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
+produtor no mesmo saco de palavras. Mudam as chaves só-do-nome
+(`chave_nome`/`base_nome`), que a `nomes_rever` recalcula.
+
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
   `Content-Profile` em todos os pedidos** — é isso que aponta para o schema,

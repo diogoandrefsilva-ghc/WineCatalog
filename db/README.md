@@ -33,6 +33,8 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 8. db/historico.sql        (o histórico campo a campo, com "Repor" — depois do curadoria.sql)
 9. db/amigos.sql           (as marcas dos amigos na WineSelection — precisa dos schemas `garrafeira` e `anniversarygifts`)
 10. db/nomes.sql           (os nomes sem CAPS LOCK — depois do catalogo.sql e do historico.sql)
+11. db/produtores.sql      (os produtores oficiais — depois do nomes.sql; a tabela e a chave estão no catalogo.sql)
+12. db/nomes-normalizar.sql (a regra do nome e a simulação — depois do produtores.sql)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

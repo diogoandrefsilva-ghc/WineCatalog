@@ -155,6 +155,20 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
       </div>
     </div>
     <div id="dup-lista"></div>
+    <div class="wc-card admin-only" id="fcard-produtores" style="display:none">
+      <h3>Produtores</h3>
+      <p class="wc-note">
+        O mesmo produtor escrito de várias maneiras (“Ramos Pinto” e “Adriano Ramos Pinto”).
+        Escolhe o <strong>nome oficial</strong> e as grafias que são ele: passam a ser esse nome
+        <strong>no catálogo e em todas as garrafeiras</strong>, agora e em qualquer escrita futura.
+        Parecido não quer dizer igual (“Quinta Nova” não é “Herdade da Malhadinha Nova”) — o que não
+        for, marca “não são o mesmo”, e o par não volta.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcProdCarregar()">Ver os produtores</button>
+      </div>
+      <div id="prod-lista"></div>
+    </div>
   </div>
 
   <!-- ═══ ALERTAS (admin) ═══ -->
