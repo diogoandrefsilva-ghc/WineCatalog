@@ -519,6 +519,10 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .ed-campo textarea{resize:vertical;line-height:1.5}
 .ed-campo input:focus,.ed-campo select:focus,.ed-campo textarea:focus{outline:none;border-color:var(--wine)}
 .ed-check{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:4px 0 6px;cursor:pointer}
+/* Um visto dentro de um `.ed-campo` (o "Usar só a informação destes sites"):
+   o `.ed-campo label` (uma classe e um elemento) ganhava ao
+   `.ed-check` e punha-o em maiúsculas cinzentas, como um rótulo. */
+.ed-campo label.ed-check{text-transform:none;letter-spacing:0;font-size:13px;color:var(--tx);margin:8px 0 2px;flex-wrap:nowrap}
 .ed-oculto{display:none}
 /* A IMAGEM no Editar/Vinho novo: a pré-visualização ao lado dos dois
    botões, e o link por baixo. É o único campo que se VÊ, por isso é o
@@ -582,6 +586,12 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .rv-lnk span{padding-left:3px;font-size:10px}
 .rv-campo .og-tag{display:inline-block;margin-top:4px}
 .rv-nota{display:block;font-size:11.5px;color:var(--mu);margin-top:3px}
+/* De onde veio o valor encontrado (a página, o resultado, o grounding). */
+.rv-de{display:block;font-size:11.5px;color:var(--mu);margin-top:2px}
+.rv-de a{color:var(--wine);font-weight:600}
+.rv-de i{font-style:normal}
+.rv-sites{margin:2px 0 0;padding-left:16px}
+.rv-sites li{margin:1px 0}
 .rv-aviso{margin:0 0 10px;padding:9px 11px;border:1px solid #f0e4c8;border-radius:11px;background:#fdf8ec;
   font-size:12.5px;color:#8a6414}
 .rv-memoria{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 10px;padding:9px 11px;

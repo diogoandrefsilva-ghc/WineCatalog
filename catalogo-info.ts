@@ -404,7 +404,7 @@ function resumoGrounding(gd: any): Record<string, unknown> {
    pesquisar — ele decide, e nos registos até 24/09/2026 nunca o fez: as
    respostas vinham do que aprendeu no treino. Não se recusa (ver acima),
    mas o resultado passa a dizê-lo (`pesquisaWeb`) e o ecrã oferece ao
-   admin a "pesquisa profunda" (ver `pesquisarSerper`). Ver o CLAUDE.md,
+   admin a "pesquisa profunda" (ver `serperConsulta`). Ver o CLAUDE.md,
    "De memória ou pesquisado". Mesmo critério na `verificar-vinhos`, na
    `vinho-info` e na `prendas-vinho`. */
 function fezPesquisa(gd: any): boolean {
@@ -465,46 +465,362 @@ function vivinoDeQue(url: string, ano: number | null): string {
     return `página do Vivino da colheita ${y}, que NÃO é a nossa: não uses a nota nem as avaliações daqui`;
   } catch { return ""; }
 }
-async function pesquisarSerper(consultas: string[], signal: AbortSignal, ano: number | null, dominios: string[]):
-  Promise<{ texto: string; fontes: { titulo: string; url: string }[]; confianca: Record<string, number> }> {
+/* Uma consulta ao Serper: os resultados orgânicos, já limpos. */
+type Resultado = { url: string; titulo: string; snippet: string; rating: unknown; ratingCount: unknown };
+async function serperConsulta(q: string, signal: AbortSignal): Promise<Resultado[]> {
   if (!SEARCH_API_KEY) throw new Error("a pesquisa externa não está configurada (falta SEARCH_API_KEY)");
-  const respostas = await Promise.all(consultas.map(async (q) => {
-    const r = await fetch(SEARCH_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-API-KEY": SEARCH_API_KEY },
-      body: JSON.stringify({ q, gl: "pt", hl: "pt", num: 8 }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
-    });
-    if (!r.ok) throw new Error(`a pesquisa externa respondeu ${r.status}`);
-    const d = await r.json();
-    return Array.isArray(d?.organic) ? d.organic : [];
-  }));
-  const vistos = new Set<string>();
-  const linhas: any[] = [];
-  for (const x of respostas.flat()) {
-    const url = String(x?.link || "").trim();
-    if (!/^https?:\/\//i.test(url) || vistos.has(url)) continue;
-    vistos.add(url);
-    linhas.push(x);
+  const r = await fetch(SEARCH_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-KEY": SEARCH_API_KEY },
+    body: JSON.stringify({ q, gl: "pt", hl: "pt", num: 8 }),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(12_000)]),
+  });
+  if (!r.ok) throw new Error(`a pesquisa externa respondeu ${r.status}`);
+  const d = await r.json();
+  return (Array.isArray(d?.organic) ? d.organic : [])
+    .map((x: any) => ({
+      url: String(x?.link || "").trim(), titulo: String(x?.title || "").trim(),
+      snippet: String(x?.snippet || "").replace(/\s+/g, " ").trim(),
+      rating: x?.rating, ratingCount: x?.ratingCount,
+    }))
+    .filter((x: Resultado) => /^https?:\/\//i.test(x.url));
+}
+
+/* ── AS PÁGINAS DOS SITES (27/09/2026, o dono das apps) ──
+   "Encontrei o vinho num site, dou o link e preenchem-se os atributos a
+   partir daí." Até aqui um link de uma loja colado nos sites de confiança
+   era reduzido ao domínio, e de um site só se lia o resumo que o Google
+   mostra em cada resultado (duas linhas — quase nunca as castas, o teor ou
+   o estágio). Agora a página ABRE-SE: a que se colou, tal e qual, e — de
+   cada domínio escrito sem página — a primeira que a procura só nesse
+   site devolver. Do HTML tira-se o que a loja declara do produto para os
+   motores de busca (o JSON-LD: nome, marca, preço, imagem, descrição), as
+   etiquetas `og:`, e o texto da zona principal sem menus nem rodapé. Lê-o
+   o Gemini, com a regra de sempre (o que lá não estiver fica fora do JSON)
+   e mais uma: dizer, campo a campo, de que página ou resultado o tirou
+   (`deOnde`) — é o que a revisão mostra ao lado de cada valor.
+   `soSites` ("Usar só a informação destes sites"): sem a consulta geral,
+   sem a do Vivino (a não ser que o Vivino seja um dos sites) e sem o
+   grounding. O que as páginas não disserem fica vazio, e um campo que a IA
+   não diga de onde veio sai.
+   O que NÃO se faz: abrir o Vivino daqui. A proteção dele recusa
+   servidores (403 na 1.ª corrida no GitHub Actions) e isso não se contorna
+   — ver o CLAUDE.md, "Links do Vivino"; do Vivino fica o que o Google
+   mostra. Uma loja que recuse (403, desafio anti-bots) também não se
+   contorna: fica o resumo do Google, se houver, e o ecrã diz que recusou.
+   Um endereço escrito por alguém é aberto por um servidor: só http(s),
+   só nomes públicos (nada de IPs, portas nem "localhost"), redireções
+   conferidas uma a uma, 1,5 MB no máximo. A MESMA leitura está na
+   `vinho-info` da Garrafeira — mexer numa é mexer na outra. */
+const PAGINA_TIMEOUT_MS = 10_000;
+const PAGINA_MAX_BYTES = 1_500_000;
+const PAGINA_MAX_TEXTO = 6_000;
+const EVIDENCIA_PAGINAS_MAX = 20_000;
+const UA_PAGINA = "Mozilla/5.0 (compatible; WineCatalog/1.0)";
+const RECUSA = /just a moment|attention required|access denied|captcha|verify you are human|unusual traffic|verifica[çc][ãa]o de seguran[çc]a/i;
+
+function hostPublico(u: URL): boolean {
+  if (u.protocol !== "https:" && u.protocol !== "http:") return false;
+  if (u.port || u.username || u.password) return false;
+  const h = u.hostname.toLowerCase();
+  return /^([a-z0-9-]+\.)+[a-z]{2,}$/.test(h) && !/(^|\.)(localhost|local|internal|lan|home|arpa)$/.test(h);
+}
+const siteDe = (url: string): string => {
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ""); } catch { return ""; }
+};
+/* O endereço de uma PÁGINA (com caminho) — só o domínio não é uma página. */
+function paginaDe(s: string): string {
+  let t = String(s ?? "").trim();
+  if (!/^https?:\/\//i.test(t)) {
+    if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+\/\S/i.test(t)) return "";
+    t = "https://" + t;
   }
-  const confianca: Record<string, number> = Object.fromEntries(dominios.map((d) => [d, 0]));
-  const deConfianca = (x: any) => dominios.find((d) => doSite(String(x.link), d)) ?? "";
-  linhas.forEach((x) => { const d = deConfianca(x); if (d) confianca[d]++; });
+  try {
+    const u = new URL(t);
+    if (!hostPublico(u) || u.pathname.replace(/\/+$/, "") === "") return "";
+    u.hash = "";
+    for (const k of [...u.searchParams.keys()]) {
+      if (/^(utm_|srsltid$|gclid$|fbclid$)/i.test(k)) u.searchParams.delete(k);
+    }
+    return u.toString();
+  } catch { return ""; }
+}
+/* O resultado de uma procura num site que tem ar de ser a página de UM
+   produto (não a procura, uma categoria ou a página inicial). */
+function paginaDoResultado(rows: Resultado[], dominio: string): Resultado | null {
+  return rows.find((x) => {
+    if (!doSite(x.url, dominio)) return false;
+    try {
+      const u = new URL(x.url);
+      return u.pathname.replace(/\/+$/, "") !== "" &&
+        !/catalogsearch|\/search\b|\/pesquisa\b|\/categor|\/tag\/|\/marcas?\/?$|\/brands?\/?$/i.test(u.pathname) &&
+        !u.searchParams.has("s") && !u.searchParams.has("q");
+    } catch { return false; }
+  }) ?? null;
+}
+
+const ENT: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", euro: "€", ordm: "º", ordf: "ª",
+  deg: "°", middot: "·", ndash: "–", mdash: "—", hellip: "…", laquo: "«", raquo: "»",
+  lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", reg: "®", copy: "©", trade: "™", times: "×",
+};
+const ACENTO: Record<string, string> = { acute: "\u0301", grave: "\u0300", circ: "\u0302", tilde: "\u0303", uml: "\u0308", cedil: "\u0327" };
+function entidades(s: string): string {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    if (e[0] === "#") {
+      const n = /^#x/i.test(e) ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m;
+    }
+    if (e in ENT) return ENT[e];
+    const a = e.match(/^([a-z])(acute|grave|circ|tilde|uml|cedil)$/i);
+    return a ? (a[1] + ACENTO[a[2].toLowerCase()]).normalize("NFC") : m;
+  });
+}
+const semTags = (s: string) => entidades(s.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+function metaDe(html: string, nome: string): string {
+  const tag = html.match(new RegExp(`<meta[^>]+(?:property|name|itemprop)\\s*=\\s*["']${nome}["'][^>]*>`, "i"))?.[0];
+  if (!tag) return "";
+  const m = tag.match(/content\s*=\s*(?:"([^"]*)"|'([^']*)')/i);
+  return m ? texto(entidades(m[1] ?? m[2] ?? ""), 400) : "";
+}
+/* O que a loja declara do produto (JSON-LD `Product`, dentro ou fora de um
+   `@graph`). A classificação que lá vier é a dos CLIENTES DA LOJA, nunca a
+   do Vivino — e diz-se isso ao modelo. */
+function produtoDaPagina(html: string): string {
+  const ld: any[] = [];
+  const junta = (x: any) => {
+    if (!x || typeof x !== "object") return;
+    if (Array.isArray(x)) { x.forEach(junta); return; }
+    ld.push(x);
+    if (Array.isArray(x["@graph"])) x["@graph"].forEach(junta);
+  };
+  for (const m of html.matchAll(/<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try { junta(JSON.parse(m[1].trim())); } catch { /* um JSON-LD partido não deita a página abaixo */ }
+  }
+  const p = ld.find((x) => /Product|Wine/i.test(String(x?.["@type"] ?? "")));
+  if (!p) return "";
+  const um = (v: any) => (Array.isArray(v) ? v[0] : v);
+  const t = (v: unknown, n: number) => texto(semTags(String(v ?? "")), n);
+  const linhas: string[] = [];
+  if (p.name) linhas.push(`nome: ${t(p.name, 200)}`);
+  const marca = um(p.brand ?? p.manufacturer);
+  const marcaN = typeof marca === "string" ? marca : marca?.name;
+  if (marcaN) linhas.push(`marca/produtor: ${t(marcaN, 120)}`);
+  const of = um(p.offers);
+  if (of && typeof of === "object") {
+    const ps = um(of.priceSpecification);
+    const preco = of.price ?? of.lowPrice ?? ps?.price;
+    if (preco != null && preco !== "") linhas.push(`preço: ${t(preco, 20)} ${t(of.priceCurrency ?? ps?.priceCurrency ?? "", 5)}`.trim());
+  }
+  const img = um(p.image);
+  const imgU = typeof img === "string" ? img : img?.url ?? img?.contentUrl;
+  if (imgU) linhas.push(`imagem: ${t(imgU, 400)}`);
+  const ar = p.aggregateRating;
+  if (ar?.ratingValue != null) {
+    linhas.push(`avaliação dos clientes DESTA loja (não é o Vivino): ${t(ar.ratingValue, 10)}${(ar.ratingCount ?? ar.reviewCount) != null ? ` (${t(ar.ratingCount ?? ar.reviewCount, 12)})` : ""}`);
+  }
+  for (const ap of (Array.isArray(p.additionalProperty) ? p.additionalProperty : []).slice(0, 20)) {
+    if (ap?.name && ap?.value != null) linhas.push(`${t(ap.name, 60)}: ${t(ap.value, 200)}`);
+  }
+  if (p.description) linhas.push(`descrição: ${t(p.description, 1500)}`);
+  return linhas.join("\n");
+}
+/* O texto da zona principal (o `<main>`, se houver), sem menus, rodapé,
+   scripts nem botões. As tabelas ficam "rótulo | valor" numa linha — é
+   onde as lojas escrevem as castas, a região, o teor e o estágio. */
+function textoDaPagina(html: string): string {
+  let h = html;
+  const main = h.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+  if (main && main[1].length > 500) h = main[1];
+  else {
+    const b = h.match(/<body\b[^>]*>([\s\S]*)<\/body>/i);
+    h = (b ? b[1] : h).replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, " ");
+  }
+  h = h.replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(script|style|noscript|svg|template|iframe|nav|footer|aside|select|button)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/t[hd]>/gi, " | ")
+    .replace(/<\/dt>/gi, ": ")
+    .replace(/<\/(p|div|li|h[1-6]|section|article|tr|ul|ol|table|dd|dl|figcaption|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ");
+  const linhas: string[] = [];
+  for (const bruta of entidades(h).split("\n")) {
+    const l = bruta.replace(/[ \t\u00a0]+/g, " ").replace(/^[\s|]+|[\s|]+$/g, "");
+    if (!l || l === linhas[linhas.length - 1]) continue;
+    linhas.push(l);
+  }
+  return linhas.join("\n").slice(0, PAGINA_MAX_TEXTO);
+}
+async function lerAte(r: Response, max: number): Promise<Uint8Array> {
+  const rd = r.body?.getReader();
+  if (!rd) return new Uint8Array();
+  const partes: Uint8Array[] = [];
+  let n = 0;
+  while (n < max) {
+    const { done, value } = await rd.read();
+    if (done || !value) break;
+    partes.push(value);
+    n += value.length;
+  }
+  if (n >= max) await rd.cancel().catch(() => {});
+  const out = new Uint8Array(Math.min(n, max));
+  let o = 0;
+  for (const p of partes) {
+    const c = p.subarray(0, out.length - o);
+    out.set(c, o);
+    o += c.length;
+    if (o >= out.length) break;
+  }
+  return out;
+}
+type Pagina = {
+  url: string; site: string; dada: boolean;
+  estado: "lida" | "recusada" | "vazia" | "erro";
+  http?: number; titulo?: string; motivo?: string; texto?: string;
+};
+async function abrirPagina(url0: string, dada: boolean, signal: AbortSignal): Promise<Pagina> {
+  let url = url0;
+  const base = (): Pagina => ({ url, site: siteDe(url) || siteDe(url0), dada, estado: "erro" });
+  try {
+    const sinal = AbortSignal.any([signal, AbortSignal.timeout(PAGINA_TIMEOUT_MS)]);
+    let r: Response | null = null;
+    for (let i = 0; i < 5; i++) {
+      const u = new URL(url);
+      if (!hostPublico(u)) return { ...base(), motivo: "endereço não permitido" };
+      r = await fetch(u, {
+        redirect: "manual", signal: sinal,
+        headers: { "User-Agent": UA_PAGINA, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.5", "Accept-Language": "pt-PT,pt;q=0.9,en;q=0.5" },
+      });
+      const loc = r.status >= 300 && r.status < 400 ? r.headers.get("location") : null;
+      if (!loc) break;
+      await r.body?.cancel().catch(() => {});
+      url = new URL(loc, url).toString();
+      r = null;
+    }
+    if (!r) return { ...base(), motivo: "redireções a mais" };
+    const tipo = r.headers.get("content-type") ?? "";
+    if (r.status === 403 || r.status === 429 || r.status === 503) {
+      await r.body?.cancel().catch(() => {});
+      return { ...base(), estado: "recusada", http: r.status, motivo: `HTTP ${r.status}` };
+    }
+    if (!r.ok) {
+      await r.body?.cancel().catch(() => {});
+      return { ...base(), http: r.status, motivo: `HTTP ${r.status}` };
+    }
+    if (tipo && !/html|xml/i.test(tipo)) {
+      await r.body?.cancel().catch(() => {});
+      return { ...base(), http: r.status, motivo: `não é uma página (${tipo.split(";")[0]})` };
+    }
+    const bytes = await lerAte(r, PAGINA_MAX_BYTES);
+    // O charset do cabeçalho, senão o do <meta>, senão UTF-8.
+    const ascii = new TextDecoder("latin1").decode(bytes.subarray(0, 4096));
+    const cs = (tipo.match(/charset=["']?([\w-]+)/i) ?? ascii.match(/<meta[^>]+charset=["']?([\w-]+)/i) ?? [])[1] ?? "utf-8";
+    let html: string;
+    try { html = new TextDecoder(cs).decode(bytes); } catch { html = new TextDecoder().decode(bytes); }
+    const titulo = texto(semTags((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) ?? [])[1] ?? ""), 160);
+    const corpo = textoDaPagina(html);
+    const recusa = `${titulo} ${corpo.slice(0, 500)}`.match(RECUSA);
+    if (recusa) return { ...base(), estado: "recusada", http: r.status, titulo, motivo: `a página diz "${recusa[0]}"` };
+    const produto = produtoDaPagina(html);
+    const meta = [["título", "og:title"], ["imagem", "og:image"], ["preço", "product:price:amount"],
+      ["moeda", "product:price:currency"], ["preço", "price"], ["descrição", "og:description"]]
+      .map(([rot, n]) => [rot, metaDe(html, n)]).filter(([, v]) => v).map(([rot, v]) => `${rot}: ${v}`);
+    const partes = [
+      titulo ? `Título da página: ${titulo}` : "",
+      produto ? `DADOS DO PRODUTO (o que a página declara aos motores de busca):\n${produto}` : "",
+      meta.length ? `ETIQUETAS DA PÁGINA:\n${meta.join("\n")}` : "",
+      corpo ? `TEXTO DA PÁGINA:\n${corpo}` : "",
+    ].filter(Boolean);
+    if (!produto && corpo.length < 200) {
+      return { ...base(), estado: "vazia", http: r.status, titulo, motivo: "a página quase não tem texto (é montada em JavaScript?)" };
+    }
+    return { ...base(), estado: "lida", http: r.status, titulo, texto: partes.join("\n\n") };
+  } catch (e) {
+    if (signal.aborted) throw e;
+    const err = e as Error;
+    return { ...base(), motivo: err.name === "TimeoutError" ? "não respondeu a tempo" : String(err.message).slice(0, 120) };
+  }
+}
+/* O que o ecrã e o registo dizem de cada página (sem o texto). */
+type PaginaRes = { site: string; url?: string; dada?: boolean; estado: string; http?: number; titulo?: string; motivo?: string };
+const paginaRes = (p: Pagina): PaginaRes => ({
+  site: p.site, url: p.url, dada: p.dada, estado: p.estado,
+  ...(p.http ? { http: p.http } : {}), ...(p.titulo ? { titulo: p.titulo } : {}), ...(p.motivo ? { motivo: p.motivo } : {}),
+});
+
+/* A base de evidência: as páginas abertas primeiro, depois os resultados
+   da pesquisa (os dos sites de confiança à frente) — tudo numerado de
+   seguida, que é o número que o modelo devolve em `deOnde`. */
+type Origem = { url: string; site: string; titulo: string; pagina?: boolean; dada?: boolean; google?: boolean };
+function montarEvidencia(paginas: Pagina[], resultados: Resultado[], ano: number | null, dominios: string[]) {
+  const lista: Origem[] = [];
+  const blocos: string[] = [];
+  let resto = EVIDENCIA_PAGINAS_MAX;
+  for (const p of paginas) {
+    if (p.estado !== "lida" || !p.texto || resto <= 0) continue;
+    lista.push({ url: p.url, site: p.site, titulo: p.titulo || p.site, pagina: true, ...(p.dada ? { dada: true } : {}) });
+    const b = `[${lista.length}] PÁGINA ABERTA de ${p.site}${p.dada
+      ? " (indicada por quem pesquisa como sendo a deste vinho)"
+      : ` (a primeira que a procura só em ${p.site} devolveu — confirma que é deste vinho)`}\nURL: ${p.url}\n${p.texto}`;
+    blocos.push(b.slice(0, resto));
+    resto -= b.length;
+  }
+  const vistos = new Set(lista.map((x) => x.url));
+  // Um resultado sem resumo nem estrelas (a página de procura da loja, por
+  // exemplo) não diz nada — fica de fora.
+  const rs = resultados.filter((x) => (x.snippet || x.rating != null) && !vistos.has(x.url) && (vistos.add(x.url), true));
+  const deConfianca = (x: Resultado) => dominios.find((d) => doSite(x.url, d)) ?? "";
   // Os dos sites de confiança à frente — é a eles que a regra manda ir primeiro.
-  linhas.sort((a, b) => Number(!deConfianca(a)) - Number(!deConfianca(b)));
-  const texto = linhas.map((x, i) => {
-    const url = String(x.link).trim();
-    const viv = vivinoDeQue(url, ano);
-    return `[${i + 1}]${deConfianca(x) ? " ★ FONTE DE CONFIANÇA" : ""} ${String(x?.title || "").trim()}\nURL: ${url}\n` +
-      (viv ? `(${viv})\n` : "") +
-      `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}` +
-      (x?.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : "");
-  }).join("\n\n");
+  rs.sort((a, b) => Number(!deConfianca(a)) - Number(!deConfianca(b)));
+  const textoRs: string[] = [];
+  for (const x of rs) {
+    lista.push({ url: x.url, site: siteDe(x.url), titulo: x.titulo || siteDe(x.url) });
+    const viv = vivinoDeQue(x.url, ano);
+    textoRs.push(`[${lista.length}] RESULTADO DA PESQUISA${deConfianca(x) ? " ★ FONTE DE CONFIANÇA" : ""} ${x.titulo}\nURL: ${x.url}\n` +
+      (viv ? `(${viv})\n` : "") + `Resumo: ${x.snippet}` +
+      (x.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : ""));
+  }
+  const confianca: Record<string, number> = Object.fromEntries(dominios.map((d) => [d, lista.filter((o) => doSite(o.url, d)).length]));
+  const texto_ = [...blocos, textoRs.join("\n\n").slice(0, 9000)].filter(Boolean).join("\n\n");
   return {
-    texto: texto.slice(0, 9000),
-    fontes: linhas.slice(0, 8).map((x) => ({ titulo: String(x?.title || x.link).slice(0, 120), url: String(x.link).slice(0, 400) })),
+    texto: texto_,
+    lista,
+    fontes: lista.slice(0, 8).map((o) => ({ titulo: o.titulo.slice(0, 120), url: o.url.slice(0, 400) })),
     confianca,
   };
+}
+/* `deOnde` → de que página/resultado veio cada campo (as chaves da ficha).
+   O modelo devolve o número; aceita-se também o endereço. */
+const CAMPO_DO_JSON: Record<string, string> = Object.fromEntries(Object.entries(CAMPOS).map(([k, j]) => [j, k]));
+function origemDosCampos(deOnde: unknown, lista: Origem[], ficha: Record<string, unknown>, ano: number | null): Record<string, Origem> {
+  const out: Record<string, Origem> = {};
+  if (!deOnde || typeof deOnde !== "object" || Array.isArray(deOnde)) return out;
+  for (const [kj, bruto] of Object.entries(deOnde as Record<string, unknown>)) {
+    const k = CAMPO_DO_JSON[kj] ?? (kj in CAMPOS ? kj : "");
+    if (!k) continue;
+    const n = Array.isArray(bruto) ? bruto[0] : bruto;
+    const s = String(n ?? "").trim();
+    const o = /^https?:\/\//i.test(s)
+      ? lista.find((x) => x.url === s || s.startsWith(x.url))
+      : lista[parseInt(s.replace(/\D+/g, " ").trim().split(" ")[0], 10) - 1];
+    if (o) out[k] = o;
+  }
+  // Sem colheita, a nota "da colheita" passou a ser a de todas (`vivinoDuas`).
+  if (ano === null) {
+    if (out.vivino_nota && !out.vivino_nota_global) out.vivino_nota_global = out.vivino_nota;
+    if (out.vivino_avaliacoes && !out.vivino_avaliacoes_global) out.vivino_avaliacoes_global = out.vivino_avaliacoes;
+  }
+  for (const k of Object.keys(out)) if (k !== "produtor" && !(k in ficha)) delete out[k];
+  return out;
+}
+/* Numa frase, o que se passou com uma página (para o erro do "só estes sites"). */
+function paginaEmFrase(p: PaginaRes): string {
+  if (p.estado === "nao_encontrada") return `${p.site}: o vinho não apareceu na procura deste site`;
+  if (p.estado === "sem_pesquisa") return `${p.site}: sem a pesquisa externa não há como procurar dentro do site — cola o link da página`;
+  if (p.estado === "recusada") return `${p.site}: a página recusou a leitura (${p.motivo || "bloqueio"})`;
+  if (p.estado === "vazia") return `${p.site}: ${p.motivo || "a página não tem texto"}`;
+  if (p.estado === "erro") return p.url ? `${p.site}: não abriu (${p.motivo || "erro"})` : `${p.site}: ${p.motivo || "erro"}`;
+  return `${p.site}: lida`;
 }
 
 /* Estimativa GROSSEIRA, como nas irmãs: os TOKENS são facto (vêm da API),
@@ -561,13 +877,13 @@ const regraCuvee = `Se o produtor tiver mais do que um vinho com este nome
 
 const promptFicha = (
   nome: string, produtor: string, ano: number | null, regiao: string, tipo: string, notas: string, sites: string[],
-  hoje: string, campos: string[] | null, colheitaEspecifica: boolean, evidencia = "",
+  hoje: string, campos: string[] | null, colheitaEspecifica: boolean, evidencia = "", soSites = false,
 ) => `
 És um enólogo a preencher a ficha de um vinho para um catálogo de referência.
 ${evidencia
-  ? `Responde APENAS com base na BASE DE EVIDÊNCIA abaixo (resultados de uma
-pesquisa Google já feita). Não uses o que sabes de memória: o que não estiver
-nestes resultados fica fora do JSON.`
+  ? `Responde APENAS com base na BASE DE EVIDÊNCIA abaixo (páginas abertas e
+resultados de uma pesquisa Google já feita). Não uses o que sabes de memória:
+o que não estiver aqui fica fora do JSON.`
   : "Usa PESQUISA WEB (grounding search) para confirmar os dados — não respondas de memória."}
 
 VINHO A IDENTIFICAR:
@@ -578,8 +894,12 @@ ${campos && campos.length ? `
 SÓ INTERESSAM ESTES CAMPOS: ${campos.map((k) => CAMPOS[k]).filter(Boolean).join(", ")}.
 Concentra a pesquisa NELES e deixa os outros fora da resposta.
 ` : ""}
-${sites.length ? `
-FONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(", ")}. Só uses outra fonte se estas não tiverem a resposta.${evidencia ? ` Na base de evidência, os resultados destes sites vêm primeiro, marcados com ★ FONTE DE CONFIANÇA.` : ""}
+${soSites ? `
+SÓ ESTES SITES: quem pesquisa quer APENAS o que dizem ${sites.join(", ")} — a base de
+evidência abaixo é só deles. Não completes com o que sabes nem com mais nada: o que
+estas páginas e resultados não disserem fica fora do JSON.
+` : sites.length ? `
+FONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(", ")}. Só uses outra fonte se estas não tiverem a resposta.${evidencia ? ` Na base de evidência, as páginas destes sites vêm primeiro, e os resultados deles vêm marcados com ★ FONTE DE CONFIANÇA.` : ""}
 ` : ""}${evidencia ? `
 BASE DE EVIDÊNCIA:
 ${evidencia}
@@ -600,6 +920,14 @@ REGRAS:
    oficial — usa o que vier em "Produtor" acima se estiver certo, ou
    corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
 ${colheitaEspecifica && ano ? `10. ${regraColheita(ano)}
+` : ""}${evidencia ? `${colheitaEspecifica && ano ? 11 : 10}. Uma PÁGINA ABERTA de OUTRO vinho (outro nome, outra gama, outra cor) não
+   serve: ignora-a. O preço de uma página é o do produto DELA (o de "DADOS DO
+   PRODUTO", se houver), nunca o de produtos relacionados ou sugeridos, nem o de
+   uma caixa ou de uma garrafa grande. A avaliação dos clientes de uma loja NÃO é
+   a nota do Vivino.
+${colheitaEspecifica && ano ? 12 : 11}. "deOnde" diz, para CADA campo que preencheres (produtorConfirmado incluído),
+   o número [n] da página ou do resultado de onde o tiraste — ex.: "castas": 1,
+   "precoMedio": 3.${soSites ? " Um campo sem número em \"deOnde\" é deitado fora." : ""}
 ` : ""}
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
 {
@@ -628,7 +956,8 @@ ${ano ? `  "beberDe": 2026,
 ` : ""}  "notasProva": "duas ou três frases sobre aroma, boca e final",
   "harmonizacao": "com que pratos",
   "resumo": "duas ou três frases sobre o vinho e o produtor",
-  "aviso": "vazio, ou o que ficou por confirmar"
+${evidencia ? `  "deOnde": {"castas": 1, "teor": 1, "precoMedio": 2},
+` : ""}  "aviso": "vazio, ou o que ficou por confirmar"
 }
 
 Se não conseguires identificar o vinho de todo, responde
@@ -777,6 +1106,9 @@ async function processarPesquisa(
   respostaManual: string | null = null, colheitaEspecifica: boolean = false,
   notas: string = "", sites: string[] = [], profunda: boolean = false,
   vivinoDado: string = "", rever: boolean = false,
+  // As páginas coladas nos sites (ver "AS PÁGINAS DOS SITES") e o visto
+  // "Usar só a informação destes sites".
+  paginasDadas: string[] = [], soSites: boolean = false,
 ): Promise<void> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), PROC_TIMEOUT_MS);
@@ -804,6 +1136,13 @@ async function processarPesquisa(
     let pesquisaWeb: boolean | null = null;
     let serperConsultas = 0; // as consultas ao Serper do pacote completo
     let usouGround = false;  // houve (também) a fase com grounding
+    // De onde veio cada campo: a lista numerada da base de evidência, e os
+    // campos (chaves do JSON) que só o grounding trouxe.
+    let lista: Origem[] = [];
+    const doGround = new Set<string>();
+    let paginasRes: PaginaRes[] = [];
+    let paginasLidas = 0;       // quantas páginas se abriram e leram
+    let leuEvidencia = false;   // houve a fase em que o Gemini só lê
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -828,32 +1167,91 @@ async function processarPesquisa(
          uma pesquisa só para quem a pediu. Quem chega aqui é sempre o admin
          do catálogo, que tem sempre o pacote completo. Sem Serper (chave em
          falta, erro, nada encontrado), faz-se só o grounding. */
+      /* E OS SITES (27/09/2026): cada domínio escrito sem página tem uma
+         procura SÓ nele, e a primeira página de produto que ela devolver
+         abre-se; as páginas coladas abrem-se tal e qual, logo à partida (ver
+         "AS PÁGINAS DOS SITES"). Com o `soSites`, só isto — nem a consulta
+         geral, nem a do Vivino se o Vivino não for um dos sites. */
       let evidencia = "";
-      if (SEARCH_API_KEY) {
-        const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
-        const consultas = [`${quem_} vinho preço`, `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " ")];
-        // O Vivino já tem a sua consulta; os outros sites de confiança têm
-        // uma só deles (nunca a restringir a geral — ver `dominioDe`).
-        const outros = dominios.filter((d) => !doSite(`https://${d}/`, "vivino.com"));
-        if (outros.length) consultas.push(`${quem_} (${outros.map((d) => `site:${d}`).join(" OR ")})`);
-        try {
-          const s = await pesquisarSerper(consultas, ctrl.signal, antes.ano, dominios);
-          serperConsultas = consultas.length;
-          consultasFeitas = consultas;
-          confianca = s.confianca;
-          evidencia = s.texto;
-          if (evidencia) fontes = s.fontes;
-        } catch (e) {
-          if (ctrl.signal.aborted) throw e;
+      const ehVivino = (d: string) => doSite(`https://${d}/`, "vivino.com");
+      const dadas = paginasDadas.filter((u) => !doSite(u, "vivino.com"));
+      const sig = ctrl.signal;
+      const abrirDadas = Promise.all(dadas.map((u) => abrirPagina(u, true, sig)));
+      const comPagina = dadas.map(siteDe);
+      const procurarEm = dominios.filter((d) => !ehVivino(d) && !comPagina.some((sd) => doSite(`https://${sd}/`, d)));
+      const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
+      const consultas: { q: string; dominio?: string }[] = [];
+      if (!soSites) consultas.push({ q: `${quem_} vinho preço` });
+      if (!soSites || !!vivinoDado || dominios.some(ehVivino)) {
+        consultas.push({ q: `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " "), dominio: "vivino.com" });
+      }
+      for (const d of procurarEm) consultas.push({ q: `${quem_} site:${d}`, dominio: d });
+      const resultados: Resultado[] = [];
+      const achadas: string[] = [];
+      if (SEARCH_API_KEY && consultas.length) {
+        const rs = await Promise.allSettled(consultas.map((c) => serperConsulta(c.q, sig)));
+        if (sig.aborted) throw new DOMException("timeout", "AbortError");
+        serperConsultas = consultas.length;
+        consultasFeitas = consultas.map((c) => c.q);
+        rs.forEach((r, i) => {
+          const d = consultas[i].dominio;
+          if (r.status !== "fulfilled") {
+            if (d && d !== "vivino.com") paginasRes.push({ site: d, estado: "erro", motivo: "a procura neste site falhou" });
+            return;
+          }
+          // Com o `soSites`, um resultado de fora dos sites (o Google às
+          // vezes junta um) não entra.
+          const rows = soSites && d ? r.value.filter((x) => doSite(x.url, d)) : r.value;
+          resultados.push(...rows);
+          if (d && d !== "vivino.com") {
+            const pr = paginaDoResultado(rows, d);
+            if (pr) achadas.push(pr.url);
+            else paginasRes.push({ site: d, estado: "nao_encontrada" });
+          }
+        });
+        const falhou = rs.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        if (falhou) {
           await registar("erro", { passo: "serper", vinho_id: vinhoId,
-            erro: String((e as Error).message).slice(0, 300) }, quem);
+            erro: String((falhou.reason as Error)?.message ?? falhou.reason).slice(0, 300) }, quem);
         }
+      } else {
+        // Sem a chave do Serper não há como procurar dentro de um site.
+        procurarEm.forEach((d) => paginasRes.push({ site: d, estado: "sem_pesquisa" }));
+      }
+      const [abertasDadas, abertasAchadas] = await Promise.all([abrirDadas, Promise.all(achadas.map((u) => abrirPagina(u, false, sig)))]);
+      // Uma página colada que não se deixou ler (403, desafio anti-bots,
+      // 404): fica o que o Google mostra desse site, se houver pesquisa.
+      const semLeitura = [...new Set(abertasDadas.filter((p) => p.estado !== "lida").map((p) => p.site))]
+        .filter((d) => d && !procurarEm.includes(d));
+      if (SEARCH_API_KEY && semLeitura.length) {
+        const qs = semLeitura.map((d) => `${quem_} site:${d}`);
+        const rs2 = await Promise.allSettled(qs.map((q) => serperConsulta(q, sig)));
+        serperConsultas += qs.length;
+        consultasFeitas = [...consultasFeitas, ...qs];
+        rs2.forEach((r, i) => { if (r.status === "fulfilled") resultados.push(...r.value.filter((x) => doSite(x.url, semLeitura[i]))); });
+      }
+      const abertas = [...abertasDadas, ...abertasAchadas];
+      paginasRes = [...abertas.map(paginaRes), ...paginasRes];
+      paginasLidas = abertas.filter((p) => p.estado === "lida").length;
+      const ev = montarEvidencia(abertas, resultados, antes.ano, dominios);
+      evidencia = ev.texto;
+      lista = ev.lista;
+      // Sem pesquisa nem páginas, os sites foram só texto no pedido — e é
+      // isso que o ecrã diz quando não há contagem.
+      if (dominios.length && (serperConsultas || abertas.length)) confianca = ev.confianca;
+      if (evidencia) fontes = ev.fontes;
+      if (soSites && !evidencia) {
+        const porque = paginasRes.map(paginaEmFrase).join("; ") || "nenhum dos sites é um domínio ou um link";
+        await registar("erro", { passo: "so_sites_vazio", vinho_id: vinhoId, sites, paginas: paginasRes,
+          ...(serperConsultas ? { serper_consultas: serperConsultas, consultas: consultasFeitas } : {}) }, quem);
+        await fechar(pesquisaId, { estado: "erro", erro: `não consegui ler nada dos sites escolhidos — ${porque}.` });
+        return;
       }
       const notasPedido = vivinoDado ? `${notas}\nA página do Vivino deste vinho é ${vivinoDado} — usa esta, é a certa.`.trim() : notas;
       const textoDe = (camposP: string[] | null, ev: string) => promptFicha(
         antes.nome, antes.produtor, antes.ano, String(antes.ficha.regiao ?? ""),
         String(antes.ficha.tipo ?? ""), notasPedido, sites,
-        new Date().toISOString().slice(0, 10), camposP, colheitaEspecifica, ev,
+        new Date().toISOString().slice(0, 10), camposP, colheitaEspecifica, ev, soSites && !!ev,
       );
 
       /* Com o `google_search` ligado NÃO há variante com `thinkingBudget:0`:
@@ -914,13 +1312,15 @@ async function processarPesquisa(
 
       let r: Resposta | null = null;
       if (evidencia) {
+        leuEvidencia = true;
         r = await perguntar(textoDe(camposSemJanela(campos, antes.ano), evidencia), false);
         if ("gd" in r) { parsed = extrairJson(r.bruto); pesquisaWeb = true; }
       }
       // O grounding: pelo que o Serper não trouxe, ou por tudo sem Serper.
+      // Nunca com o "só estes sites": o que eles não disserem fica vazio.
       const jaTem = parsed ? normalizar(parsed, campos, antes.ano) : {};
       const faltam = pedidos.filter((k) => vazioV((jaTem as any)[k]));
-      if (!parsed || faltam.length) {
+      if (!soSites && (!parsed || faltam.length)) {
         usouGround = true;
         const r2 = await perguntar(textoDe(parsed ? faltam : camposSemJanela(campos, antes.ano), ""), true);
         if ("gd" in r2) {
@@ -932,6 +1332,7 @@ async function processarPesquisa(
           fontes = [...fontes, ...fg].filter((f, i, a) => a.findIndex((x) => x.url === f.url) === i);
           // O Serper ganha: o grounding só tapa o que ele deixou vazio.
           const cheios = parsed ? Object.fromEntries(Object.entries(parsed).filter(([, v]) => !vazioV(v))) : {};
+          for (const [kj, v] of Object.entries(p2 ?? {})) if (!(kj in cheios) && !vazioV(v)) doGround.add(kj);
           parsed = { ...(p2 ?? {}), ...cheios };
         } else if (!parsed) {
           r = r2;
@@ -980,6 +1381,22 @@ async function processarPesquisa(
     // colheita qualquer. O trigger `vinhos_sem_colheita` também a tira, mas
     // assim nem aparece no relatório como se tivesse entrado.
     if (antes.ano === null) { delete ficha.beber_de; delete ficha.beber_ate; }
+    /* DE ONDE VEIO CADA CAMPO (27/09/2026): o número que o modelo deu em
+       `deOnde` → a página ou o resultado; o que só o grounding trouxe diz-se
+       como tal; o link do Vivino colado é o próprio link. Com o "só estes
+       sites", um campo sem origem sai — não há como dizer que veio deles. */
+    const origem = origemDosCampos(parsed?.deOnde, lista, ficha, antes.ano);
+    for (const kj of doGround) {
+      const k = CAMPO_DO_JSON[kj];
+      if (k && (k in ficha || k === "produtor") && !origem[k]) origem[k] = { url: "", site: "", titulo: "pesquisa Google", google: true };
+    }
+    if (vivinoDado && ficha.vivino_url === vivinoDado) {
+      origem.vivino_url = { url: vivinoDado, site: "vivino.com", titulo: "o link que colaste", dada: true };
+    }
+    const semFonte: string[] = [];
+    if (soSites) {
+      for (const k of Object.keys(ficha)) if (!origem[k]) { delete ficha[k]; semFonte.push(k); }
+    }
     const aviso = texto(parsed?.aviso, 300);
     // A pesquisa manual não tem forma de citar fontes de verdade (não há
     // `groundingMetadata` nenhum a colar aqui) — inventar uma era pior do
@@ -988,17 +1405,26 @@ async function processarPesquisa(
     // Com o Serper, o Gemini só lê (e paga-se o Serper, à parte); a fase
     // com grounding custa a pesquisa Google.
     const custoEstimado = respostaManual !== null ? 0
-      : (serperConsultas ? CUSTO_GEMINI_SO_EUR + serperConsultas * CUSTO_SERPER_EUR : 0)
+      : (leuEvidencia ? CUSTO_GEMINI_SO_EUR : 0) + serperConsultas * CUSTO_SERPER_EUR
         + (usouGround ? CUSTO_PESQUISA_EUR : 0);
     // A app diz "a pesquisa avançada" quando houve Serper.
     profunda = serperConsultas > 0;
     const serperLog = {
-      ...(serperConsultas ? { pesquisa: usouGround ? "serper+grounding" : "serper", serper_consultas: serperConsultas, consultas: consultasFeitas } : {}),
+      ...(serperConsultas || paginasLidas ? {
+        pesquisa: [serperConsultas ? "serper" : "", paginasLidas ? "paginas" : "", usouGround ? "grounding" : ""].filter(Boolean).join("+"),
+        ...(serperConsultas ? { serper_consultas: serperConsultas, consultas: consultasFeitas } : {}),
+        ...(paginasLidas ? { paginas_lidas: paginasLidas } : {}),
+      } : {}),
       // O que se fez com os sites de confiança: sem isto não havia maneira de
       // saber se tinham servido para alguma coisa.
       ...(sites.length ? { sites, ...(confianca ? { confianca } : {}) } : {}),
+      ...(paginasRes.length ? { paginas: paginasRes } : {}),
+      ...(soSites ? { so_sites: true, ...(semFonte.length ? { sem_fonte: semFonte } : {}) } : {}),
     };
-    const sitesRes = sites.length ? { sites, confianca } : {};
+    const sitesRes = sites.length
+      ? { sites, confianca, ...(paginasRes.length ? { paginas: paginasRes } : {}),
+          ...(soSites ? { soSites: true, ...(semFonte.length ? { semFonte } : {}) } : {}) }
+      : {};
 
     /* O PRODUTOR não é campo de ficha — não passa pela `juntar` nem pela
        `forca()` que decide os outros. É IDENTIDADE (parte da `chave`), e
@@ -1008,7 +1434,7 @@ async function processarPesquisa(
        PEDIDO — é sempre uma das opções, mesmo já preenchido — mas o que
        volta é só uma SUGESTÃO no relatório. */
     const produtorPedido = !campos || campos.includes("produtor");
-    const produtorSugerido = produtorPedido ? texto(parsed?.produtorConfirmado, 90) : "";
+    const produtorSugerido = produtorPedido && (!soSites || origem.produtor) ? texto(parsed?.produtorConfirmado, 90) : "";
     const produtorMudou = !!produtorSugerido &&
       produtorSugerido.toLowerCase() !== antes.produtor.trim().toLowerCase();
 
@@ -1036,11 +1462,13 @@ async function processarPesquisa(
         atual: antes.ficha?.[k] ?? null,
         origemAtual: String(antes.origens?.[k]?.o ?? "") || null,
         forcaAtual: Number(antes.origens?.[k]?.f ?? 0),
+        ...(origem[k] ? { fonte: origem[k] } : {}),
       }));
       if (produtorMudou) {
         propostas.push({
           campo: "produtor", valor: produtorSugerido, identidade: true,
           atual: antes.produtor || null,
+          ...(origem.produtor ? { fonte: origem.produtor } : {}),
         });
       }
       console.log("CATALOGO-INFO rever:", propostas.length, "propostas",
@@ -1095,6 +1523,7 @@ async function processarPesquisa(
         // quem ganhou, quando não foi esta pesquisa
         ganhou: entrou ? null : (String(antes.origens?.[k]?.o ?? "") || null),
         forca: entrou ? null : Number(antes.origens?.[k]?.f ?? 0),
+        ...(origem[k] ? { fonte: origem[k] } : {}),
       };
     });
     // O produtor entra à parte — `identidade:true` é o que diz ao ecrã para
@@ -1242,7 +1671,7 @@ Deno.serve(async (req) => {
     // isto explicitamente.
     const colheitaEspecifica = body?.colheitaEspecifica === true;
     // Pesquisa profunda: a pesquisa é nossa, pelo Serper (ver
-    // `pesquisarSerper`). Só o admin chega aqui, por isso não há outra
+    // `serperConsulta`). Só o admin chega aqui, por isso não há outra
     // verificação a fazer.
     const profunda = body?.profunda === true && respostaManual === null;
     // Rever antes de gravar (ver `processarPesquisa`): a app de agora manda
@@ -1265,6 +1694,13 @@ Deno.serve(async (req) => {
     const vivinoDado = Array.isArray(body?.sites)
       ? (body.sites as unknown[]).map((s) => vivinoLink(texto(s, 300))).find(Boolean) ?? ""
       : "";
+    // E um link de uma PÁGINA de outro site abre-se e lê-se (ver "AS PÁGINAS
+    // DOS SITES"); o domínio dela fica nos `sites`, como antes.
+    const paginasDadas: string[] = Array.isArray(body?.sites)
+      ? [...new Set((body.sites as unknown[]).map((s) => paginaDe(texto(s, 400))).filter(Boolean))].slice(0, 5)
+      : [];
+    // "Usar só a informação destes sites" — sem sites não quer dizer nada.
+    const soSites = body?.soSites === true && respostaManual === null && sites.length > 0;
 
     // A linha tem de existir, estar por fazer e ser de quem está a pedir.
     // A autorização já passou (é o admin), mas isto trava o pedido repetido
@@ -1288,7 +1724,7 @@ Deno.serve(async (req) => {
     // NÃO faz await — a pesquisa Google pode demorar mais do que o browser
     // aguenta, e isto sobrevive ao pedido original terminar.
     EdgeRuntime.waitUntil(
-      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda, vivinoDado, rever),
+      processarPesquisa(pid, Number(row.vinho_id), quem!, campos && campos.length ? campos as string[] : null, respostaManual, colheitaEspecifica, notas, sites, profunda, vivinoDado, rever, respostaManual === null ? paginasDadas : [], soSites),
     );
     return json({ estado: "pendente" }, 202);
   } catch (e) {

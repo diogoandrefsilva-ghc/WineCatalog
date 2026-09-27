@@ -1856,21 +1856,25 @@ function wcContextoHTML(){
     </div>
     <div class="ed-campo">
       <label>Sites de confiança (opcional)</label>
-      <textarea id="pr-sites" rows="1" placeholder="ex.: vivino.com, wine-searcher.com"></textarea>
-      <p class="wc-note" style="margin-top:5px">Um ou mais domínios, separados por vírgula
-        (ex.: garrafeiranacional.com). A pesquisa faz uma procura só nestes e põe os resultados
-        deles à frente; no fim diz quantos vieram de cada um. Um link do Vivino de um vinho é
-        usado como o link dele.</p>
+      <textarea id="pr-sites" rows="2" placeholder="ex.: garrafeiranacional.com, ou o link da página do vinho numa loja"></textarea>
+      <p class="wc-note" style="margin-top:5px">Domínios ou links, separados por vírgula. De um
+        domínio (ex.: garrafeiranacional.com), a pesquisa procura o vinho só nesse site e lê a
+        página que encontrar; um link é lido tal e qual — o do Vivino é usado como o link dele.
+        No fim diz de que site veio cada campo.</p>
+      <label class="ed-check"><input type="checkbox" id="pr-so-sites"> Usar só a informação destes sites</label>
+      <p class="wc-note">Sem a pesquisa geral nem a da IA: o que as páginas destes sites não disserem
+        fica vazio.</p>
     </div>`;
 }
 function wcContextoLer(){
   const notas=(document.getElementById('pr-notas')?.value||'').trim().slice(0,300);
   const sites=(document.getElementById('pr-sites')?.value||'')
     .split(/[,\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
-  // Inteiros, e não só o domínio: um link do Vivino de UM vinho colado aqui
-  // é a resposta (a `catalogo-info` usa-o como vivino_url). O corte ao
-  // domínio, para o prompt, faz-se lá.
-  return {notas,sites};
+  // Inteiros, e não só o domínio: um link colado aqui é uma PÁGINA a ler (e
+  // o do Vivino é a resposta — a `catalogo-info` usa-o como vivino_url). O
+  // corte ao domínio, para o prompt, faz-se lá.
+  const soSites=!!document.getElementById('pr-so-sites')?.checked;
+  return {notas,sites,soSites};
 }
 
 function wcAbrirProcurar(){
@@ -1966,14 +1970,20 @@ async function wcProcurarArrancar(){
   // Lê-se já: a espera a seguir substitui o formulário.
   const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
   const ctx=wcContextoLer();
+  if(ctx.soSites&&!ctx.sites.length){
+    toast('Escreve pelo menos um site (ou o link da página do vinho) para usar só esses',1);
+    if(b){b.disabled=false;b.textContent='🔎 Pesquisar';}
+    document.getElementById('pr-sites')?.focus();
+    return;
+  }
   try{
     const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
-    wcProcEspera();
+    wcProcEspera(false,false,ctx.soSites);
     /* `jaAndava` é uma pesquisa que já estava a correr para este vinho — e
        nesse caso NÃO se chama outra vez a função, que era pagar duas vezes
        o mesmo trabalho. Sonda-se a que já lá está. */
     if(!p.jaAndava){
-      _wcProcUltimo={vinhoId:_wcFicha.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites};
+      _wcProcUltimo={vinhoId:_wcFicha.id,campos,colheitaEspecifica,notas:ctx.notas,sites:ctx.sites,soSites:ctx.soSites};
       await wcProcChamar(Object.assign({pesquisaId:p.id,rever:true},_wcProcUltimo,{vinhoId:undefined}));
     }
     wcProcIniciarPolling(p.id);
@@ -2004,13 +2014,13 @@ async function wcProcChamar(corpo){
    resultados. Ver o CLAUDE.md, "De memória ou pesquisado". */
 async function wcProcurarProfunda(){
   if(!_wcFicha||!isAdmin())return;
-  const u=_wcProcUltimo&&_wcProcUltimo.vinhoId===_wcFicha.id?_wcProcUltimo:{campos:null,colheitaEspecifica:false,notas:'',sites:[]};
+  const u=_wcProcUltimo&&_wcProcUltimo.vinhoId===_wcFicha.id?_wcProcUltimo:{campos:null,colheitaEspecifica:false,notas:'',sites:[],soSites:false};
   try{
     const p=await catRpc('pesquisa_criar',{p_vinho_id:_wcFicha.id});
     wcProcEspera(true);
     if(!p.jaAndava){
       await wcProcChamar({pesquisaId:p.id,campos:u.campos,colheitaEspecifica:u.colheitaEspecifica,
-        notas:u.notas,sites:u.sites,profunda:true,rever:true});
+        notas:u.notas,sites:u.sites,soSites:u.soSites,profunda:true,rever:true});
     }
     wcProcIniciarPolling(p.id);
   }catch(e){
@@ -2022,15 +2032,16 @@ function wcProcCaixa(){return document.getElementById('proc-caixa');}
 /* A espera vive em DOIS sítios: na janela (que é onde se está a olhar) e na
    ficha por baixo dela — quem fecha a janela a meio continua a ver que a
    pesquisa anda, e o resultado aparece-lhe lá. */
-function wcProcEspera(profunda,manual){
+function wcProcEspera(profunda,manual,soSites){
   const t=manual?'A ler a resposta colada…'
+    :soSites?'A ler os sites escolhidos…'
     :profunda?'Pesquisa avançada — a pesquisar no Google…':'A pesquisar com IA…';
   const box=document.getElementById('procurar-corpo');
   if(box){
     box.innerHTML=`<div class="pr-espera">
       <div class="wc-spin escuro"></div>
       <div><strong>${t}</strong>
-        <div class="wc-note">${manual?'É só um instante.':'Pesquisa Google a sério — pode levar um minuto.'}
+        <div class="wc-note">${manual?'É só um instante.':soSites?'Procura o vinho em cada site e lê a página — pode levar um minuto.':'Pesquisa Google a sério — pode levar um minuto.'}
           Podes fechar esta janela: a pesquisa continua e o resultado fica à tua espera na ficha
           deste vinho. <strong>Nada é gravado sem confirmares.</strong></div></div>
     </div>`;
@@ -2181,12 +2192,26 @@ function wcRvLinhas(res){
       <span class="rv-campo">
         <b>${esc(wcRvNome(k))}</b>
         ${vazio?'':`<span class="rv-antes">${wcRvValorHTML(k,p.atual)}</span><span class="rv-seta">→</span>`}<span class="rv-novo">${wcRvValorHTML(k,p.valor)}</span>
+        ${wcRvFonteHTML(p.fonte)}
         ${orig}
         ${p.identidade?'<span class="rv-nota">O produtor é a identidade do vinho. Se com ele esta linha passar a ser a mesma que outra, não muda — junta-as em Duplicados.</span>':''}
       </span>
     </label>`);
   }
   return {linhas,iguais,total:props.length};
+}
+/* DE ONDE VEIO o valor encontrado (27/09/2026, o dono das apps): a página
+   ou o resultado da pesquisa que a IA diz ter lido (`deOnde` na
+   `catalogo-info`), o link colado, ou a pesquisa Google do grounding — que
+   não diz a página. Sem `fonte` (a resposta colada, ou a IA a não dizer),
+   não se escreve nada: não se inventa uma origem. */
+function wcRvFonteHTML(f){
+  if(!f||typeof f!=='object')return '';
+  if(f.google)return '<span class="rv-de">↳ da pesquisa Google <i>(a IA não diz a página)</i></span>';
+  if(!f.url)return '';
+  const lnk=`<a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.site||f.url)}</a>`;
+  if(f.dada&&!f.pagina)return `<span class="rv-de">↳ do link que colaste · ${lnk}</span>`;
+  return `<span class="rv-de">↳ de ${lnk} <i>${f.pagina?'· página lida':'· resumo no Google'}</i></span>`;
 }
 /* O corpo da revisão, igual para um vinho e para o lote; muda só a lista
    (`id`) e os botões. */
@@ -2200,11 +2225,14 @@ function wcRevisaoCorpo(res,o){
   const manual=res.pesquisaWeb!==true&&res.pesquisaWeb!==false;
   // Desde 27/09/2026 a pesquisa automática é uma só (o Serper e depois o
   // grounding pelo que falta, na Edge Function): já não há "avançada".
-  const quem=manual?'A resposta colada':'A pesquisa com IA';
+  const quem=manual?'A resposta colada':res.soSites?'A leitura dos sites escolhidos':'A pesquisa com IA';
   const n=r.linhas.length;
   h+=`<p class="wc-note" style="font-size:13.5px;color:var(--tx)">${quem} terminou e ${n
     ?`trouxe informação nova em <b>${n}</b> ${n===1?'campo':'campos'}.`:'não trouxe nada de novo.'}</p>`;
   if(res.aviso)h+=`<div class="rv-aviso">⚠️ ${esc(res.aviso)}</div>`;
+  const semF=Array.isArray(res.semFonte)?res.semFonte:[];
+  if(semF.length)h+=`<div class="rv-aviso">${semF.length===1?'1 campo veio':semF.length+' campos vieram'} sem a IA dizer
+    de que página o tirou (${esc(semF.map(wcRvNome).join(', '))}) — com “só estes sites”, ficou de fora.</div>`;
   if(!manual&&res.pesquisaWeb===false){
     h+=`<div class="rv-memoria"><span>🧠 A IA respondeu <b>de memória</b>, sem pesquisar na net — confere antes de guardar.</span></div>`;
   }
@@ -2225,29 +2253,48 @@ function wcRevisaoCorpo(res,o){
   h+=wcRvSitesHTML(res);
   h+=`<div class="rv-fontes"><i>${
     res.pesquisaWeb===false?'⚠️ Isto saiu da memória do modelo, sem pesquisa na net — confere tudo antes de aceitar.'
+    :res.soSites?'Lido só das páginas e dos resultados dos sites escolhidos — confere antes de aceitar.'
     :res.pesquisaWeb===true?(res.profunda?'Pesquisado no Google (e lido dos resultados).':'Pesquisado no Google.')+
       ' Leitura automática de páginas da net — vale como ponto de partida, não como certeza.'
     :'Resposta colada de um assistente de IA — confere antes de aceitar.'}${res.modelo?` · ${esc(res.modelo)}`:''}</i></div>`;
   return h;
 }
 /* O QUE SE FEZ COM OS SITES DE CONFIANÇA (27/09/2026). A `catalogo-info`
-   faz uma procura só neles e conta quantos resultados vieram de cada um
-   (`confianca`); sem essa contagem (pesquisa colada, ou sem Serper) foram
-   só uma frase no pedido à IA, e diz-se isso — era o que não se sabia. */
+   procura o vinho em cada domínio e LÊ a página que encontrar (e as que se
+   colaram), e diz o que aconteceu a cada uma (`paginas`) e quantos
+   resultados vieram de cada site (`confianca`); sem nada disso (pesquisa
+   colada, ou sem Serper) foram só uma frase no pedido à IA, e diz-se isso —
+   era o que não se sabia. */
 function wcRvSitesHTML(res){
   const sites=Array.isArray(res.sites)?res.sites:[];
   if(!sites.length)return '';
   const c=res.confianca&&typeof res.confianca==='object'?res.confianca:null;
-  if(!c)return `<div class="rv-fontes">Sites de confiança (${esc(sites.join(', '))}): foram só
+  const pags=Array.isArray(res.paginas)?res.paginas:[];
+  const titulo=res.soSites?'Só estes sites':'Sites de confiança';
+  if(!c&&!pags.length)return `<div class="rv-fontes">${titulo} (${esc(sites.join(', '))}): foram só
     no texto do pedido — ${res.pesquisaWeb===true||res.pesquisaWeb===false
       ?'não houve pesquisa nossa no Google desta vez, por isso não há como confirmar se a IA os usou.'
       :'não há como confirmar se o assistente os usou.'}</div>`;
-  const partes=sites.map(s=>s in c
-    ?`${esc(s)}: <b>${Number(c[s])||0}</b> resultado${Number(c[s])===1?'':'s'}`
-    :`${esc(s)}: não é um domínio — só no texto do pedido`);
-  const nada=Object.values(c).every(n=>!Number(n));
-  return `<div class="rv-fontes">Sites de confiança — ${partes.join(' · ')}.${nada
-    ?' Nenhum resultado deles: o que veio é de outras fontes.':' Foram os primeiros a ser lidos.'}</div>`;
+  const doSite=(x,d)=>!!x&&(x===d||x.endsWith('.'+d));
+  const lnk=p=>p.url?`<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.titulo||p.url)}</a>`:'';
+  const pagFrase=p=>{
+    const l=lnk(p);
+    if(p.estado==='lida')return `página lida${p.dada?' (a que colaste)':''} — ${l}`;
+    if(p.estado==='recusada')return `a página recusou a leitura (${esc(p.motivo||'bloqueio')})${l?' — '+l:''}`;
+    if(p.estado==='vazia')return `${esc(p.motivo||'a página não tem texto')}${l?' — '+l:''}`;
+    if(p.estado==='nao_encontrada')return 'o vinho não apareceu na procura neste site';
+    if(p.estado==='sem_pesquisa')return 'sem a pesquisa externa não há como procurar dentro do site — cola o link da página';
+    return `${p.url?'não abriu':'falhou'} (${esc(p.motivo||'erro')})${l?' — '+l:''}`;
+  };
+  const linhas=sites.map(s=>{
+    const ps=pags.filter(p=>doSite(p.site,s));
+    const n=c&&s in c?Number(c[s])||0:null;
+    const partes=ps.map(pagFrase);
+    if(n!==null&&!ps.some(p=>p.estado==='lida'||p.estado==='nao_encontrada'))partes.push(`${n} resultado${n===1?'':'s'} da pesquisa`);
+    if(!partes.length)partes.push(n===null?'não é um domínio — só no texto do pedido':'nada');
+    return `<li><b>${esc(s)}</b>: ${partes.join(' · ')}</li>`;
+  });
+  return `<div class="rv-fontes">${titulo}:<ul class="rv-sites">${linhas.join('')}</ul></div>`;
 }
 function wcRevNovos(res){return wcRvLinhas(res).linhas.length;}
 function wcRevTodos(id,on){

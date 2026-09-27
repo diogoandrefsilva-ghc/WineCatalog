@@ -485,8 +485,37 @@ CONFIANÇA"; e o resultado da pesquisa (e o log: `sites`, `confianca`,
 `consultas`) diz quantos vieram de cada um — é o que a revisão mostra
 (`wcRvSitesHTML`). Um nome sem domínio, a fase de grounding e a pesquisa
 colada só os levam no texto do pedido: aí não há como confirmar, e o ecrã
-di-lo. Um link de uma página de loja colado ali é reduzido ao domínio (a
-página em si não é aberta; o do Vivino é a exceção, ver "Links do Vivino").
+di-lo. Um link de uma página de loja colado ali é ABERTO e lido (ver a seguir;
+o do Vivino continua a ser a resposta, não uma página a abrir).
+**As páginas dos sites, "só estes sites" e de onde veio cada campo
+(27/09/2026, o dono das apps — "encontrei o vinho num site, dou o link e
+preenchem-se os atributos a partir daí")**. Na `catalogo-info` ("AS PÁGINAS
+DOS SITES"): um link colado abre-se tal e qual, e de cada domínio escrito sem
+página abre-se a primeira página de produto que a procura só nesse site
+devolver (`paginaDoResultado`). Do HTML lê-se o JSON-LD do produto (nome,
+marca, preço, imagem, descrição — a avaliação dos clientes da loja vai dita
+como NÃO sendo o Vivino), as etiquetas `og:`/`product:price` e o texto do
+`<main>` sem menus nem rodapé, tabelas como "rótulo | valor" (`abrirPagina`,
+`textoDaPagina`). As páginas vão à frente na base de evidência, numeradas de
+seguida com os resultados do Serper, e o Gemini devolve `deOnde`
+(campo → número); a proposta leva `fonte` (a página, o resultado, "da
+pesquisa Google" no que só o grounding trouxe, ou o link do Vivino colado) e
+a revisão mostra-a por baixo de cada valor (`wcRvFonteHTML`). O resultado
+leva `paginas` (lida · recusada · vazia · não encontrada · sem pesquisa) e o
+`wcRvSitesHTML` di-lo site a site. O visto **"Usar só a informação destes
+sites"** (`soSites`): sem a consulta geral, sem a do Vivino se ele não for um
+dos sites, sem o grounding; um campo que a IA não diga de onde veio sai
+(`semFonte`, dito na revisão); sem nada lido, a pesquisa fecha em erro a dizer
+o que aconteceu a cada site. **O Vivino não se abre daqui** (recusa
+servidores — ver "Links do Vivino"); uma loja que recuse (403, desafio
+anti-bots) também não se contorna: fica o resumo do Google desse site. Um
+endereço escrito por alguém é aberto por um servidor: só http(s), só nomes
+públicos (nada de IPs, portas nem "localhost"), redireções conferidas uma a
+uma, 1,5 MB no máximo. A MESMA leitura está na `vinho-info` da Garrafeira —
+mexer numa é mexer na outra. A `fonte` de cada campo NÃO se guarda no
+catálogo (a `pesquisa_aplicar` continua a gravar `catalogo-pesquisa`, e as
+páginas entram nas `fontes` do vinho como antes): se um dia se quiser, é um
+`u` no `origens` de cada campo.
 E a **pesquisa manual (colar a resposta de outro assistente) saiu do ecrã da
 pesquisa para o EDITAR** (`wcEditarManual`): é aí que se procura quem não
 quer gastar IA; entra pela mesma porta e pela mesma revisão.
