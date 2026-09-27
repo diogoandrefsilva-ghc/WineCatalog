@@ -244,6 +244,7 @@ const WC_ORIGENS={
   'loja-garrafeira-nacional':{txt:'Garrafeira Nacional (loja)', cls:'og-forte'},
   'loja-granvine':   {txt:'Granvine (loja)', cls:'og-forte'},
   'loja-vinha':      {txt:'Vinha.pt (loja)', cls:'og-forte'},
+  'loja-portugal-vineyards':{txt:'Portugal Vineyards (loja)', cls:'og-forte'},
   'lojas-script':    {txt:'lojas e Vivino (script)', cls:'og-forte'},
   /* Um valor posto de volta à mão depois de um erro, sem se saber de onde
      tinha vindo: força 0, a próxima fonte a sério passa-lhe por cima. */
@@ -373,13 +374,15 @@ function wcNotaLinhaHTML(v,cls){
   return `<span class="${cls||'cat-nota'}" title="${esc(wcNotaVivinoTitulo(nv,v.ano))}">★ ${esc(String(nv.nota))}${
     nv.de==='global'?' <small class="nota-de">todas</small>':''}</span>`;
 }
-const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vinha:'Vinha.pt',vivino:'Vivino'};
+const WC_LOJAS_NOMES={garrafeira_nacional:'Garrafeira Nacional',granvine:'Granvine',vinha:'Vinha.pt',
+  portugal_vineyards:'Portugal Vineyards',vivino:'Vivino'};
 
 function wcValorHTML(k,v){
   if(v==null)return '—';
   if(k==='precos'&&typeof v==='object'&&!Array.isArray(v)){
-    /* Pela ordem da prioridade do preço de mercado: GN → Granvine → Vinha → Vivino. */
-    return ['garrafeira_nacional','granvine','vinha','vivino'].filter(l=>v[l]&&v[l].preco!=null).map(l=>{
+    /* Pela ordem da prioridade do preço de mercado: GN → Granvine → Vinha →
+       Portugal Vineyards → Vivino (a do script, `PRIORIDADE_PRECO`). */
+    return WC_PRECO_PRIORIDADE.filter(l=>v[l]&&v[l].preco!=null).map(l=>{
       const x=v[l];
       const t=`${esc(WC_LOJAS_NOMES[l]||l)} ${esc(eurFmt(x.preco))}${x.colheita?` (colheita ${esc(String(x.colheita))})`:''}`;
       const a=x.url?`<a href="${esc(x.url)}" target="_blank" rel="noopener">${t}</a>`:t;
@@ -1391,7 +1394,7 @@ function wcAbrirEditar(){
    a Garrafeira (`precos_lojas`) não a vê, e desmarcar devolve-a. */
 function wcPrecosEditHTML(precos,medio){
   if(!precos||typeof precos!=='object'||Array.isArray(precos))return '';
-  const lojas=['garrafeira_nacional','granvine','vinha','vivino'];
+  const lojas=WC_PRECO_PRIORIDADE;
   const ks=Object.keys(precos).filter(l=>precos[l]&&precos[l].preco!=null)
     .sort((a,b)=>(lojas.indexOf(a)+1||99)-(lojas.indexOf(b)+1||99));
   if(!ks.length)return '';
@@ -1414,7 +1417,7 @@ function wcPrecosEditHTML(precos,medio){
    o script lhe carimbou (`loja-granvine` → granvine, `vivino-*` → vivino),
    e, sem essa, pelo valor igual ao de uma loja. `null` = veio de outro lado
    (uma pesquisa, uma correção à mão) e retirar uma loja não lhe mexe. */
-const WC_PRECO_PRIORIDADE=['garrafeira_nacional','granvine','vinha','vivino'];
+const WC_PRECO_PRIORIDADE=['garrafeira_nacional','granvine','vinha','portugal_vineyards','vivino'];
 function wcFonteDoPrecoRef(ficha,origens){
   const precos=(ficha||{}).precos||{}, m=Number((ficha||{}).preco_medio);
   if(!(m>0))return null;
@@ -1426,7 +1429,7 @@ function wcFonteDoPrecoRef(ficha,origens){
 }
 /* Retirar a fonte de onde veio o preço de referência deixa-o órfão. Diz-se
    já qual passa a ser — a primeira que sobra pela MESMA ordem do script
-   (GN → Granvine → Vinha.pt → Vivino) — e põe-se no campo, à vista, para
+   (GN → Granvine → Vinha.pt → Portugal Vineyards → Vivino) — e põe-se no campo, à vista, para
    se guardar com o resto. Sem nenhuma, o campo fica vazio e diz-se que o
    vinho fica sem preço de referência. Desmarcar repõe o que lá estava.
    Se o admin escreveu outro valor à mão no campo, não se lhe toca. */
@@ -1460,7 +1463,7 @@ function wcPrecoRetirarMudou(){
     a.innerHTML=`O preço de referência vinha de <strong>${nome(fonte)}</strong>. Passa a ser
       <strong>${esc(eurFmt(x.preco))}</strong>, de <strong>${nome(nova)}</strong>${
       x.colheita?` (colheita ${esc(String(x.colheita))})`:''} — a seguinte pela ordem
-      Garrafeira Nacional → Granvine → Vinha.pt → Vivino.`;
+      Garrafeira Nacional → Granvine → Vinha.pt → Portugal Vineyards → Vivino.`;
   }else{
     _wcRefAuto='';
     el.value='';

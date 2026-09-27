@@ -613,7 +613,9 @@ DECLARE
   v_idt     jsonb;
   v_outro   bigint;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  -- O painel do PC (service_role, `painel_editar` em db/painel.sql) também
+  -- corrige: é o admin, no computador dele, com a chave do batch (27/09/2026).
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode corrigir uma linha.';
   END IF;
 
@@ -689,7 +691,8 @@ BEGIN
 
   IF v_mudou + v_apagou > 0 OR p_mexer_identidade THEN
     INSERT INTO winecatalog.sync_log (origem, acao, estado, quem, detalhe)
-    VALUES ('app', 'editar', 'ok', auth.email(), jsonb_build_object(
+    VALUES ('app', 'editar', 'ok',
+      COALESCE(auth.email(), NULLIF(current_setting('winecatalog.quem', true), '')), jsonb_build_object(
       'vinho_id', r.id, 'campos', v_mudou, 'apagados', v_apagou,
       'antes', v_antes, 'depois', p_campos,
       'identidade', CASE WHEN p_mexer_identidade

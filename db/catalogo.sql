@@ -742,6 +742,8 @@ AS $$
       WHEN 'loja-garrafeira-nacional' THEN 3
       WHEN 'loja-granvine'       THEN 3
       WHEN 'loja-vinha'          THEN 3
+      -- a Portugal Vineyards (27/09/2026): mais uma loja lida na página
+      WHEN 'loja-portugal-vineyards' THEN 3
       WHEN 'lojas-script'        THEN 3
       WHEN 'vinho-info-premium'  THEN 2
       WHEN 'vinho-info-gratis'   THEN 2

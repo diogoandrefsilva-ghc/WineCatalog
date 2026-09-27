@@ -50,7 +50,8 @@ tudo o que aqui está foi pago com um erro.
   `produtores.sql` → `nomes-normalizar.sql` → **`cor-na-chave.sql`** (a cor na
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
-  marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) (+ `README.md`
+  marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) → `painel.sql`
+  (o back-office do painel do PC: `painel_vinho`/`painel_editar`, só `service_role`) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -689,6 +690,26 @@ resultou — fixa-se depois. Os produtos lêem-se pelos seletores das
 plataformas e, sem nenhum, pelos links da loja com uma palavra distintiva do
 nosso nome (`produtosDaPagina`).
 
+**A Portugal Vineyards** (27/09/2026, pedido do dono: "tem vinhos que não
+existem na GN, Granvine ou Vinha"): a 4.ª loja, antes do Vivino na ordem do
+preço (`PRIORIDADE_PRECO`, `WC_PRECO_PRIORIDADE` na app), origem
+`loja-portugal-vineyards` (força 3), chave `portugal_vineyards` no `precos`.
+É **PrestaShop 1.6** (produtos em `/pt/<categoria>/<id>-<nome>-<ean>.html`,
+procura `controller=search&search_query=`, visto nos resultados do Google)
+e foi **escrita sem a ver** — a rede daqui não lá chega, como com a Vinha.pt:
+três endereços de procura e o formulário, os seletores do tema de base
+(`.ajax_block_product`, `a.product-name`) e o preço em `#our_price_display`;
+o `como` do `detalhe.lojas` diz o que resultou. Duas coisas que ela obrigou a
+mudar no resto: **os nomes vêm em inglês** mesmo em `/pt/` ("Cartuxa Reserve
+Red 2017") — "reserve" e "grand" passaram às genéricas e a `mencao` lê
+"Grand Reserve" como grande reserva (antes lia "reserva", e o "Cartuxa
+Reserva" casava com um "Grand Reserve"); e **as fotografias do PrestaShop
+chamam-se `…-large_default/…`**, e o `imagemDe` recusava tudo o que tivesse
+"default" — agora só a palavra solta (`/default/`, `pt-default-…`, que é a
+imagem por omissão dela). A `garrafeira.precos_lojas` percorre as lojas do
+`precos` todas, e por isso a Garrafeira recebe esta sem mudar nada lá — mas
+o nome da loja no ecrã de lá é do repo Garrafeira.
+
 **O que a 1.ª corrida com lojas ensinou (25/09/2026):**
 - **A casta no nome é identidade** (`castasBatem`): o "Casa Ermelinda
   Freitas Syrah Reserva" casou na Granvine com o "…Carménère Reserva" —
@@ -887,7 +908,7 @@ Sem as lojas nesta corrida não há nada que diga que o preço delas está
 errado, por isso **um preço médio com origem `loja-*` não se toca**; os
 outros podem passar ao do Vivino (com a regra da metade ao dobro).
 **Só preços** (`precos`): não abre o Vivino nem regista verificação; GN →
-Granvine → Vinha.pt, pára na PRIMEIRA que tem o vinho, e o preço médio fica
+Granvine → Vinha.pt → Portugal Vineyards, pára na PRIMEIRA que tem o vinho, e o preço médio fica
 com esse (um preço antigo de uma loja que hoje não o encontrou não conta).
 **Uma imagem que veio do Vivino segue o link validado** (nos dois modos que
 abrem o Vivino): se o link antigo era de outro vinho, a garrafa também era.
@@ -901,6 +922,16 @@ aberta; só a imagem, mais nada da ficha). As imagens genéricas de "sem
 imagem" das lojas ficam de fora (`imagemDe`). A foto de uma loja pode ser de
 outra colheita — aceite, como no preço. `LOJAS=false` (o nome
 antigo) continua a valer `MODO=vivino`.
+**E onde se procura é outro visto** (`SITES`, 27/09/2026, pedido do dono:
+"por defeito os cinco sites, mas um ticker para só alguns"): no painel há um
+visto por sítio — Vivino, GN, Granvine, Vinha.pt, Portugal Vineyards, todos
+marcados de cada vez que se abre — e o "Procurar" passou a "Ler: Tudo · Só
+preços". O "Só o Vivino" de antes é "Tudo" só com o Vivino marcado (a ficha
+toda do que a página do Vivino diz). Sem o Vivino marcado não se abre nem se
+regista verificação (estado `sem_vivino`, como o `precos`); o "Só preços"
+nunca o abre, e o painel recusa-o sem uma loja. Uma loja fora desta corrida
+não perde nada: o preço dela fica em `precos` e continua a contar para o
+preço de referência pela ordem de sempre.
 
 **Uma fonte de preço retira-se à mão** (26/09/2026, Editar › "Fontes de
 preço", `wcPrecosEditHTML`): o Casa de Saima tinha o Vivino a 8,49 € com as
@@ -1025,8 +1056,9 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
   no browser —, e depois à mão na lista, **"⬆ Os primeiros" N pela ordem**,
   **"🎲 Ao acaso" N entre os que passam** — os dois trocam a escolha e
   mostram só os escolhidos, para se ver o que vai correr — ou "Marcar todos
-  os que passam") e **3 Correr** (o que procurar, o "trocar a imagem" e UM
-  Simular/Enriquecer; corre pela ordem da lista). "Alterado" é o mais
+  os que passam") e **3 Correr** (onde procurar — um visto por sítio —, o
+  que ler, o "trocar a imagem" e UM Simular/Enriquecer; corre pela ordem da
+  lista). "Alterado" é o mais
   recente do `atualizado_em` e do histórico (`alteracoes`): nenhum dos dois
   apanha tudo — há escritas que não mexem no `atualizado_em`, e o histórico
   só começa a 25/09/2026. A `vivino_catalogo` leva-o (`alterado`) com o
@@ -1045,6 +1077,25 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
 Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
 que se abrem. Enquanto o script corre, só os botões que o põem a correr
 (`button.corre`) ficam desligados, e o separador mostra ⏳.
+
+**A ficha de um vinho no painel — o back-office** (27/09/2026, pedido do
+dono: "estamos a tentar fazer disto o nosso back-office"). O nome de um vinho
+na lista (e o `#id` nas simulações e nas garrafeiras) abre uma janela com o
+vinho inteiro: cada campo com a origem, a força e a data, os preços de cada
+sítio, as fontes, as últimas verificações do Vivino, as linhas fundidas nele
+e o histórico (60). **"Editar"** é o formulário do Editar da app (a mesma
+lista e ordem de `WC_EDIT`), com o interruptor da identidade e o "retirar"
+de cada fonte de preço (retirar a do preço de referência põe no campo o da
+seguinte, pela ordem do script — a regra do `wcPrecoRetirarMudou`). **Só vai
+o que mudou.** Grava pela `winecatalog.painel_editar` (`db/painel.sql`), que
+põe o "quem" do histórico ("painel do PC (admin)") e chama a MESMA `editar`
+da app — força 4 no rótulo, 3 na nota/preço/imagem, a trava da identidade
+(a mensagem dela chega ao ecrã: o painel passou a mostrar a `message` do
+erro do Supabase). Não é um caminho de escrita novo: a `editar` passou a
+aceitar a `service_role` além do admin (é o admin, no computador dele, com a
+chave do batch), e continua a recusar quem tem sessão e não é o admin. A
+leitura é a `painel_vinho`, também só da `service_role` — a `ver` e a
+`historico` da app confirmam o admin pelo email, que a `service_role` não tem.
 
 **Escolher no catálogo pelo painel** (25/09/2026; desde 27/09/2026 é o
 único caminho — ver "Os três separadores"): o painel lista o

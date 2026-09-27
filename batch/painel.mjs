@@ -34,13 +34,26 @@ let corrida = null;          // { modo, inicio, linhas: [], fim, codigo, progres
 // dois vinhos (PARAR no vivino-verificar.mjs). Apaga-se antes de cada corrida.
 const PARAR = path.join(DIR, ".parar");
 
-// O que se procura: tudo · só o Vivino · só os preços das lojas (ver MODO
-// no vivino-verificar.mjs). Qualquer outra coisa vale "completo".
+// O que se lê: tudo · só os preços das lojas (ver MODO no
+// vivino-verificar.mjs; o "vivino" ainda se aceita). Outra coisa vale "completo".
 function modoPesquisa(x) { return ["completo", "vivino", "precos"].includes(x) ? x : "completo"; }
+// ONDE se procura (SITES no script; 27/09/2026, pedido do dono: por omissão
+// os cinco, com um visto por sítio para procurar só em alguns).
+const SITIOS = ["vivino", "garrafeira_nacional", "granvine", "vinha", "portugal_vineyards"];
+function sitiosDe(opcoes) {
+  if (!Array.isArray(opcoes.sitios)) return SITIOS.join(",");
+  const l = SITIOS.filter(x => opcoes.sitios.includes(x));
+  if (!l.length) throw new Error("Marca pelo menos um sítio onde procurar.");
+  if (modoPesquisa(opcoes.pesquisa) === "precos" && !l.some(x => x !== "vivino"))
+    throw new Error("«Só preços» procura nas lojas (não abre o Vivino) — marca pelo menos uma loja.");
+  return l.join(",");
+}
 function correr(modo, opcoes) {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
-  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO; delete env.TROCAR_IMAGEM; delete env.PARAR;
+  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO; delete env.SITES; delete env.TROCAR_IMAGEM; delete env.PARAR;
+  // Os sítios validam-se antes de tudo: um erro aqui não deixa nada a meio.
+  const sites = modo === "gravar" ? null : sitiosDe(opcoes);
   rmSync(PARAR, { force: true });
   // Gravar uma simulação é curto e não se interrompe: ficava meia gravada.
   if (modo !== "gravar") env.PARAR = PARAR;
@@ -50,6 +63,7 @@ function correr(modo, opcoes) {
     env.NOVO = JSON.stringify(opcoes.vinhos);
     env.ENSAIO = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
+    env.SITES = sites;
   } else {
     // Sempre os vinhos escolhidos na lista (por critério ou ao acaso, até 50).
     // A fila às cegas (`vivino_a_tratar`) saiu do painel a 27/09/2026 — fica
@@ -64,6 +78,7 @@ function correr(modo, opcoes) {
     // Vivino (nunca a vossa fotografia).
     if (opcoes.trocarImagem === true) env.TROCAR_IMAGEM = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
+    env.SITES = sites;
   }
   corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null,
               progresso: null, aParar: false, parado: false, podeParar: modo !== "gravar" };
@@ -103,6 +118,12 @@ function lerCorpo(req) {
     req.on("end", () => { try { ok(b ? JSON.parse(b) : {}); } catch (e) { falha(e); } });
   });
 }
+// O erro de uma função: a mensagem dela (um RAISE EXCEPTION diz o que
+// fazer — "junta-as no ecrã de Duplicados"), e só sem ela o texto cru.
+function erroSupabase(status, tx) {
+  try { const j = JSON.parse(tx); if (j && j.message) return j.message; } catch {}
+  return `Supabase ${status}: ${String(tx).slice(0, 200)}`;
+}
 // Uma função do Supabase com a chave do batch; a resposta passa tal qual.
 async function sbRpc(res, schema, fn, corpo) {
   const chave = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -110,7 +131,7 @@ async function sbRpc(res, schema, fn, corpo) {
     apikey: chave, Authorization: `Bearer ${chave}`,
     "Content-Type": "application/json", "Content-Profile": schema, "Accept-Profile": schema } });
   const tx = await r.text();
-  if (!r.ok) return json(res, 502, { erro: `Supabase ${r.status}: ${tx.slice(0, 200)}` });
+  if (!r.ok) return json(res, 502, { erro: erroSupabase(r.status, tx) });
   res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   return res.end(tx);
 }
@@ -120,7 +141,7 @@ async function sbDados(schema, fn, corpo) {
     apikey: chave, Authorization: `Bearer ${chave}`,
     "Content-Type": "application/json", "Content-Profile": schema, "Accept-Profile": schema } });
   const tx = await r.text();
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${tx.slice(0, 200)}`);
+  if (!r.ok) throw new Error(erroSupabase(r.status, tx));
   return tx ? JSON.parse(tx) : null;
 }
 // Uma simulação por gravar é comparada com a BD de AGORA: o admin pode ter
@@ -236,6 +257,29 @@ const servidor = http.createServer(async (req, res) => {
       if (aplicar && !itens.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
       return sbRpc(res, "winecatalog", "nomes_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar });
     }
+    if (req.method === "POST" && url.pathname === "/vinho") {
+      // O back-office (db/painel.sql): a ficha de um vinho, e corrigi-la à
+      // mão pela MESMA `editar` da app (força 4 no rótulo, 3 na nota/preço/
+      // imagem; a trava da identidade; o histórico com "painel do PC").
+      const b = await lerCorpo(req);
+      const id = Number(b.id);
+      if (!Number.isInteger(id) || id <= 0) return json(res, 400, { erro: "Vinho inválido." });
+      if (b.acao === "ver") return sbRpc(res, "winecatalog", "painel_vinho", { p_id: id });
+      if (b.acao === "editar") {
+        const campos = b.campos && typeof b.campos === "object" && !Array.isArray(b.campos) ? b.campos : {};
+        const ks = Object.keys(campos);
+        if (ks.length > 40 || ks.some(k => !/^[a-z][a-z0-9_]{0,39}$/.test(k)) || JSON.stringify(campos).length > 60000)
+          return json(res, 400, { erro: "Campos inválidos." });
+        const ident = b.identidade === true;
+        if (!ks.length && !ident) return json(res, 400, { erro: "Nada mudou." });
+        const txt = (x, n) => x == null ? null : String(x).trim().slice(0, n);
+        return sbRpc(res, "winecatalog", "painel_editar", { p_id: id, p_campos: campos,
+          p_nome: ident ? txt(b.nome, 200) : null, p_produtor: ident ? txt(b.produtor, 200) : null,
+          p_ano: ident && /^\d{4}$/.test(String(b.ano ?? "")) ? Number(b.ano) : null,
+          p_mexer_identidade: ident, p_quem: "painel do PC (admin)" });
+      }
+      return json(res, 400, { erro: "acao" });
+    }
     if (req.method === "GET" && url.pathname === "/simulacoes") return json(res, 200, await simulacoes());
     if (req.method === "GET" && url.pathname === "/simulacao") {
       return json(res, 200, await comAgora(JSON.parse(await readFile(nomeSeguro(url.searchParams.get("nome")), "utf8"))));
@@ -268,7 +312,7 @@ const servidor = http.createServer(async (req, res) => {
       })).filter(x => x.nome);
       if (!vinhos.length) return json(res, 400, { erro: "Escreve pelo menos um nome." });
       if (vinhos.some(x => !x.tipo)) return json(res, 400, { erro: "Escolhe a cor de cada vinho — é ela que separa o tinto do branco com o mesmo nome." });
-      correr("novo", { vinhos, pesquisa: b.pesquisa });
+      correr("novo", { vinhos, pesquisa: b.pesquisa, sitios: b.sitios });
       return json(res, 200, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/gravar") {
@@ -341,6 +385,7 @@ h2{margin:0 0 10px;font:600 16px Georgia,serif;color:var(--bd)}
 select.ativo{border-color:var(--bd);background:#f6ecef;color:var(--bd);font-weight:600}
 .ou{color:var(--mu);font-size:12.5px}.conta{font-weight:600}
 .correr{background:#faf5ef;border:1px solid var(--bo);border-radius:10px;padding:10px 12px}
+.sitios{gap:6px 14px}.sitios .rot{font-weight:600;color:var(--bd)}.sitios label.off{opacity:.45}.sitios a{font-size:12px}
 label{font-size:13px}#cat-lista table td,#cat-lista table th{padding:5px 8px;vertical-align:middle}
 .mini{width:44px;text-align:center}.mini img{width:40px;height:54px;object-fit:contain;display:block;margin:0 auto;background:#faf7f4;border-radius:4px}
 .mini .sem{display:flex;align-items:center;justify-content:center;width:40px;height:54px;margin:0 auto;border:1px dashed var(--bo);border-radius:4px;color:var(--mu);font-size:11px}
@@ -366,6 +411,30 @@ tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.
 .antes{color:var(--mu);text-decoration:line-through}.seta{color:var(--mu);padding:0 4px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#f1e7d6;color:#7a5a17;font-weight:600}.tag.mudou{background:#f6dcdc;color:#8a1f2d}
 a{color:var(--bd)}
+a.nm{color:inherit;text-decoration:none}a.nm:hover b{text-decoration:underline;color:var(--bd)}
+body.com-modal{overflow:hidden}
+.modal{position:fixed;inset:0;z-index:20;background:rgba(35,20,24,.5);display:flex;justify-content:center;align-items:flex-start;padding:28px 12px;overflow:auto}
+.modal[hidden]{display:none}
+.modal .caixa{background:var(--card);border-radius:14px;width:100%;max-width:980px;box-shadow:0 12px 40px rgba(0,0,0,.3);overflow:hidden}
+.modal .topo{background:var(--bd);color:#fff;padding:16px 18px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.modal .topo .garrafa{width:72px;height:104px;flex:none;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--mu);font-size:11px;text-align:center}
+.modal .topo .garrafa img{width:100%;height:100%;object-fit:contain}
+.modal .topo .tit{flex:1 1 280px;min-width:0}
+.modal .topo h3{margin:2px 0;font:600 20px Georgia,serif}.modal .topo .cor{font-style:italic;font-weight:400;opacity:.85;font-size:15px}
+.modal .topo .sub{opacity:.85;font-size:13px}.modal .topo a{color:#fff}
+.modal .topo .acoes{display:flex;gap:8px;flex-wrap:wrap}
+.modal .topo button{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.35);color:#fff}
+.modal .topo button.prim{background:var(--ou);border-color:var(--ou)}
+.modal .corpo{padding:4px 18px 18px}
+.modal h4{margin:18px 0 6px;font:600 12.5px system-ui;text-transform:uppercase;letter-spacing:.4px;color:var(--bd)}
+.ficha td{padding:6px 8px;vertical-align:middle}.ficha td.k{color:var(--mu);width:210px}.ficha td.de{width:250px}
+.ficha input[type=text],.ficha select,.ficha textarea,.ident input[type=text]{width:100%;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+.og{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;background:#eee;color:#666;white-space:nowrap}
+.og.f4,.og.f3{background:#f1e7d6;color:#7a5a17}.og.f2{background:#f6ecef;color:var(--bd)}
+.lista{margin:0;padding-left:18px}.lista li{margin:3px 0}.lista label.ret{font-size:12px;color:var(--er)}
+.hist td{font-size:12.5px}
+.aviso{background:#fff7e6;border:1px solid #f0d9a8;border-radius:10px;padding:8px 10px;font-size:12.5px;margin:12px 0}
+.ident{border:1px dashed var(--bo);border-radius:10px;padding:8px 10px}.ident .linha label{flex:1 1 200px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mu)}
 </style></head><body>
 <header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
 <nav class="tabs" role="tablist">
@@ -376,7 +445,7 @@ a{color:var(--bd)}
 <main>
 <section class="tab" id="t-info">
 <div class="card" id="c-escolher"><h2>Escolher os vinhos a enriquecer ou corrigir</h2>
-  <p class="nota" style="margin:0">Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois ordenas a lista e marcas <b>à mão</b>, <b>os primeiros</b> pela ordem (os alterados há mais tempo, os criados há menos…), <b>alguns ao acaso</b>, ou <b>todos</b> os que passam. Corre só o que estiver marcado — até 50 de cada vez.</p>
+  <p class="nota" style="margin:0">Carrega no <b>nome</b> de um vinho para ver a ficha inteira e corrigir à mão. Um menu só: os <b>filtros</b> dizem de onde se escolhe (sem filtros, o catálogo todo); depois ordenas a lista e marcas <b>à mão</b>, <b>os primeiros</b> pela ordem (os alterados há mais tempo, os criados há menos…), <b>alguns ao acaso</b>, ou <b>todos</b> os que passam. Corre só o que estiver marcado — até 50 de cada vez.</p>
   <div class="passo"><span class="num">1</span>Critério <span class="nota" id="cat-passam"></span></div>
   <div class="filtros"><input type="search" id="cat-q" placeholder="procurar por nome, produtor, região, cor, ano…" oninput="pintarCatalogo()">
     <span id="cat-filtros" class="filtros"></span>
@@ -394,15 +463,15 @@ a{color:var(--bd)}
     <button onclick="catLimpar()">Limpar a escolha</button></div>
   <div id="cat-lista" style="max-height:560px;overflow:auto;margin-top:10px;border:1px solid var(--bo);border-radius:10px"><p class="nota" style="padding:10px">A carregar…</p></div>
   <div class="passo"><span class="num">3</span>Correr <span class="nota" id="cat-n2"></span></div>
-  <div class="linha correr">
-    <label>Procurar: <select id="pesquisa">
-      <option value="completo">Tudo — Vivino e lojas (a ficha toda)</option>
-      <option value="vivino">Só o Vivino — link, nota, avaliações, imagem</option>
-      <option value="precos">Só preços (e imagem) — Garrafeira Nacional → Granvine → Vinha.pt</option>
+  <div class="correr">
+    <div class="linha sitios" id="cat-sitios"></div>
+    <div class="linha" style="margin-top:8px"><label>Ler: <select id="pesquisa" onchange="sitiosSincronizar('cat')">
+      <option value="completo">Tudo — a ficha toda</option>
+      <option value="precos">Só preços (e imagem) — pára na 1.ª loja que o tenha</option>
     </select></label>
     <label title="Normalmente só se troca uma imagem que veio do Vivino. Ligado, os escolhidos ficam com a imagem da primeira loja que os tenha (ou do Vivino), seja qual for a que têm agora — menos a vossa fotografia."><input type="checkbox" id="cat-trocar"> trocar a imagem destes, venha de onde vier</label>
     <button class="prim corre" onclick="correrEscolhidos('simular')">Simular</button>
-    <button class="corre" onclick="correrEscolhidos('enriquecer')">Enriquecer (grava já)</button></div>
+    <button class="corre" onclick="correrEscolhidos('enriquecer')">Enriquecer (grava já)</button></div></div>
   <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").</p>
 </div>
 <div class="card" id="c-registo"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div>
@@ -418,14 +487,15 @@ a{color:var(--bd)}
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em Simulações. Se já existir, enriquece o que lá está.</p>
-  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
-  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
-    <label>Procurar: <select id="novo-pesquisa">
-      <option value="completo">Tudo — Vivino e lojas</option>
-      <option value="vivino">Só o Vivino</option>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine, Vinha.pt ou Portugal Vineyards — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
+  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button></div>
+  <div class="correr" style="margin-top:10px">
+    <div class="linha sitios" id="novo-sitios"></div>
+    <div class="linha" style="margin-top:8px"><label>Ler: <select id="novo-pesquisa" onchange="sitiosSincronizar('novo')">
+      <option value="completo">Tudo — a ficha toda</option>
       <option value="precos">Só preços (e imagem)</option>
     </select></label>
-    <button class="prim corre" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
+    <button class="prim corre" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div></div>
 </div>
 <p class="seccao">As garrafeiras × o catálogo</p>
 <div class="card"><h2>Links do Vivino nas garrafeiras</h2>
@@ -471,6 +541,12 @@ a{color:var(--bd)}
 </div>
 </section>
 </main>
+<div class="modal" id="modal-vinho" hidden onclick="if(event.target===this)fecharVinho()">
+  <div class="caixa" role="dialog" aria-modal="true" aria-labelledby="mv-titulo">
+    <div class="topo" id="mv-topo"></div>
+    <div class="corpo" id="mv-corpo"></div>
+  </div>
+</div>
 <script>
 const TOKEN="__TOKEN__";let visto=0,timer=null,sim=null,simNome=null;
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -580,7 +656,7 @@ function semImg(el){el.outerHTML='<span class="sem" title="a imagem não abre">�
 // Os preços de cada sítio, pela ordem da prioridade; o que é o preço médio
 // vai a negrito com ★. Se o preço médio veio de outro sítio (uma garrafeira,
 // uma pesquisa, reposto à mão), aparece numa linha à parte a dizer de onde.
-const LOJAS_P=[["garrafeira_nacional","GN","loja-garrafeira-nacional"],["granvine","Granvine","loja-granvine"],["vinha","Vinha.pt","loja-vinha"],["vivino","Vivino","vivino-pagina"]];
+const LOJAS_P=[["garrafeira_nacional","GN","loja-garrafeira-nacional"],["granvine","Granvine","loja-granvine"],["vinha","Vinha.pt","loja-vinha"],["portugal_vineyards","P.Vineyards","loja-portugal-vineyards"],["vivino","Vivino","vivino-pagina"]];
 const eur=n=>(Math.round(Number(n)*100)/100).toFixed(2).replace(".",",")+" €";
 function precosHTML(v){
   const ps=v.precos&&typeof v.precos==="object"?v.precos:{};
@@ -623,7 +699,7 @@ function pintarCatalogo(){
   document.getElementById("cat-passam").textContent=ligados?"— "+pool.length+" de "+CAT.length+" vinhos passam":"— sem filtros: o catálogo todo ("+CAT.length+" vinhos)";
   const linhas=l.slice(0,400).map(v=>'<tr class="'+(ESC.has(v.id)?"sel":"")+'"><td><input type="checkbox" '+(ESC.has(v.id)?"checked":"")+' onchange="catMarca('+v.id+',this)"></td>'+
     '<td class="mini">'+miniatura(v)+'</td>'+
-    '<td><b>'+esc(v.nome)+'</b>'+(v.ano?" "+esc(v.ano):"")+(v.pedido?' <span class="tag" title="pedido na app, com «🍷 Verificar no Vivino»">🍷 pedido</span>':'')+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
+    '<td><a href="#" class="nm" onclick="abrirVinho('+v.id+');return false" title="Abrir a ficha do vinho"><b>'+esc(v.nome)+'</b></a>'+(v.ano?" "+esc(v.ano):"")+(v.pedido?' <span class="tag" title="pedido na app, com «🍷 Verificar no Vivino»">🍷 pedido</span>':'')+'<br><span class="nota">'+esc([v.produtor,v.tipo,v.regiao].filter(Boolean).join(" · "))+'</span></td>'+
     '<td>'+precosHTML(v)+'</td>'+
     '<td class="ic">'+(v.link==="invalido"?'<b title="link do Vivino suspeito" style="color:var(--er)">V?</b>':v.vivino?"V":"")+'</td>'+
     '<td class="ic datas">'+datasHTML(v,col)+'</td></tr>');
@@ -666,8 +742,229 @@ function catContar(){
 async function correrEscolhidos(modo){
   if(!ESC.size)return alert("Escolhe primeiro os vinhos (passo 2).");
   if(modo==="enriquecer"&&!confirm("Gravar já no catálogo os "+ESC.size+" escolhidos, sem simular primeiro?"))return;
-  try{await post("/correr",{modo,ids:escolhidosPelaOrdem(),pesquisa:document.getElementById("pesquisa").value,trocarImagem:document.getElementById("cat-trocar").checked});comecar(true);}catch(e){alert(e.message);}
+  try{await post("/correr",{modo,ids:escolhidosPelaOrdem(),pesquisa:document.getElementById("pesquisa").value,sitios:sitiosEscolhidos("cat"),trocarImagem:document.getElementById("cat-trocar").checked});comecar(true);}catch(e){alert(e.message);}
 }
+
+// ── A ficha de um vinho: o back-office (27/09/2026, pedido do dono) ──
+// Um clique no nome (na lista, nas simulações, nas garrafeiras) abre o vinho
+// inteiro: cada campo com a origem, a força e a data, os preços de cada
+// sítio, as fontes, as últimas verificações e o histórico. "Editar" corrige
+// à mão pela MESMA "editar" da app (db/painel.sql: força 4 no rótulo, 3 na
+// nota/preço/imagem; a trava da identidade) e manda só o que mudou.
+// Os campos e a ordem são os do Editar da app (WC_EDIT em app.js).
+const CAMPOS_ED=[
+  ["imagem_url","Imagem","img"],
+  ["tipo","Cor","sel",["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"]],
+  ["estilo","Estilo","sel",["","Maduro","Verde","Colheita Tardia","Palhete"]],
+  ["mencao","Menção","sel",["","Reserva","Grande Reserva","Garrafeira","Colheita Selecionada","Vinhas Velhas","Superior","Grande Escolha"]],
+  ["classificacao","Classificação","sel",["","DOC","Vinho Regional","Vinho"]],
+  ["castas","Castas","lista"],["regiao","Região","txt"],["sub_regiao","Sub-região","txt"],["pais","País","txt"],
+  ["teor","Teor alcoólico (%)","num"],["estagio_meses","Estágio (meses)","int"],["estagio_texto","Estágio","txt"],
+  ["vivino_nota","Nota Vivino da colheita","num"],["vivino_avaliacoes","Avaliações Vivino da colheita","int"],
+  ["vivino_nota_global","Nota Vivino de todas as colheitas","num"],["vivino_avaliacoes_global","Avaliações Vivino de todas as colheitas","int"],
+  ["vivino_url","Link do Vivino","txt"],["preco_medio","Preço de referência (€)","num"],
+  ["beber_de","Beber de (ano)","int"],["beber_ate","Beber até (ano)","int"],
+  ["notas_prova","Notas de prova","area"],["harmonizacao","Harmonização","area"],["ai_resumo","Resumo","area"]];
+const ORIGEM_TXT={"catalogo-admin":"à mão (admin)","catalogo-pesquisa":"pesquisa (IA)","garrafeira":"uma garrafeira",
+  "garrafeira-bruto":"garrafeira (bruto)","ws-verificacao":"WineSelection (verificação)","ws-sugestao":"WineSelection (sugestão)",
+  "vivino-pagina":"página do Vivino","vivino-serper":"Google (Serper)","loja-garrafeira-nacional":"Garrafeira Nacional",
+  "loja-granvine":"Granvine","loja-vinha":"Vinha.pt","loja-portugal-vineyards":"Portugal Vineyards","lojas-script":"script (lojas)",
+  "vinho-info-premium":"Garrafeira (IA)","vinho-info-gratis":"Garrafeira (pesquisa)","reposto":"reposto à mão"};
+const NOME_LOJA={garrafeira_nacional:"Garrafeira Nacional",granvine:"Granvine",vinha:"Vinha.pt",portugal_vineyards:"Portugal Vineyards",vivino:"Vivino"};
+const PRIORIDADE=["garrafeira_nacional","granvine","vinha","portugal_vineyards","vivino"];
+const JANELA=["beber_de","beber_ate"];
+let VINHO=null,EDITAR=false;
+const dataFmt=x=>{const t=data(x);return t==null?"":DMA.format(t);};
+const dataHora=x=>{const t=data(x);return t==null?"":DMAH.format(t);};
+function origemHTML(o){
+  if(!o||!o.o)return '<span class="nota">—</span>';
+  const f=Number(o.f||0);
+  return '<span class="og f'+f+'" title="força '+f+'">'+esc(ORIGEM_TXT[o.o]||o.o)+' · '+f+'</span>'+(o.em?' <span class="nota">'+esc(dataFmt(o.em))+'</span>':'');
+}
+function valorFicha(k,x){
+  if(x==null||x===""||(Array.isArray(x)&&!x.length))return '<span class="nota">—</span>';
+  if(Array.isArray(x))return esc(x.join(", "));
+  if(typeof x==="object")return '<code>'+esc(JSON.stringify(x))+'</code>';
+  const t=String(x);
+  if(/^https?:\\/\\//i.test(t))return '<a href="'+esc(t)+'" target="_blank" rel="noopener noreferrer">'+esc(t.replace(/^https?:\\/\\/(www\\.)?/,"").slice(0,80))+'</a>';
+  if(k==="preco_medio")return esc(eur(x));
+  if(k==="teor")return esc(t)+" %";
+  return esc(t);
+}
+const curto=(x,n)=>{const t=x==null?"":typeof x==="string"?x:JSON.stringify(x);return t.length>n?'<span title="'+esc(t)+'">'+esc(t.slice(0,n))+'…</span>':esc(t);};
+async function abrirVinho(id){
+  const m=document.getElementById("modal-vinho");
+  m.hidden=false;document.body.classList.add("com-modal");
+  document.getElementById("mv-topo").innerHTML='<div><h3>A carregar…</h3></div>';
+  document.getElementById("mv-corpo").innerHTML="";
+  try{VINHO=await post("/vinho",{acao:"ver",id});EDITAR=false;pintarVinho();}
+  catch(e){document.getElementById("mv-topo").innerHTML='<div><h3>Não consegui abrir o vinho</h3><div class="sub">'+esc(e.message)+'</div></div><div class="acoes"><button onclick="fecharVinho(true)">✕ Fechar</button></div>';}
+}
+function fecharVinho(forcar){
+  if(!forcar&&EDITAR&&!confirm("Fechar sem guardar o que mudaste?"))return;
+  EDITAR=false;document.getElementById("modal-vinho").hidden=true;document.body.classList.remove("com-modal");
+}
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!document.getElementById("modal-vinho").hidden)fecharVinho();});
+function editarVinho(on){
+  if(!on&&!confirm("Deixar o que mudaste por gravar?"))return;
+  EDITAR=on;pintarVinho();
+}
+function pintarVinho(){
+  const v=VINHO,f=v.ficha||{},o=v.origens||{};
+  const img=f.imagem_url?'<img src="'+esc(f.imagem_url)+'" alt="" referrerpolicy="no-referrer" onerror="this.parentNode.textContent=\\'a imagem não abre\\'">':'sem imagem';
+  document.getElementById("mv-topo").innerHTML='<div class="garrafa">'+img+'</div>'+
+    '<div class="tit"><div class="sub">#'+esc(v.id)+' · criado '+esc(dataFmt(v.criado))+' · alterado '+esc(dataFmt(v.atualizado))+(v.vezes?' · escrito '+esc(v.vezes)+'×':'')+'</div>'+
+    '<h3 id="mv-titulo">'+esc(v.nome)+(f.tipo?' <span class="cor">'+esc(String(f.tipo).toLowerCase())+'</span>':'')+'</h3>'+
+    '<div class="sub"><i>'+esc(v.produtor||"(sem produtor)")+'</i>'+(v.produtor_completo?' — '+esc(v.produtor_completo):'')+' · '+(v.ano?esc(v.ano):'sem colheita')+'</div>'+
+    (f.vivino_url?'<div class="sub"><a href="'+esc(f.vivino_url)+'" target="_blank" rel="noopener noreferrer">abrir no Vivino ↗</a></div>':'')+'</div>'+
+    '<div class="acoes">'+(EDITAR
+      ?'<button class="prim" id="mv-guardar" onclick="guardarVinho()">Guardar</button><button onclick="editarVinho(false)">Cancelar</button>'
+      :'<button class="prim" onclick="editarVinho(true)">✏️ Editar</button><button onclick="abrirVinho('+v.id+')" title="Voltar a ler da BD">🔄</button>')+
+    '<button onclick="fecharVinho()">✕ Fechar</button></div>';
+  let h='';
+  if(EDITAR){
+    h+='<p class="aviso">O que corrigires fica com <b>força 4</b> nos campos de rótulo (cor, castas, teor, região…) — ninguém lhes passa por cima — e <b>3</b> na nota do Vivino, no preço e na imagem. <b>Esvaziar um campo apaga-o</b>, e apagar não o fixa: a próxima escrita de uma garrafeira pode voltar a preenchê-lo. Só vai o que mudares; fica no histórico como "painel do PC (admin)".</p>'+
+      '<div class="ident"><label><input type="checkbox" id="mv-ident" onchange="document.getElementById(\\'mv-ident-c\\').hidden=!this.checked"> Mexer na identidade (nome, produtor, colheita)</label>'+
+      '<div id="mv-ident-c" hidden><p class="nota">Muda a chave do vinho: se passar a ser igual a outro que já existe, não grava — juntam-se nos Duplicados da app.</p><div class="linha">'+
+      '<label>Nome <input type="text" id="mv-nome" value="'+esc(v.nome)+'"></label><label>Produtor <input type="text" id="mv-produtor" value="'+esc(v.produtor||"")+'"></label>'+
+      '<label>Colheita <input type="text" id="mv-ano" inputmode="numeric" maxlength="4" value="'+esc(v.ano??"")+'" style="width:80px"></label></div></div></div>';
+  }
+  h+='<h4>Ficha</h4><table class="ficha">';
+  for(const [k,rot,tp,ops] of CAMPOS_ED){
+    const x=f[k];
+    if(!EDITAR){h+='<tr><td class="k">'+esc(rot)+'</td><td>'+(k==="imagem_url"&&x?'<a href="'+esc(x)+'" target="_blank" rel="noopener noreferrer">'+esc(String(x).replace(/^https?:\\/\\/(www\\.)?/,"").slice(0,70))+'</a>':valorFicha(k,x))+'</td><td class="de">'+(k in f?origemHTML(o[k]):"")+'</td></tr>';continue;}
+    const val=x==null?"":Array.isArray(x)?x.join(", "):String(x);
+    const semJanela=JANELA.includes(k)&&!v.ano;
+    let inp;
+    if(tp==="sel"){const l=ops.includes(val)?ops:[val].concat(ops);inp='<select id="mv-'+k+'">'+l.map(op=>'<option value="'+esc(op)+'"'+(op===val?" selected":"")+'>'+esc(op||"— vazio —")+'</option>').join("")+'</select>';}
+    else if(tp==="area")inp='<textarea id="mv-'+k+'" rows="3">'+esc(val)+'</textarea>';
+    else inp='<input type="text" id="mv-'+k+'" value="'+esc(val)+'"'+(tp==="lista"?' placeholder="separadas por vírgula"':'')+(tp==="num"||tp==="int"?' inputmode="decimal"':'')+(semJanela?' disabled title="Sem colheita não há janela de consumo"':'')+'>';
+    h+='<tr><td class="k"><label for="mv-'+k+'">'+esc(rot)+'</label></td><td>'+inp+(k==="preco_medio"?'<p class="nota" id="mv-preco-aviso" hidden></p>':'')+'</td><td class="de">'+(k in f?origemHTML(o[k]):"")+'</td></tr>';
+  }
+  // Os campos que não estão na lista (de outra app, ou novos) aparecem na mesma — só para ler.
+  const fora=Object.keys(f).filter(k=>k!=="precos"&&!CAMPOS_ED.some(c=>c[0]===k));
+  for(const k of fora)h+='<tr><td class="k">'+esc(k)+'</td><td>'+valorFicha(k,f[k])+'</td><td class="de">'+origemHTML(o[k])+'</td></tr>';
+  h+='</table>';
+  h+=precosFichaHTML(f,o);
+  const fontes=v.fontes&&typeof v.fontes==="object"?v.fontes:{};
+  const fl=Object.entries(fontes).flatMap(([og,l])=>(Array.isArray(l)?l:[]).map(x=>({og,x})));
+  if(fl.length)h+='<h4>Fontes</h4><ul class="lista">'+fl.slice(0,30).map(({og,x})=>'<li><span class="og">'+esc(ORIGEM_TXT[og]||og)+'</span> '+(x&&x.url?'<a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">'+esc(x.titulo||x.url)+'</a>':esc(x&&x.titulo||JSON.stringify(x)))+'</li>').join("")+'</ul>';
+  if((v.verificacoes||[]).length)h+='<h4>Verificações do Vivino</h4><ul class="lista">'+v.verificacoes.map(x=>'<li>'+esc(dataHora(x.em))+' · <b>'+esc(x.estado)+'</b> · '+esc(x.revisao)+(x.pagina?' · <span class="nota">“'+esc(x.pagina)+'”</span>':'')+'</li>').join("")+'</ul>';
+  if((v.fundidos||[]).length)h+='<h4>Fundidos nesta linha</h4><ul class="lista">'+v.fundidos.map(x=>'<li>#'+esc(x.id)+' '+esc(x.nome)+(x.produtor?' · '+esc(x.produtor):'')+(x.ano?' · '+esc(x.ano):'')+'</li>').join("")+'</ul>';
+  const hist=v.historico||[];
+  h+='<h4>Histórico'+(hist.length?' <span class="nota">(as últimas '+hist.length+')</span>':'')+'</h4>'+(hist.length
+    ?'<table class="hist"><tr><th>Quando</th><th>Campo</th><th>Antes → depois</th><th>Quem</th></tr>'+hist.map(a=>'<tr><td class="ic">'+esc(dataHora(a.quando))+'</td><td>'+esc(a.campo==="_criado"?"criado":a.campo)+'</td><td><span class="antes">'+curto(a.antes,60)+'</span> → '+curto(a.depois,60)+(a.origem?' <span class="og">'+esc(ORIGEM_TXT[a.origem]||a.origem)+'</span>':'')+'</td><td class="nota">'+esc(a.quem||"")+'</td></tr>').join("")+'</table>'
+    :'<p class="nota">Ainda sem alterações registadas (o histórico começou a 25/09/2026).</p>');
+  document.getElementById("mv-corpo").innerHTML=h;
+}
+// Os preços de cada sítio. A editar, cada um pode ser RETIRADO (não se apaga:
+// fica marcado, o script deixa de o ler e as apps não o contam — como no
+// Editar da app). Retirar a fonte do preço de referência põe no campo o da
+// seguinte que sobra, pela ordem de sempre.
+function precosFichaHTML(f,o){
+  const p=f.precos&&typeof f.precos==="object"?f.precos:{};
+  const ks=Object.keys(p).filter(l=>p[l]&&p[l].preco!=null).sort((a,b)=>(PRIORIDADE.indexOf(a)+1||99)-(PRIORIDADE.indexOf(b)+1||99));
+  if(!ks.length)return '';
+  const fonte=fonteDoPrecoRef(f,o);
+  return '<h4>Preços nas lojas</h4><ul class="lista">'+ks.map(l=>{const x=p[l];
+    const t=esc(NOME_LOJA[l]||l)+' · '+esc(eur(x.preco))+(x.colheita?' · colheita '+esc(x.colheita):'');
+    const a=x.url?'<a href="'+esc(x.url)+'" target="_blank" rel="noopener noreferrer">'+t+'</a>':t;
+    return '<li>'+(EDITAR?'<label class="ret"><input type="checkbox" class="mv-ret" data-loja="'+esc(l)+'"'+(x.retirado?" checked":"")+' onchange="precoRetirarMudou()"> retirar</label> ':'')+
+      (x.retirado&&!EDITAR?'<s>'+a+'</s> <span class="nota">· retirado à mão</span>':a)+(l===fonte?' <span class="tag">preço de referência</span>':'')+(x.em?' <span class="nota">· lido a '+esc(x.em)+'</span>':'')+'</li>';}).join("")+'</ul>';
+}
+function fonteDoPrecoRef(f,o){
+  const precos=f.precos||{},m=Number(f.preco_medio);
+  if(!(m>0))return null;
+  const og=String(((o||{}).preco_medio||{}).o||"");
+  const pela=og.startsWith("loja-")?og.slice(5).replace(/-/g,"_"):og.startsWith("vivino-")?"vivino":null;
+  if(pela&&precos[pela])return pela;
+  if(pela||og==="catalogo-admin"||og==="catalogo-pesquisa")return null;
+  return PRIORIDADE.find(l=>precos[l]&&Math.abs(Number(precos[l].preco)-m)<0.005)||null;
+}
+function precoRetirarMudou(){
+  const f=VINHO.ficha||{},precos=f.precos||{},el=document.getElementById("mv-preco_medio"),a=document.getElementById("mv-preco-aviso");
+  const fonte=fonteDoPrecoRef(f,VINHO.origens||{});
+  if(!el||!a||!fonte)return;
+  const orig=f.preco_medio==null?"":String(f.preco_medio);
+  const ret=new Set([...document.querySelectorAll(".mv-ret:checked")].map(c=>c.dataset.loja));
+  const auto=el.dataset.auto;
+  if(!ret.has(fonte)){if(auto!=null&&el.value===auto)el.value=orig;delete el.dataset.auto;a.hidden=true;return;}
+  // Um valor escrito à mão no campo não se toca.
+  if(el.value.trim()!==orig&&el.value!==auto)return;
+  const nova=PRIORIDADE.concat(Object.keys(precos).filter(l=>!PRIORIDADE.includes(l)))
+    .find(l=>!ret.has(l)&&precos[l]&&!precos[l].retirado&&Number(precos[l].preco)>0);
+  el.value=nova?String(precos[nova].preco):"";el.dataset.auto=el.value;a.hidden=false;
+  a.innerHTML=nova?'Vinha de <b>'+esc(NOME_LOJA[fonte]||fonte)+'</b>; passa a <b>'+esc(eur(precos[nova].preco))+'</b>, de <b>'+esc(NOME_LOJA[nova]||nova)+'</b>.'
+    :'Vinha de <b>'+esc(NOME_LOJA[fonte]||fonte)+'</b> e não sobra outra fonte: o vinho fica <b>sem preço de referência</b>.';
+}
+function precosRetirados(){
+  const antes=(VINHO.ficha||{}).precos,cs=[...document.querySelectorAll(".mv-ret")];
+  if(!antes||!cs.length)return undefined;
+  const hoje=new Date().toISOString().slice(0,10),novo=JSON.parse(JSON.stringify(antes));let mudou=false;
+  cs.forEach(c=>{const x=novo[c.dataset.loja];if(!x||!!x.retirado===c.checked)return;mudou=true;
+    if(c.checked){x.retirado=true;x.retirado_em=hoje;}else{delete x.retirado;delete x.retirado_em;}});
+  return mudou?novo:undefined;
+}
+function lerValor(tp,cru){
+  cru=String(cru||"").trim();
+  if(cru==="")return null;
+  if(tp==="lista"){const l=cru.split(",").map(x=>x.trim()).filter(Boolean);return l.length?l:null;}
+  if(tp==="num"||tp==="int"){const n=parseFloat(cru.replace(",","."));return isFinite(n)?(tp==="int"?Math.round(n):n):null;}
+  return cru;
+}
+function mesmoValor(a,b){
+  const vazio=x=>x==null||x===""||(Array.isArray(x)&&!x.length);
+  if(vazio(a)||vazio(b))return vazio(a)&&vazio(b);
+  if(Array.isArray(a)||Array.isArray(b))return JSON.stringify([].concat(a).map(String))===JSON.stringify([].concat(b).map(String));
+  if(typeof b==="number")return Number(a)===b;
+  return String(a)===String(b);
+}
+async function guardarVinho(){
+  const v=VINHO,f=v.ficha||{},campos={};
+  for(const [k,,tp] of CAMPOS_ED){
+    const el=document.getElementById("mv-"+k);
+    if(!el||el.disabled)continue;
+    const val=lerValor(tp,el.value);
+    if(!mesmoValor(f[k],val))campos[k]=val;
+  }
+  const precos=precosRetirados();if(precos)campos.precos=precos;
+  if(campos.tipo===null)return alert("A cor não pode ficar vazia — é parte da identidade do vinho.");
+  const ident=document.getElementById("mv-ident").checked;
+  const nome=ident?document.getElementById("mv-nome").value.trim():v.nome;
+  const produtor=ident?document.getElementById("mv-produtor").value.trim():(v.produtor||"");
+  const ano=ident?document.getElementById("mv-ano").value.trim():String(v.ano??"");
+  if(ident&&!nome)return alert("O nome não pode ficar vazio.");
+  if(ident&&ano&&!/^\\d{4}$/.test(ano))return alert("A colheita tem quatro algarismos (ou fica vazia).");
+  const identMudou=ident&&(nome!==v.nome||produtor!==(v.produtor||"")||ano!==String(v.ano??""));
+  const n=Object.keys(campos).length;
+  if(!n&&!identMudou)return alert("Nada mudou.");
+  if(!confirm("Gravar "+(n?n+" campo(s)":"")+(n&&identMudou?" e ":"")+(identMudou?"a identidade (nome/produtor/colheita)":"")+" deste vinho no catálogo?"))return;
+  const b=document.getElementById("mv-guardar");if(b){b.disabled=true;b.textContent="A gravar…";}
+  try{
+    const r=await post("/vinho",{acao:"editar",id:v.id,campos,identidade:identMudou,nome,produtor,ano});
+    alert("Gravado: "+(r.campos||0)+" corrigido(s)"+(r.apagados?", "+r.apagados+" apagado(s)":"")+(identMudou?" e a identidade":"")+". Fica no histórico.");
+    EDITAR=false;await abrirVinho(v.id);carregarCatalogo();
+  }catch(e){alert("Não gravou: "+e.message);if(b){b.disabled=false;b.textContent="Guardar";}}
+}
+const idLink=id=>'<a href="#" onclick="abrirVinho('+Number(id)+');return false" title="Abrir a ficha do vinho">#'+esc(id)+'</a>';
+
+// ── Onde procurar ── (um visto por sítio; por omissão, todos)
+const SITIOS_P=[["vivino","Vivino"],["garrafeira_nacional","Garrafeira Nacional"],["granvine","Granvine"],["vinha","Vinha.pt"],["portugal_vineyards","Portugal Vineyards"]];
+function sitiosHTML(p){
+  document.getElementById(p+"-sitios").innerHTML='<span class="rot">Onde procurar:</span>'+
+    SITIOS_P.map(([id,n])=>'<label><input type="checkbox" class="sitio-'+p+'" value="'+id+'" checked> '+esc(n)+'</label>').join("")+
+    ' <a href="#" onclick="sitiosTodos(\\''+p+'\\',true);return false">todos</a> · <a href="#" onclick="sitiosTodos(\\''+p+'\\',false);return false">nenhum</a>';
+  sitiosSincronizar(p);
+}
+function sitiosTodos(p,on){document.querySelectorAll(".sitio-"+p).forEach(c=>c.checked=on);}
+function sitiosMarcar(p,ids){document.querySelectorAll(".sitio-"+p).forEach(c=>c.checked=ids.includes(c.value));sitiosSincronizar(p);}
+// "Só preços" não abre o Vivino: o visto dele fica apagado (e não conta).
+function sitiosSincronizar(p){
+  const precos=document.getElementById(p==="cat"?"pesquisa":"novo-pesquisa").value==="precos";
+  const c=document.querySelector(".sitio-"+p+'[value="vivino"]');
+  if(c){c.disabled=precos;c.closest("label").classList.toggle("off",precos);c.closest("label").title=precos?"«Só preços» não abre o Vivino":"";}
+}
+const sitiosEscolhidos=p=>[...document.querySelectorAll(".sitio-"+p+":checked:not(:disabled)")].map(c=>c.value);
 
 // ── Registo ──
 function comecar(ir){
@@ -735,7 +1032,7 @@ async function abrirSim(){
   sim=await fetch("/simulacao?nome="+encodeURIComponent(n)).then(r=>r.json());simNome=n;
   const rows=[];
   (sim.vinhos||[]).forEach((v,i)=>{
-    rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">'+(v.id?"#"+esc(v.id):'<span class="tag">novo</span>')+" "+esc(v.nome)+(v.produtor&&!v.id?' <span class="nota">· '+esc(v.produtor)+'</span>':"")+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">'+(v.id?"— nada a mudar; só regista a verificação":"— não se encontrou nada: é criado só com o que escreveste")+'</span>':"")+'</td></tr>');
+    rows.push('<tr class="vinho'+(v.aplicar===false?' off':'')+'" id="v'+i+'"><td><input type="checkbox" data-v="'+i+'"'+(v.aplicar!==false?" checked":"")+' onchange="marca(this)"></td><td colspan="3">'+(v.id?idLink(v.id):'<span class="tag">novo</span>')+" "+esc(v.nome)+(v.produtor&&!v.id?' <span class="nota">· '+esc(v.produtor)+'</span>':"")+(v.ano?" "+esc(v.ano):"")+' <span class="tag">'+esc(v.estado)+'</span>'+(v.pagina?' <span class="nota">página: “'+esc(v.pagina)+'”</span>':"")+(!(v.alteracoes||[]).length?' <span class="nota">'+(v.id?"— nada a mudar; só regista a verificação":"— não se encontrou nada: é criado só com o que escreveste")+'</span>':"")+'</td></tr>');
     (v.alteracoes||[]).forEach((a,j)=>{
       // Comparado com a BD de agora (o servidor): "ja" — já lá está, não há
       // nada a fazer; "mudou" — foi corrigido depois de simular: mostra-se
@@ -788,11 +1085,11 @@ function garrPintar(){
     '<tr><td><input type="checkbox" class="garr-c" data-id="'+x.vinho_id+'" checked onchange="garrBotao()"></td>'+
     '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="tag">'+esc(GARR_CASO[x.caso]||x.caso)+'</span></td>'+
     '<td>'+esc(x.garrafeira)+'<br><span class="nota">'+esc(x.dono)+'</span></td>'+
-    '<td><span class="antes">'+lnk(x.antes)+'</span><br>→ '+lnk(x.depois)+'<br><span class="nota">catálogo #'+x.catalogo_id+' · '+esc(x.catalogo_origem||"")+'</span></td></tr>').join("")+'</table>'
+    '<td><span class="antes">'+lnk(x.antes)+'</span><br>→ '+lnk(x.depois)+'<br><span class="nota">catálogo '+idLink(x.catalogo_id)+' · '+esc(x.catalogo_origem||"")+'</span></td></tr>').join("")+'</table>'
     :'<p class="nota">Nada a corrigir.</p>';
   if(P.length)h+='<p class="nota" style="margin-top:12px"><b>Por confirmar</b> — o link da garrafeira parece errado, mas o do catálogo ainda não foi confirmado. Abre os dois: se o do catálogo for o certo, marca <b>usar o do catálogo</b> e vai com «Corrigir os marcados». Na dúvida, verifica primeiro o vinho do catálogo no Vivino:</p><table>'+P.map(x=>
     '<tr><td>'+(x.catalogo_url?'<label class="nota" style="white-space:nowrap"><input type="checkbox" class="garr-f" data-id="'+x.vinho_id+'" onchange="garrBotao()"> usar o do catálogo</label>':'')+'</td>'+
-    '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+' · '+esc(x.dono)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>→ catálogo #'+x.catalogo_id+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
+    '<td><b>'+esc(x.nome)+'</b>'+(x.ano?" "+esc(x.ano):"")+'<br><span class="nota">'+esc(x.garrafeira)+' · '+esc(x.dono)+'</span></td><td><span class="antes">'+lnk(x.antes)+'</span><br>→ catálogo '+idLink(x.catalogo_id)+': '+lnk(x.catalogo_url)+'</td></tr>').join("")+
     '</table><button style="margin-top:6px" onclick="garrParaCatalogo()">Escolher estes para verificar no Vivino</button>';
   if(ficam)h+='<p class="nota">Ficam como estão: '+esc(ficam)+'.</p>';
   document.getElementById("garr-lista").innerHTML=h;
@@ -800,12 +1097,12 @@ function garrPintar(){
   garrBotao();
 }
 function garrBotao(){document.getElementById("btn-garr").disabled=!document.querySelectorAll(".garr-c:checked,.garr-f:checked").length;}
-// Os "Por confirmar" passam para a escolha lá em cima, já com «Só o Vivino».
+// Os "Por confirmar" passam para a escolha lá em cima, já só com o Vivino marcado.
 function garrParaCatalogo(){
   for(const x of GARR.por_confirmar||[]){if(ESC.size>=50)break;ESC.add(x.catalogo_id);}
-  document.getElementById("cat-so").checked=true;document.getElementById("pesquisa").value="vivino";
+  document.getElementById("cat-so").checked=true;document.getElementById("pesquisa").value="completo";sitiosMarcar("cat",["vivino"]);
   pintarCatalogo();document.getElementById("c-escolher").scrollIntoView({behavior:"smooth",block:"start"});
-  alert("Ficaram escolhidos lá em cima, com «Só o Vivino». Simula-os (ou enriquece) e volta aqui a comparar.");
+  alert("Ficaram escolhidos lá em cima, só com o Vivino marcado. Simula-os (ou enriquece) e volta aqui a comparar.");
 }
 async function garrCorrigir(){
   const ids=[...document.querySelectorAll(".garr-c:checked")].map(c=>+c.dataset.id);
@@ -835,7 +1132,7 @@ function fichPintar(){
   const ficam=Object.entries(FICH_CONTA).filter(([k])=>C[k]).map(([k,t])=>C[k]+" "+t).join(" · ");
   let h=L.length?'<table><tr><th></th><th>Campo</th><th>Agora</th><th>Catálogo</th></tr>'+L.map(x=>{n+=x.campos.length;
     return '<tr class="vinho"><td><input type="checkbox" checked onchange="fichVinho(this,'+x.vinho_id+')"></td><td colspan="3">'+esc(x.nome)+(x.ano?" "+esc(x.ano):"")+
-      ' <span class="nota" style="font-weight:400">· '+esc(x.garrafeira)+' ('+esc(x.dono)+') · catálogo #'+esc(x.catalogo_id)+'</span></td></tr>'+
+      ' <span class="nota" style="font-weight:400">· '+esc(x.garrafeira)+' ('+esc(x.dono)+') · catálogo '+idLink(x.catalogo_id)+'</span></td></tr>'+
       x.campos.map(c=>'<tr class="alt"><td><input type="checkbox" class="fich-c" data-v="'+x.vinho_id+'" data-c="'+esc(c.campo)+'" checked onchange="fichMarca(this)"></td>'+
         '<td>'+esc(FICH_CAMPO[c.campo]||c.campo)+'<br><span class="tag">'+(c.caso==="vazio"?"vazio":"mais recente")+'</span></td>'+
         '<td><span class="antes">'+fichValor(c.campo,c.antes)+'</span></td>'+
@@ -880,7 +1177,7 @@ async function procurarNovos(){
   if(!vinhos.length)return alert("Escreve pelo menos um nome.");
   if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
   if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
-  try{await post("/novo",{vinhos,pesquisa:document.getElementById("novo-pesquisa").value});comecar(true);}catch(e){alert(e.message);}
+  try{await post("/novo",{vinhos,pesquisa:document.getElementById("novo-pesquisa").value,sitios:sitiosEscolhidos("novo")});comecar(true);}catch(e){alert(e.message);}
 }
 
 // ── Nomes de vinhos ──
@@ -1034,6 +1331,7 @@ async function prodTirar(chave){
 
 filtrosHTML();
 ordensHTML();
+sitiosHTML("cat");sitiosHTML("novo");
 novaLinha();
 abrirTab(location.hash.slice(1));
 carregarCatalogo();

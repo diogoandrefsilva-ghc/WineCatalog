@@ -33,7 +33,9 @@
 // Definições), ENSAIO=true (não grava nada), EXECUCAO (o id do run),
 // IDS=1,2,3 (só estes vinhos, escolhidos no painel), NOVO=[…] (vinhos novos),
 // APLICAR=<ficheiro> (grava uma simulação revista), PARAR=<ficheiro> (o
-// botão "Parar" do painel: se o ficheiro existir, pára entre dois vinhos).
+// botão "Parar" do painel: se o ficheiro existir, pára entre dois vinhos),
+// SITES=vivino,garrafeira_nacional,granvine,vinha,portugal_vineyards (onde
+// se procura; vazio = todos).
 // =====================================================================
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
@@ -53,10 +55,14 @@ const SERPER_URL = process.env.SEARCH_API_URL || "https://google.serper.dev/sear
 //                 (vazia, ou que também veio do Vivino). O preço médio só
 //                 muda se NÃO tiver vindo de uma loja: sem as lojas nesta
 //                 corrida, não há nada que diga que o delas está errado;
-//  · "precos"   — só as lojas (GN → Granvine → Vinha.pt), pela ordem, a
-//                 parar na primeira que tenha o vinho; o preço médio fica
-//                 com esse. Não abre o Vivino nem regista verificação.
+//  · "precos"   — só as lojas (GN → Granvine → Vinha.pt → Portugal
+//                 Vineyards), pela ordem, a parar na primeira que tenha o
+//                 vinho; o preço médio fica com esse. Não abre o Vivino nem
+//                 regista verificação.
 // LOJAS=false (o nome antigo) é o mesmo que MODO=vivino.
+// E ONDE se procura é o SITES (ver `SITIOS`, a seguir às LOJAS): desde
+// 27/09/2026 o painel tem um visto por sítio, e o "Só o Vivino" do painel
+// passou a ser "Tudo" só com o Vivino marcado.
 const MODO = ["completo", "vivino", "precos"].includes(process.env.MODO) ? process.env.MODO
   : process.env.LOJAS === "false" ? "vivino" : "completo";
 // As lojas só no motor browser (no PC).
@@ -101,6 +107,10 @@ const GENERICAS = new Set((
   "tinto tinta red branco white rose rosado blanc " +
   "douro alentejo alentejano dao bairrada tejo lisboa setubal peninsula verde doc vr " +
   "reserva grande colheita selecionada seleccionada garrafeira superior especial " +
+  // A Portugal Vineyards escreve os nomes em inglês mesmo em /pt/ ("Cartuxa
+  // Reserve Red 2017"): a gama em inglês é tão genérica como em português,
+  // e sem isto o "Reserve" contava como palavra a mais (27/09/2026).
+  "reserve grand " +
   "quinta herdade casa adega monte vinhas velhas old vines"
 ).split(" "));
 function norm(s) {
@@ -255,7 +265,7 @@ async function lerPagina(page) {
       comidas,
       // O preço À VISTA, para as lojas sem dado estruturado (só se usa nelas).
       precoTexto: (() => {
-        const el = document.querySelector(".product-info-main .price, .summary .price, .current-price, " +
+        const el = document.querySelector("#our_price_display, .product-info-main .price, .summary .price, .current-price, " +
           ".product-prices .price, .product-price, [class*=product] [class*=price]");
         return el ? limpa(el.innerText).slice(0, 80) : null;
       })(),
@@ -686,7 +696,9 @@ function imagemDe(u, { vivino = false } = {}) {
   if (url.startsWith("//")) url = "https:" + url;
   // Fora: logótipos e as imagens genéricas que as lojas mostram quando não
   // têm fotografia ("sem imagem", "em breve", a imagem por omissão da loja).
-  if (!/^https?:\/\//i.test(url) || /logo|placeholder|no[-_]?(image|photo|img)|sem[-_]?(imagem|foto)|image[-_]?not|not[-_]?available|coming[-_]?soon|em[-_]?breve|default|banner|share|woocommerce-placeholder/i.test(url)) return null;
+  // O "default" só como palavra solta (/default/, pt-default-…): o PrestaShop
+  // da Portugal Vineyards chama "large_default" a TODAS as fotografias.
+  if (!/^https?:\/\//i.test(url) || /logo|placeholder|no[-_]?(image|photo|img)|sem[-_]?(imagem|foto)|image[-_]?not|not[-_]?available|coming[-_]?soon|em[-_]?breve|\bdefault\b|banner|share|woocommerce-placeholder/i.test(url)) return null;
   if (vivino && !/images\.vivino\.com/i.test(url)) return null;
   return url;
 }
@@ -846,9 +858,11 @@ function precoDaPagina(info, url, { vivino = false } = {}) {
   return { preco: Math.round(preco * 100) / 100, url: String(url || "").split(/[?#]/)[0] };
 }
 
-// ── As lojas: Garrafeira Nacional, Granvine, Vinha.pt ─────────────────
+// ── As lojas: Garrafeira Nacional, Granvine, Vinha.pt, Portugal Vineyards ─
 // A prioridade do preço, decidida pelo dono (25/09/2026, e a Vinha.pt no
-// mesmo dia): Garrafeira Nacional → Granvine → Vinha → Vivino. Guardam-se
+// mesmo dia; a Portugal Vineyards a 27/09/2026, "tem vinhos que as outras
+// não têm"): Garrafeira Nacional → Granvine → Vinha → Portugal Vineyards →
+// Vivino. Guardam-se
 // TODOS em `precos` (cada um com o link, a colheita e a data), e o
 // `preco_medio` fica com o primeiro que houver, com a origem da loja.
 //
@@ -866,8 +880,34 @@ const LOJAS = [
   { id: "vinha", nome: "Vinha.pt", origem: "loja-vinha", casa: "https://www.vinha.pt/",
     // WooCommerce: confirmado na 1.ª corrida (as outras davam 404).
     procuras: [q => `https://www.vinha.pt/?s=${encodeURIComponent(q)}&post_type=product`] },
+  // PrestaShop 1.6 (os produtos são /pt/<categoria>/<id>-<nome>-<ean>.html e
+  // a procura é `controller=search&search_query=`, visto nos resultados do
+  // Google). Escrita sem a ver, como a Vinha.pt: três endereços, e o
+  // formulário da página inicial se nenhum der; o `como` diz qual resultou.
+  // Os nomes vêm em INGLÊS ("Cartuxa Red 2019") — as regras de nome já
+  // conhecem red/white/reserve.
+  { id: "portugal_vineyards", nome: "Portugal Vineyards", origem: "loja-portugal-vineyards",
+    casa: "https://www.portugalvineyards.com/pt/",
+    procuras: [
+      q => `https://www.portugalvineyards.com/pt/pesquisa?controller=search&orderby=position&orderway=desc&search_query=${encodeURIComponent(q)}`,
+      q => `https://www.portugalvineyards.com/pt/search?controller=search&orderby=position&orderway=desc&search_query=${encodeURIComponent(q)}`,
+      q => `https://www.portugalvineyards.com/index.php?controller=search&search_query=${encodeURIComponent(q)}`,
+    ] },
 ];
-const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "vivino"];
+const PRIORIDADE_PRECO = ["garrafeira_nacional", "granvine", "vinha", "portugal_vineyards", "vivino"];
+// Os SÍTIOS onde se procura (SITES=vivino,garrafeira_nacional,…; 27/09/2026,
+// pedido do dono: por omissão os cinco, e um visto por sítio no painel para
+// procurar só em alguns). Vazio, ou nenhum conhecido, é todos. Um sítio que
+// não se procura nesta corrida não perde nada: o preço que já lá estava em
+// `precos` continua, e conta para o preço de referência como sempre.
+const SITIOS = (() => {
+  const todos = ["vivino", ...LOJAS.map(l => l.id)];
+  const pedidos = String(process.env.SITES || "").split(",").map(x => x.trim()).filter(x => todos.includes(x));
+  return new Set(pedidos.length ? pedidos : todos);
+})();
+// O Vivino abre-se se estiver marcado — e nunca no "Só preços".
+const VIVINO_LIGADO = MODO !== "precos" && SITIOS.has("vivino");
+const LOJAS_ESCOLHIDAS = LOJAS.filter(l => SITIOS.has(l.id));
 // Garrafas que não são "a" garrafa: outro tamanho, ou mais do que uma.
 // Qualquer volume que não seja o de uma garrafa (0,75 L, 75 cl, 750 ml): a
 // Granvine escreve "1,5Lt", e o "Cartuxa Tinto 2020 1,5Lt" (48,89 €) passou
@@ -897,11 +937,12 @@ async function produtosDaPagina(page, chaves) {
       try { const c = new URL(href).pathname.toLowerCase(); return c === "/" || c.split("/").some(s => LIXO.has(s)); }
       catch { return true; }
     };
-    const cartoes = ".product-item, li.product, .product-item-info, .product-card, .product-miniature, article.product, .product, .grid-product, .card-wrapper";
+    const cartoes = ".product-item, li.product, .product-item-info, .product-card, .product-miniature, article.product, .product, .grid-product, .card-wrapper, " +
+      ".ajax_block_product, .product-container";
     const add = (el, cartao) => {
       const href = (el.href || "").split(/[?#]/)[0];
       if (!href || vistos.has(href) || lixo(href) || new URL(href).host !== location.host) return;
-      const nomeEl = cartao.querySelector("a.product-item-link, .product-item-name, .product-name, .product-title, .woocommerce-loop-product__title, .card__heading, h2, h3") || el;
+      const nomeEl = cartao.querySelector("a.product-item-link, .product-item-name, a.product-name, .product-name, .product-title, .woocommerce-loop-product__title, .card__heading, h2, h3, h5") || el;
       const nome = limpa(nomeEl.innerText || el.innerText || el.getAttribute("title"));
       if (!nome || nome.length > 160) return;
       vistos.set(href, { href, nome, texto: limpa(cartao.innerText).slice(0, 200),
@@ -909,7 +950,8 @@ async function produtosDaPagina(page, chaves) {
           || cartao.querySelector('[itemprop="price"]')?.getAttribute("content") || null });
     };
     const sel = 'a.product-item-link, .product-item a[href], li.product a[href], .product-item-info a[href], .product-card a[href], ' +
-      '.product-miniature a[href], .product-title a[href], a.woocommerce-LoopProduct-link, a[href*="/products/"]';
+      '.product-miniature a[href], .product-title a[href], a.woocommerce-LoopProduct-link, a[href*="/products/"], ' +
+      '.ajax_block_product a.product-name, .product-container a.product-name';
     for (const el of document.querySelectorAll(sel)) add(el, el.closest(cartoes) || el);
     let como = "seletores";
     if (!vistos.size && chaves.length) {
@@ -1220,7 +1262,8 @@ function palavrasDaRegiao(v) {
 // lados — incluindo nenhuma: "Herdade dos Grous" não é o "…Grous Reserva".
 function mencao(t) {
   const n = ` ${norm(t)} `;
-  if (/ (grande|gran) (reserva|reserve) | grande escolha /.test(n)) return "grande reserva";
+  // "Grand Reserve": a Portugal Vineyards escreve em inglês (27/09/2026).
+  if (/ (grande|grand|gran) (reserva|reserve) | grande escolha /.test(n)) return "grande reserva";
   if (/ garrafeira /.test(n)) return "garrafeira";
   if (/ colheita seleccionada | colheita selecionada /.test(n)) return "colheita selecionada";
   if (/ (reserva|reserve) /.test(n)) return "reserva";
@@ -1347,6 +1390,9 @@ async function main() {
     if (!plano?.correr) { console.log(`Hoje não: ${plano?.motivo}`); return; }
   }
   console.log(`A tratar ${plano.vinhos.length} vinho(s) — ${plano.motivo} · motor ${MOTOR}${ENSAIO ? " (ENSAIO, não grava)" : ""}`);
+  if (MOTOR === "browser")
+    console.log(`Onde: ${[VIVINO_LIGADO ? "Vivino" : null, ...(LOJAS_LIGADAS ? LOJAS_ESCOLHIDAS.map(l => l.nome) : [])].filter(Boolean).join(", ") || "nenhum sítio"}` +
+      ` · ${MODO === "precos" ? "só preços (e imagem)" : MODO === "vivino" ? "só o Vivino" : "a ficha toda"}`);
 
   // O Playwright só se carrega no motor que o usa: no Actions (Serper) nem
   // sequer está instalado.
@@ -1381,7 +1427,7 @@ async function main() {
       console.log(`[${i + 1}/${total}] ${v.id ? "#" + v.id : "NOVO"} ${v.nome}${v.ano && !String(v.nome).includes(String(v.ano)) ? " " + v.ano : ""}`);
       let res;
       try {
-        res = MODO === "precos" && MOTOR === "browser" ? { estado: "precos", detalhe: {} }
+        res = !VIVINO_LIGADO && MOTOR === "browser" ? { estado: MODO === "precos" ? "precos" : "sem_vivino", detalhe: {} }
           : MOTOR === "serper" ? await verificarSerper(v) : await verificar(page, v);
       }
       catch (e) {
@@ -1417,7 +1463,7 @@ async function main() {
       if (MOTOR === "browser" && LOJAS_LIGADAS && res.estado !== "bloqueado") {
         res.detalhe = res.detalhe || {};
         res.detalhe.lojas = [];
-        for (const loja of LOJAS) {
+        for (const loja of LOJAS_ESCOLHIDAS) {
           if (lojasBloqueadas.has(loja.id)) continue;
           if (retirada(loja.id)) { console.log(`   ${loja.nome}: retirada à mão — não se lê`); continue; }
           await pausa();
@@ -1547,6 +1593,7 @@ function linksDoVinho(lista) {
     } else if (/(^|\.)garrafeiranacional\.com$/.test(h)) out.lojas.garrafeira_nacional = u;
     else if (/(^|\.)granvine\.com$/.test(h)) out.lojas.granvine = u;
     else if (/(^|\.)vinha\.pt$/.test(h)) out.lojas.vinha = u;
+    else if (/(^|\.)portugalvineyards\.com$/.test(h)) out.lojas.portugal_vineyards = u;
     else out.ignorados.push(u);
   }
   return out;
@@ -1561,7 +1608,7 @@ async function vinhosNovos(lista) {
     // Os links que o admin colou: foi ele que os abriu, e valem mais do que
     // uma procura. O do Vivino substitui o que houver (se o vinho já existir).
     const lk = linksDoVinho(x.links);
-    if (lk.ignorados.length) console.log(`"${novo.nome}": links postos de lado (não são do Vivino /w/<nº>, GN, Granvine nem Vinha.pt): ${lk.ignorados.join(" ")}`);
+    if (lk.ignorados.length) console.log(`"${novo.nome}": links postos de lado (não são do Vivino /w/<nº>, GN, Granvine, Vinha.pt nem Portugal Vineyards): ${lk.ignorados.join(" ")}`);
     const extra = { links_lojas: lk.lojas, ...(lk.vivino ? { vivino_url: lk.vivino, vivino_confiado: true } : {}) };
     const ja = await rpc("vivino_achar", { p_nome: novo.nome, p_produtor: novo.produtor, p_ano: novo.ano });
     if (ja) {
@@ -1723,8 +1770,8 @@ async function aplicarPlano(pl, quem = QUEM) {
     if (r.ficou.length)
       console.log(`   ! não entrou (o que lá está é mais forte): ${r.ficou.map(f => `${f.campo} [${f.origem}]`).join(", ")}`);
   }
-  // Só preços: o Vivino não foi aberto, não há verificação a registar.
-  if (pl.estado === "precos") return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
+  // Só preços, ou o Vivino desmarcado: não foi aberto, não há verificação a registar.
+  if (pl.estado === "precos" || pl.estado === "sem_vivino") return Object.values(porOrigem).reduce((n, c) => n + Object.keys(c).length, 0);
   // E a verificação fica RECUSADA, e não "aceite": é isso que impede o
   // mesmo link de voltar a ser proposto para este vinho (`recusados`).
   await rpc("vivino_gravar", { p_vinho_id: pl.id, p_res: pl.registo, p_execucao: EXECUCAO,

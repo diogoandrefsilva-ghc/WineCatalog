@@ -699,7 +699,7 @@ BEGIN
       'imagem_de', CASE WHEN COALESCE(v.ficha ->> 'imagem_url', '') = '' THEN NULL
                         WHEN v.ficha ->> 'imagem_url' ~* 'images\.vivino\.com' OR v.origens -> 'imagem_url' ->> 'o' ~ '^vivino-' THEN 'vivino'
                         WHEN v.ficha ->> 'imagem_url' ~* 'winecatalog-rotulos' THEN 'nossa'
-                        WHEN v.ficha ->> 'imagem_url' ~* '(garrafeiranacional\.com|granvine\.com|vinha\.pt)' OR v.origens -> 'imagem_url' ->> 'o' ~ '^loja-' THEN 'loja'
+                        WHEN v.ficha ->> 'imagem_url' ~* '(garrafeiranacional\.com|granvine\.com|vinha\.pt|portugalvineyards\.com)' OR v.origens -> 'imagem_url' ->> 'o' ~ '^loja-' THEN 'loja'
                         ELSE 'outro' END,
       -- O formato do link: 'ok' (/<nome>/w/<nº>, limpo), 'por_limpar' (tem o
       -- número do vinho mas também país/língua/?year= — funciona, e o script

@@ -2,7 +2,7 @@
 
 O script `vivino-verificar.mjs` confere os links do Vivino do catálogo, **sem
 IA**, lê a nota e as avaliações, e (no teu computador) o **preço na Garrafeira
-Nacional, na Granvine e na Vinha.pt** — e o que as páginas dizem do vinho
+Nacional, na Granvine, na Vinha.pt e na Portugal Vineyards** — e o que as páginas dizem do vinho
 (fotografia, castas, região, teor, estágio, harmonização, notas de prova), só para os
 campos que o catálogo ainda tem **vazios**. **Escreve no catálogo** o que encontra com certeza;
 cada campo que muda fica em **Alertas › Alterações ao catálogo** (e na ficha
@@ -16,8 +16,8 @@ colheita isso é uma página a mais por vinho, com a mesma pausa; num vinho
 sem colheita a página já é a de todas, e só essa se grava. As apps mostram a
 da colheita a partir de 100 avaliações, e a global abaixo disso.
 
-O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vinha.pt → Vivino.
-Os três ficam guardados na ficha ("Preços nas lojas"), com o link, a colheita
+O preço de mercado segue esta ordem: Garrafeira Nacional → Granvine → Vinha.pt →
+Portugal Vineyards → Vivino. Ficam todos guardados na ficha ("Preços nas lojas"), com o link, a colheita
 e a data. Se a loja só tiver outra colheita, aceita-se e fica escrita ao lado.
 
 Tem dois motores:
@@ -91,7 +91,10 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
      trocam a escolha de agora e mostram só os escolhidos, para veres o que
      vai correr e desmarcares algum. **Ver só os escolhidos** mostra a
      escolha, pela ordem em que corre. Até 50 de cada vez.
-  3. **Correr** — o que procurar (ver abaixo), **"trocar a imagem destes,
+  3. **Correr** — **onde procurar**: um visto por sítio (Vivino, Garrafeira
+     Nacional, Granvine, Vinha.pt, Portugal Vineyards — todos marcados de
+     cada vez que abres o painel; "todos" · "nenhum"); **o que ler** (ver
+     abaixo); **"trocar a imagem destes,
      venha de onde vier"** (os escolhidos ficam com a imagem da primeira
      loja que os tenha, ou do Vivino, mesmo a de outro site — a vossa
      fotografia nunca), e:
@@ -101,24 +104,28 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
 
   A lista mostra a **miniatura da imagem** de cada vinho (e de onde veio:
   Vivino, loja, vossa, outro site; "✕" se já não abre) e **os preços de
-  cada sítio** (GN, Granvine, Vinha.pt, Vivino — o que é o preço de
+  cada sítio** (GN, Granvine, Vinha.pt, Portugal Vineyards, Vivino — o que é o preço de
   referência a negrito com ★; se veio de outro sítio, uma linha
   "referência" diz de onde; passa o rato para ver o nome na loja, a colheita
   e a data). Corre sempre só o que está marcado: o painel já não escolhe
   vinhos sozinho (a "fila" ficou para o GitHub e o `npm run vivino`).
-- **Procurar** (no passo 3; o Vinho novo tem o seu):
-  - **Tudo** — Vivino e lojas, a ficha toda (só preenche campos vazios).
-  - **Só o Vivino** — confirma o link (abre, é o vinho certo) e, se preciso,
-    procura o certo; lê a nota e as avaliações; e a **imagem**, se estiver
-    vazia ou também tiver vindo do Vivino. Não abre as lojas (poupa uns
-    30–60 s por vinho), e por isso **não mexe num preço médio que veio de
-    uma loja**; os outros campos da ficha também não.
-  - **Só preços (e imagem)** — não abre o Vivino: Garrafeira Nacional →
-    Granvine → Vinha.pt, e pára na primeira que tenha o vinho; o preço médio
+  **Carrega no nome de um vinho** para abrir a ficha dele (ver "A ficha de
+  um vinho", abaixo).
+- **Onde procurar e o que ler** (no passo 3; o Vinho novo tem os seus):
+  - os **sítios marcados** são os únicos que se abrem. Só com o Vivino
+    marcado é o antigo "Só o Vivino": confirma o link (e, se preciso,
+    procura o certo), lê a nota, as avaliações e o que a página diz do
+    vinho, e poupa uns 30–60 s por vinho. Sem o Vivino marcado, não se abre
+    nem se regista verificação. Uma loja desmarcada não perde nada: o preço
+    que já lá estava fica, e conta para o preço de referência como sempre.
+  - **Ler: Tudo** — a ficha toda (só preenche campos vazios).
+  - **Ler: Só preços (e imagem)** — não abre o Vivino (o visto dele fica
+    apagado): as lojas marcadas, pela ordem GN → Granvine → Vinha.pt →
+    Portugal Vineyards, e pára na primeira que tenha o vinho; o preço médio
     fica com esse, e a imagem dessa loja entra se a atual estiver vazia ou
-    tiver vindo do Vivino.
+    tiver vindo do Vivino. Precisa de pelo menos uma loja marcada.
   - **A imagem**, em qualquer modo, segue a ordem das lojas (GN → Granvine
-    → Vinha.pt) e só depois o Vivino: a das lojas é mais nítida e igual de
+    → Vinha.pt → Portugal Vineyards) e só depois o Vivino: a das lojas é mais nítida e igual de
     vinho para vinho. Uma imagem que veio do Vivino é trocada pela da loja;
     a vossa fotografia e a de outros sites nunca.
 - **Registo** — uma linha por vinho, enquanto corre, e por cima uma **barra**
@@ -147,7 +154,7 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
   simulação: o vinho só é criado quando a gravares. Se já existir,
   enriquece o que lá está.
   Em **Links (opcional)** podes colar os endereços que já tens (Vivino,
-  Garrafeira Nacional, Granvine, Vinha.pt — separados por espaço): o script
+  Garrafeira Nacional, Granvine, Vinha.pt, Portugal Vineyards — separados por espaço): o script
   abre-os diretamente em vez de procurar, e o nome não os recusa (só a cor e
   a colheita contam). O do Vivino tem de ser o de um vinho (`/w/<nº>`). Sem
   produtor, propõe o que a página do Vivino diz (a adega) — aparece na
@@ -155,8 +162,20 @@ vinhos** e **Produtores** (o separador aberto fica no endereço — `#info`,
   O mesmo vale para **qualquer vinho do catálogo sem produtor** que o script
   trate (Simular ou Enriquecer): só preenche um produtor vazio, nunca troca
   um que já lá esteja (isso é o Editar da app). Para os apanhar todos de uma
-  vez: **Produtor › sem produtor › Marcar todos os que passam**, com
-  **Procurar: Só o Vivino**.
+  vez: **Produtor › sem produtor › Marcar todos os que passam**, só com o
+  **Vivino** marcado.
+- **A ficha de um vinho** (carrega no nome, na lista; ou no `#id`, nas
+  simulações e nas garrafeiras) — o back-office: o vinho inteiro, cada campo
+  com **de onde veio** (a origem, a força e a data), os preços de cada
+  sítio, as fontes, as últimas verificações do Vivino, as linhas fundidas
+  nele e o histórico. **✏️ Editar** corrige à mão — os mesmos campos do
+  Editar da app, o interruptor da identidade (nome, produtor, colheita) e o
+  "retirar" de cada fonte de preço (se for a do preço de referência, o campo
+  passa ao da seguinte, pela ordem de sempre). Só vai o que mudaste, com a
+  força de uma correção à mão (4 no rótulo, 3 na nota, no preço e na
+  imagem), e fica no histórico como "painel do PC (admin)". Se a identidade
+  nova for a de outro vinho que já existe, não grava e diz qual — juntam-se
+  nos Duplicados da app. Esvaziar um campo apaga-o.
 - **As garrafeiras × o catálogo**:
   - **Links do Vivino nas garrafeiras** — **Comparar** compara o link de
     cada vinho das garrafeiras de toda a gente com o do catálogo e mostra os
@@ -220,8 +239,9 @@ Notas:
   A **fila** — os pedidos da app ("🍷 Verificar no Vivino"), depois os nunca
   verificados, depois os vistos há mais tempo — é a do GitHub e do
   `npm run vivino`; no painel, os pedidos são o filtro **Pedidos na app**.
-- Sem o painel (Mac, ou à mão): `npm run vivino`, com `LIMITE=`, `ENSAIO=true`
-  e `MODO=completo|vivino|precos` no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
+- Sem o painel (Mac, ou à mão): `npm run vivino`, com `LIMITE=`, `ENSAIO=true`,
+  `MODO=completo|vivino|precos` e `SITES=vivino,garrafeira_nacional,granvine,vinha,portugal_vineyards`
+  (vazio = todos) no `.env`; `APLICAR=simulacoes/<ficheiro>.json` grava uma
   simulação revista à mão (põe `"aplicar": false` no que não queres).
 - O painel só escuta neste computador (127.0.0.1) e cada pedido que corre o
   script leva um código que só a página aberta conhece.

@@ -40,6 +40,8 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             no fim recalcula as chaves de todas as linhas. Na Garrafeira, a seguir: migracao-cor-na-chave.sql)
 14. db/nomes-manter.sql    (os produtores que ficam no nome e a `libertar_chave` — antes de voltar a correr o
                             nomes-normalizar.sql, o trigger do cor-na-chave.sql e o produtores.sql, que as usam)
+15. db/painel.sql          (o back-office do painel do PC: `painel_vinho` e `painel_editar`, só service_role —
+                            depois do cor-na-chave.sql, cuja `editar` aceita a service_role, e do historico.sql)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores
