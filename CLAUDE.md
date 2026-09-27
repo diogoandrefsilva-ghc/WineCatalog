@@ -50,7 +50,7 @@ tudo o que aqui está foi pago com um erro.
   `produtores.sql` → `nomes-normalizar.sql` → **`cor-na-chave.sql`** (a cor na
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
-  marcadas como substituídas) (+ `README.md`
+  marcadas como substituídas) → `nomes-manter.sql` (os nomes que ficam como estão) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -1284,6 +1284,30 @@ nome fez nascer um duplicado (a `juntar` da garrafeira já não achava a linha
 velha). Recalcularam-se as chaves todas (`cor_na_chave_recalcular`). A lição
 é a do costume: um trigger que engole erros tem de ser testado a ver o que
 ESCREVE, não só a ver que não rebenta.
+
+**Os nomes que ficam como estão** (27/09/2026, `db/nomes-manter.sql`). A
+regra tira o produtor da frente quando o resto tem uma palavra "distintiva"
+— e um número ou uma expressão comum passam por isso sem o serem: "1836
+Grande Reserva", "Clássico 80 anos", "1255 Grande Villae", "Colecção da
+Família". O dono das apps: "eu sei que é complicado fazer uma regra a partir
+disto" — por isso não há regra, há uma LISTA (`nomes_manter`), que ele
+enche no painel ("Manter o nome dos desmarcados"). Um nome da lista não
+perde o produtor da frente, no catálogo, nas garrafeiras e nas escritas
+futuras (a `nome_normal` é a mesma para todos); a colheita e a cor no fim
+continuam a sair. A chave da lista é o nome sem ano nem cor, palavra a
+palavra normalizada.
+
+**A chave de um fundido não trava a alvo** (`libertar_chave`, no mesmo
+ficheiro). A `chave` é única e uma perdedora de um `alias` guarda a sua: o
+"Carlos Alonso Piano 17" (#92) não podia passar a "Piano 17" com o produtor
+oficial porque essa chave era a do #116, fundido NELE — era recusado como
+duplicado de si próprio, e o painel só dizia "ficaram por mexer". Agora a
+chave da perdedora estaciona (`~<id>` no fim) e a alvo fica com ela; a
+`achar` casa pela `chave_base`/`base_nome`, que não mudam. Vale no trigger
+dos nomes, na `nomes_rever` e na `produtor_definir`. Uma linha VIVA com a
+mesma chave continua a ser um duplicado para os Duplicados — foi o caso do
+"Quinta dos Sentidos Tinto" (#185) × "Quinta dos Sentidos" (#191), fundidos
+a 27/09 (o #191 no #185, que tinha o produtor).
 
 **Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
 produtor no mesmo saco de palavras. Mudam as chaves só-do-nome

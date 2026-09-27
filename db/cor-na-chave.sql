@@ -228,9 +228,10 @@ BEGIN
       NEW.origens := NEW.origens || jsonb_build_object('tipo',
                        jsonb_build_object('o', 'nome', 'f', 0, 'em', now()));
     END IF;
+    -- Uma linha FUNDIDA nesta com a mesma chave não trava: estaciona-se a
+    -- dela (`libertar_chave`, nomes-manter.sql). Outra linha viva, sim.
     IF v_idt ->> 'chave_base' <> ''
-       AND NOT EXISTS (SELECT 1 FROM winecatalog.vinhos o
-                        WHERE o.chave = v_idt ->> 'chave' AND o.id IS DISTINCT FROM NEW.id) THEN
+       AND winecatalog.libertar_chave(v_idt ->> 'chave', NEW.id) THEN
       NEW.chave      := v_idt ->> 'chave';
       NEW.chave_base := v_idt ->> 'chave_base';
       NEW.chave_nome := v_idt ->> 'chave_nome';

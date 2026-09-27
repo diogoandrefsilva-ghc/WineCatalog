@@ -38,6 +38,8 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 13. db/cor-na-chave.sql    (fase 4: a cor na chave, a `identidade` e o trigger dos nomes — depois do nomes-normalizar.sql;
                             substitui a chave, a achar, a juntar, a procurar, a criar, a editar, a comparar, a colheitas e a candidatos;
                             no fim recalcula as chaves de todas as linhas. Na Garrafeira, a seguir: migracao-cor-na-chave.sql)
+14. db/nomes-manter.sql    (os nomes que ficam como estão e a `libertar_chave` — antes de voltar a correr o
+                            nomes-normalizar.sql, o trigger do cor-na-chave.sql e o produtores.sql, que as usam)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

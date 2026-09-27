@@ -215,7 +215,7 @@ BEGIN
   LOOP
     v_chave := winecatalog.chave(r.nome, v_oficial, r.ano, r.cor);
     CONTINUE WHEN r.produtor = v_oficial AND r.chave = v_chave;
-    IF EXISTS (SELECT 1 FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id) THEN
+    IF NOT winecatalog.libertar_chave(v_chave, r.id) THEN   -- um fundido nesta não trava
       v_dup := v_dup || jsonb_build_object('id', r.id, 'nome', r.nome, 'produtor', r.produtor, 'ano', r.ano,
                  'com', (SELECT o.id FROM winecatalog.vinhos o WHERE o.chave = v_chave AND o.id <> r.id));
       CONTINUE;

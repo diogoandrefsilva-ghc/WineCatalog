@@ -165,6 +165,15 @@ const servidor = http.createServer(async (req, res) => {
       // Os links do Vivino nas garrafeiras: sem `aplicar` é só a lista; com
       // ele, só os ids escolhidos — e a função volta a conferir as regras.
       const b = await lerCorpo(req);
+      // A lista dos nomes que ficam como estão (db/nomes-manter.sql).
+      if (b.acao === "listar") return sbRpc(res, "winecatalog", "nomes_manter_listar", {});
+      if (b.acao === "tirar") return sbRpc(res, "winecatalog", "nomes_manter_tirar", { p_chave: String(b.chave ?? "").trim().slice(0, 300) });
+      if (b.acao === "manter") {
+        const its = (Array.isArray(b.itens) ? b.itens : []).slice(0, 200)
+          .map(x => ({ fonte: x.fonte === "garrafeira" ? "garrafeira" : "catalogo", id: Number(x.id) }))
+          .filter(x => Number.isInteger(x.id) && x.id > 0);
+        return sbRpc(res, "winecatalog", "nomes_manter_marcar", { p_itens: its });
+      }
       const aplicar = b.aplicar === true;
       const inteiros = a => Array.isArray(a) ? a.map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 500) : [];
       // `forcar`: os "Por confirmar" que o admin abriu e aceitou — o visto é
@@ -382,12 +391,14 @@ a{color:var(--bd)}
   <details style="margin-top:10px"><summary class="nota">Produtores oficiais já definidos</summary><div id="prod-oficiais" style="margin-top:6px"></div></details>
 </div>
 <div class="card"><h2>Nomes dos vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. Quando o nome que sobra fica vago ("1836 Grande Reserva"), desmarca-o e carrega em <b>Manter o nome dos desmarcados</b>: fica numa lista e o produtor nunca mais sai da frente desse nome — aqui, nas garrafeiras e nas escritas futuras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
   <div class="linha"><button class="prim" onclick="nomesProcurar()">Simular</button>
     <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label>
     <span id="nomes-n" class="nota"></span>
-    <button id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button></div>
+    <button id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button>
+    <button id="btn-nomes-manter" onclick="nomesManter()" disabled>Manter o nome dos desmarcados</button></div>
   <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+  <details style="margin-top:10px" ontoggle="if(this.open)nomesManterListar()"><summary class="nota">Nomes que ficam como estão</summary><div id="nomes-manter" style="margin-top:6px"></div></details>
 </div>
 <div class="card"><h2>Vinho novo</h2>
   <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em baixo. Se já existir, enriquece o que lá está.</p>
@@ -740,6 +751,7 @@ function nomesPintar(){
   const n=L.filter(nomesMuda).length;
   document.getElementById("nomes-n").textContent=n+" a mudar agora · "+(NOMES.linhas||[]).length+" com alguma coisa";
   document.getElementById("btn-nomes").disabled=!n;
+  document.getElementById("btn-nomes-manter").disabled=!L.some(x=>(x.mudancas||[]).includes("produtor"));
   document.getElementById("nomes-lista").innerHTML=L.length?'<table><tr><th></th><th>Onde</th><th>Agora</th><th>Fica</th></tr>'+L.map(x=>{
     const m=nomesMuda(x);
     const av=(x.avisos||[]).length?'<br><span class="tag">'+x.avisos.map(esc).join(' · ')+'</span>':'';
@@ -758,6 +770,25 @@ async function nomesAplicar(){
     alert(r.catalogo+" no catálogo e "+r.garrafeiras+" nas garrafeiras."+(d.length?"\\n\\nFicaram por mexer "+d.length+" do catálogo, porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos Duplicados da app:\\n"+d.map(x=>"#"+x.id+" "+x.nome+(x.ano?" "+x.ano:"")+" → #"+x.com).join("\\n"):""));
     await nomesProcurar();}
   catch(e){alert(e.message);}
+}
+async function nomesManter(){
+  // Só os desmarcados a quem a regra tirava o produtor: é isso que se mantém.
+  const itens=[...document.querySelectorAll(".nomes-c:not(:checked)")].map(c=>({fonte:c.dataset.f,id:+c.dataset.id}))
+    .filter(it=>(NOMES.linhas||[]).some(x=>x.fonte===it.fonte&&x.id===it.id&&(x.mudancas||[]).includes("produtor")));
+  if(!itens.length)return alert("Desmarca os vinhos cujo nome queres manter (os que perdiam o produtor da frente).");
+  if(!confirm("Manter o nome de "+itens.length+" vinho(s)? O produtor não volta a sair da frente destes nomes (a colheita e a cor no fim continuam a sair)."))return;
+  try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" nome(s) na lista.");await nomesProcurar();}
+  catch(e){alert(e.message);}
+}
+async function nomesManterListar(){
+  const el=document.getElementById("nomes-manter");el.innerHTML='<p class="nota">A carregar…</p>';
+  try{const L=await post("/nomes",{acao:"listar"});
+    el.innerHTML=L.length?L.map(m=>'<div>'+esc(m.nome)+' <a href="#" data-k="'+esc(m.chave)+'" onclick="nomesManterTirar(this.dataset.k);return false" title="Deixar a regra voltar a tirar o produtor deste nome">✕</a></div>').join(""):'<p class="nota">Nenhum.</p>';}
+  catch(e){el.innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+}
+async function nomesManterTirar(k){
+  if(!confirm("Tirar da lista? O nome volta a aparecer na simulação."))return;
+  try{await post("/nomes",{acao:"tirar",chave:k});await nomesManterListar();}catch(e){alert(e.message);}
 }
 const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
 function novaLinha(){
