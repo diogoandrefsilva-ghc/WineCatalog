@@ -911,6 +911,16 @@ script volta a reler (`ajustarAoAgora`): o que já lá está não se escreve,
 um link que já lá está não conta como recusado, e uma fonte de preço
 **retirada** depois de simular continua retirada (o `precos` da simulação
 foi montado antes; o preço de referência dessa fonte também não entra).
+**A barra e o "Parar"** (27/09/2026, pedido do dono: uma corrida grande não
+dizia quantos faltavam, nem se podia acabar sem perder o que já tinha). O
+script escreve `[3/20] #17 Cartuxa…` antes de cada vinho, e o painel faz disso
+a barra e o tempo que falta (a média dos que já passaram — uma hibernação a
+meio conta, e o script retoma onde estava). O **⏹ Parar** não mata o processo:
+cria `batch/.parar`, e o script (`PARAR`) vê-o ENTRE dois vinhos, acaba o que
+está a tratar e segue para o fim de sempre — a simulação fica gravada com os
+vinhos já tratados; no Enriquecer, esses já estão no catálogo. Um ficheiro e
+não um sinal: no Windows matar o processo não o deixa acabar, e a simulação
+perdia-se com ele. Gravar uma simulação não se interrompe (ficava a meio).
 O painel só escuta em 127.0.0.1, confere o
 `Host` e exige num cabeçalho um código aleatório de cada arranque: outro
 site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`

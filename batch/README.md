@@ -131,7 +131,12 @@ No painel:
     → Vinha.pt) e só depois o Vivino: a das lojas é mais nítida e igual de
     vinho para vinho. Uma imagem que veio do Vivino é trocada pela da loja;
     a vossa fotografia e a de outros sites nunca.
-- **Registo** — uma linha por vinho, enquanto corre.
+- **Registo** — uma linha por vinho, enquanto corre, e por cima uma **barra**
+  com quantos já foram tratados e quanto falta (pela média dos que já
+  passaram). **⏹ Parar** pára no fim do vinho que está a tratar: numa
+  simulação, fica guardada com os vinhos já tratados (revê-se e grava-se
+  como as outras); no Enriquecer, esses já estão gravados. Gravar uma
+  simulação não se interrompe.
 - **Simulações** — escolhe uma e vês, vinho a vinho, cada campo **antes →
   depois**. Desmarca o que não queres (um vinho inteiro ou um campo só) e
   carrega em **Gravar selecionados**. Grava exatamente o que viste, sem

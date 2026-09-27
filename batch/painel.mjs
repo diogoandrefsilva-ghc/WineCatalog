@@ -14,6 +14,7 @@
 import http from "node:http";
 import { spawn, exec } from "node:child_process";
 import { readdir, readFile, writeFile } from "node:fs/promises";
+import { rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -26,7 +27,10 @@ const SB_URL = process.env.SUPABASE_URL || "https://gjweqwfbnkgnibhajldc.supabas
 const PORTA = Number(process.env.PAINEL_PORTA || 8787);
 const TOKEN = randomBytes(16).toString("hex");
 
-let corrida = null;          // { modo, inicio, linhas: [], fim, codigo }
+let corrida = null;          // { modo, inicio, linhas: [], fim, codigo, progresso, aParar, parado }
+// O "Parar" (27/09/2026): o painel cria este ficheiro e o script vê-o entre
+// dois vinhos (PARAR no vivino-verificar.mjs). Apaga-se antes de cada corrida.
+const PARAR = path.join(DIR, ".parar");
 
 // O que se procura: tudo · só o Vivino · só os preços das lojas (ver MODO
 // no vivino-verificar.mjs). Qualquer outra coisa vale "completo".
@@ -34,7 +38,10 @@ function modoPesquisa(x) { return ["completo", "vivino", "precos"].includes(x) ?
 function correr(modo, opcoes) {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   const env = { ...process.env, MANUAL: "true", MOTOR: "browser" };
-  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO; delete env.TROCAR_IMAGEM;
+  delete env.APLICAR; delete env.IDS; delete env.NOVO; delete env.LOJAS; delete env.MODO; delete env.TROCAR_IMAGEM; delete env.PARAR;
+  rmSync(PARAR, { force: true });
+  // Gravar uma simulação é curto e não se interrompe: ficava meia gravada.
+  if (modo !== "gravar") env.PARAR = PARAR;
   if (modo === "gravar") env.APLICAR = opcoes.ficheiro;
   else if (modo === "novo") {
     // Vinho novo: sempre SIMULAÇÃO — só nasce no catálogo ao gravá-la.
@@ -52,13 +59,24 @@ function correr(modo, opcoes) {
     if (ids.length && opcoes.trocarImagem === true) env.TROCAR_IMAGEM = "true";
     env.MODO = modoPesquisa(opcoes.pesquisa);
   }
-  corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null };
+  corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null,
+              progresso: null, aParar: false, parado: false, podeParar: modo !== "gravar" };
   const c = corrida;
   const p = spawn(process.execPath, ["--env-file=.env", "vivino-verificar.mjs"], { cwd: DIR, env });
-  const junta = d => { for (const l of String(d).split(/\r?\n/)) if (l.trim()) c.linhas.push(l); };
+  // O progresso sai das linhas "[3/20] #17 Cartuxa…" que o script escreve
+  // antes de cada vinho; a barra e o tempo que falta calculam-se na página.
+  const junta = d => {
+    for (const l of String(d).split(/\r?\n/)) {
+      if (!l.trim()) continue;
+      c.linhas.push(l);
+      const m = l.match(/^\[(\d+)\/(\d+)\] (.*)$/);
+      if (m) c.progresso = { i: +m[1], n: +m[2], nome: m[3], em: new Date().toISOString() };
+      if (/^Parado a pedido/.test(l)) c.parado = true;
+    }
+  };
   p.stdout.on("data", junta);
   p.stderr.on("data", junta);
-  p.on("close", code => { c.fim = new Date().toISOString(); c.codigo = code; });
+  p.on("close", code => { c.fim = new Date().toISOString(); c.codigo = code; try { rmSync(PARAR, { force: true }); } catch {} });
   p.on("error", e => { c.linhas.push("Erro a arrancar: " + e.message); c.fim = new Date().toISOString(); c.codigo = -1; });
 }
 
@@ -179,6 +197,16 @@ const servidor = http.createServer(async (req, res) => {
       correr(b.modo, b);
       return json(res, 200, { ok: true });
     }
+    if (req.method === "POST" && url.pathname === "/parar") {
+      // Não mata o processo: pede-lhe que pare no fim do vinho que está a
+      // tratar. Numa simulação, fica gravada com os que já foram tratados;
+      // num Enriquecer, esses já estão no catálogo.
+      if (!corrida || corrida.fim != null) return json(res, 400, { erro: "Não está nada a correr." });
+      if (!corrida.podeParar) return json(res, 400, { erro: "Gravar uma simulação não se interrompe." });
+      await writeFile(PARAR, new Date().toISOString(), "utf8");
+      corrida.aParar = true;
+      return json(res, 200, { ok: true });
+    }
     if (req.method === "POST" && url.pathname === "/novo") {
       const b = await lerCorpo(req);
       const CORES = ["Tinto", "Branco", "Rosé", "Espumante", "Licoroso", "Frisante"];
@@ -257,6 +285,10 @@ button:disabled{opacity:.5;cursor:default}
 .nota{color:var(--mu);font-size:12.5px;margin:6px 0 0}
 pre{background:#1f1a19;color:#eee;border-radius:10px;padding:12px;max-height:340px;overflow:auto;font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;margin:0}
 .estado{font-size:12.5px;margin-bottom:8px}.estado b.ok{color:var(--ok)}.estado b.er{color:var(--er)}
+.prog{margin:0 0 10px}.prog[hidden]{display:none}
+.prog-barra{height:8px;background:var(--bo);border-radius:6px;overflow:hidden;margin-bottom:6px}
+.prog-barra>div{height:100%;width:0;background:var(--bd);transition:width .4s}
+.prog .linha{justify-content:space-between}.prog .nota{margin:0}
 table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;color:var(--mu);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;padding:6px;border-bottom:1px solid var(--bo)}
 td{padding:6px;border-bottom:1px solid var(--bo);vertical-align:top;word-break:break-word}
 tr.vinho td{background:#faf5ef;font-weight:600}tr.vinho.off td,tr.alt.off td,tr.alt.dim td{opacity:.45}
@@ -315,7 +347,11 @@ a{color:var(--bd)}
   <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button>
     <button class="prim" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div>
 </div>
-<div class="card"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div><pre id="log"></pre></div>
+<div class="card"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div>
+  <div class="prog" id="prog" hidden><div class="prog-barra"><div id="prog-b"></div></div>
+    <div class="linha"><span class="nota" id="prog-t"></span>
+      <button id="btn-parar" onclick="parar()" title="Pára no fim do vinho que está a tratar. Numa simulação, fica guardada com os que já foram tratados; no Enriquecer, esses já estão gravados.">⏹ Parar</button></div></div>
+  <pre id="log"></pre></div>
 <div class="card"><h2>Simulações</h2>
   <div class="linha"><select id="sims" onchange="abrirSim()"></select><button onclick="listarSims()">🔄</button>
     <button class="prim" id="btn-gravar" onclick="gravar()" disabled>Gravar selecionados</button></div>
@@ -402,10 +438,37 @@ async function seguir(){
   if(r.linhas.length){log.textContent+=r.linhas.join("\\n")+"\\n";log.scrollTop=log.scrollHeight;}
   visto=r.total;
   const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação",novo:"Vinho novo (simulação)"};
-  document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+" a correr…"
+  document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+(r.aParar?" a parar…":" a correr…")
+    :r.parado?'<b class="ok">⏹ '+nomes[r.modo]+' parada a pedido.</b>'+(r.modo==="enriquecer"?" Os vinhos já tratados ficaram gravados.":" A simulação ficou com os vinhos já tratados.")
     :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
+  progresso(r);
   document.querySelectorAll("button").forEach(b=>{if(b.textContent.match(/Simular|Enriquecer|Procurar/))b.disabled=r.fim==null;});
   if(r.fim!=null){clearInterval(timer);timer=null;carregarCatalogo();if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
+}
+// A barra: quantos vinhos já foram tratados (o script escreve "[3/20] …"
+// antes de cada um) e quanto falta, pela média dos que já passaram. Uma
+// hibernação a meio conta no tempo — o script retoma onde estava.
+function progresso(r){
+  const box=document.getElementById("prog"),p=r.progresso;
+  if(!p){box.hidden=true;return;}
+  box.hidden=false;
+  // A correr, o vinho do "[i/n]" ainda está a ser tratado; no fim, já foi.
+  const feitos=r.fim!=null?p.i:p.i-1;
+  document.getElementById("prog-b").style.width=Math.round(100*feitos/p.n)+"%";
+  let t=feitos+" de "+p.n+" tratado"+(p.n===1?"":"s");
+  if(r.fim==null){
+    t+=" · a tratar: "+esc(p.nome);
+    const gasto=(new Date(p.em)-new Date(r.inicio))/1000;
+    if(feitos>0){const min=Math.round(gasto/feitos*(p.n-feitos)/60);t+=min<1?" · falta menos de 1 min":" · faltam ~"+min+" min";}
+    if(r.aParar)t+=" · <b>para no fim deste vinho</b>";
+  }
+  document.getElementById("prog-t").innerHTML=t;
+  const b=document.getElementById("btn-parar");
+  b.hidden=r.fim!=null||!r.podeParar;b.disabled=!!r.aParar;
+}
+async function parar(){
+  if(!confirm("Parar no fim do vinho que está a tratar? Numa simulação, fica guardada com os vinhos já tratados."))return;
+  try{await post("/parar",{});seguir();}catch(e){alert(e.message);}
 }
 async function listarSims(abrirPrimeira){
   const l=await fetch("/simulacoes").then(r=>r.json());const s=document.getElementById("sims");
