@@ -127,6 +127,10 @@ const CAMPOS: Record<string, string> = {
   castas: "castas", teor: "teor", estagio_meses: "estagioMeses",
   estagio_texto: "estagioTexto", vivino_nota: "vivinoNota",
   vivino_avaliacoes: "vivinoAvaliacoes", vivino_url: "vivinoUrl",
+  // A nota de TODAS as colheitas (26/09/2026, ver `regraVivino`): até
+  // 27/09/2026 a pesquisa não a conhecia, e a média que o Vivino mostra sem
+  // ano ia parar à `vivino_nota`, que é a da COLHEITA.
+  vivino_nota_global: "vivinoNotaGlobal", vivino_avaliacoes_global: "vivinoAvaliacoesGlobal",
   imagem_url: "imagemUrl", preco_medio: "precoMedio",
   beber_de: "beberDe", beber_ate: "beberAte", notas_prova: "notasProva",
   harmonizacao: "harmonizacao", ai_resumo: "resumo",
@@ -223,7 +227,26 @@ function vivinoLink(u: unknown): string {
   } catch { return ""; }
 }
 
-function normalizar(raw: any, campos: string[] | null): Record<string, unknown> {
+/* Pedir a nota da colheita é pedir também a de todas: vêm da mesma página,
+   e é quase sempre a única que o modelo vê. Sem colheita, a da colheita não
+   existe — pede-se só a de todas (a mesma regra do script,
+   `batch/vivino-verificar.mjs`, "A nota do Vivino são duas"). */
+const PAR_VIVINO: Record<string, string> = {
+  vivino_nota: "vivino_nota_global", vivino_avaliacoes: "vivino_avaliacoes_global",
+};
+function camposComGlobal(campos: string[] | null, ano: number | null): string[] | null {
+  if (!campos) return campos;
+  const out = new Set<string>();
+  for (const k of campos) {
+    if (k in PAR_VIVINO) {
+      out.add(PAR_VIVINO[k]);
+      if (ano !== null) out.add(k);
+    } else out.add(k);
+  }
+  return [...out];
+}
+
+function normalizar(raw: any, campos: string[] | null, ano: number | null = null): Record<string, unknown> {
   if (!raw || typeof raw !== "object" || raw.encontrado === false) return {};
 
   const castas = Array.isArray(raw.castas)
@@ -257,6 +280,8 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
     estagio_texto: texto(raw.estagioTexto, 160),
     vivino_nota: numero(raw.vivinoNota, 1, 5, 2),
     vivino_avaliacoes: (() => { const n = numero(raw.vivinoAvaliacoes, 0, 10_000_000, 0); return n === null ? null : Math.round(n); })(),
+    vivino_nota_global: numero(raw.vivinoNotaGlobal, 1, 5, 2),
+    vivino_avaliacoes_global: (() => { const n = numero(raw.vivinoAvaliacoesGlobal, 0, 10_000_000, 0); return n === null ? null : Math.round(n); })(),
     // Só `/<nome>/w/<nº>` (ver `vivinoLink`). Não chega para apanhar um
     // homónimo — isso é a regra 2 do prompt — mas apanha os inventados.
     vivino_url: vivinoLink(raw.vivinoUrl),
@@ -279,6 +304,7 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
     const v = out[k];
     if (v === null || v === "" || (Array.isArray(v) && !v.length)) delete out[k];
   });
+  vivinoDuas(out, ano);
   // Pediram-se só alguns campos: o resto sai daqui mesmo que o modelo o
   // tenha mandado à mesma. Sem isto, pedir "só o preço" acabava a
   // reescrever a região com um palpite de passagem.
@@ -286,6 +312,35 @@ function normalizar(raw: any, campos: string[] | null): Record<string, unknown> 
     Object.keys(out).forEach((k) => { if (!campos.includes(k)) delete out[k]; });
   }
   return out;
+}
+
+/* AS DUAS NOTAS DO VIVINO, arrumadas depois de lidas (27/09/2026):
+   · sem colheita, a nota "da colheita" é a de todas — passa para lá (se lá
+     não houver outra) e sai;
+   · a mesma nota com as mesmas avaliações nas duas é o modelo a copiar a
+     média de todas as colheitas para a da colheita — fica só a de todas;
+   · uma colheita com MAIS avaliações do que o vinho todo não existe: a de
+     todas fica de fora (a regra do `lerGlobal` do script). */
+function vivinoDuas(out: Record<string, unknown>, ano: number | null): void {
+  const tem = (k: string) => out[k] !== undefined;
+  if (ano === null) {
+    if (tem("vivino_nota") && !tem("vivino_nota_global")) {
+      out.vivino_nota_global = out.vivino_nota;
+      if (tem("vivino_avaliacoes") && !tem("vivino_avaliacoes_global")) out.vivino_avaliacoes_global = out.vivino_avaliacoes;
+    }
+    delete out.vivino_nota; delete out.vivino_avaliacoes;
+    return;
+  }
+  if (tem("vivino_nota") && tem("vivino_nota_global") &&
+      out.vivino_nota === out.vivino_nota_global &&
+      (out.vivino_avaliacoes ?? null) === (out.vivino_avaliacoes_global ?? null)) {
+    delete out.vivino_nota; delete out.vivino_avaliacoes;
+    return;
+  }
+  if (tem("vivino_avaliacoes") && tem("vivino_avaliacoes_global") &&
+      Number(out.vivino_avaliacoes) > Number(out.vivino_avaliacoes_global)) {
+    delete out.vivino_nota_global; delete out.vivino_avaliacoes_global;
+  }
 }
 
 type UsageMetadata = { promptTokenCount: number; candidatesTokenCount: number; thoughtsTokenCount: number; totalTokenCount: number };
@@ -376,8 +431,42 @@ function fezPesquisa(gd: any): boolean {
 const SEARCH_API_KEY = Deno.env.get("SEARCH_API_KEY") ?? "";
 const SEARCH_API_URL = Deno.env.get("SEARCH_API_URL") || "https://google.serper.dev/search";
 const CUSTO_SERPER_EUR = 0.001; // por consulta, grosseiro como os outros
-async function pesquisarSerper(consultas: string[], signal: AbortSignal):
-  Promise<{ texto: string; fontes: { titulo: string; url: string }[] }> {
+/* OS SITES DE CONFIANÇA (27/09/2026). Até aqui entravam como
+   ` (site:a OR site:b)` colados à consulta GERAL — o que não dava
+   prioridade nenhuma: RESTRINGIA a consulta a eles (se não tivessem o
+   vinho, a consulta geral voltava vazia), e um nome escrito sem domínio
+   ("Garrafeira Nacional") partia a consulta toda (`site:Garrafeira
+   Nacional`). E nada dizia, no fim, se algum resultado tinha vindo deles.
+   Agora: a consulta geral é sempre livre; os domínios a sério (sem o
+   Vivino, que tem a consulta própria) têm uma consulta SÓ deles, a mais;
+   os resultados deles vão à frente, marcados, na base de evidência; e o
+   resultado da pesquisa diz quantos vieram de cada um (`confianca`). Um
+   nome sem domínio fica só no texto do prompt. */
+function dominioDe(s: string): string {
+  const d = s.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/[/?#].*$/, "").replace(/^www\./, "");
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d) ? d : "";
+}
+const doSite = (url: string, dominio: string): boolean => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === dominio || h.endsWith("." + dominio);
+  } catch { return false; }
+};
+/* De que colheita são os números de um resultado do Vivino: sem `year=`
+   no endereço são os de TODAS as colheitas; com o nosso ano, os da
+   colheita; com outro ano, não servem. A regra do motor Serper do script. */
+function vivinoDeQue(url: string, ano: number | null): string {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)vivino\.com$/i.test(u.hostname)) return "";
+    const y = Number(u.searchParams.get("year"));
+    if (!y) return "página do Vivino SEM ano escolhido: a nota e as avaliações são as de TODAS as colheitas (vivinoNotaGlobal/vivinoAvaliacoesGlobal)";
+    if (ano !== null && y === ano) return `página do Vivino da colheita ${y}: a nota e as avaliações são as DESTA colheita (vivinoNota/vivinoAvaliacoes)`;
+    return `página do Vivino da colheita ${y}, que NÃO é a nossa: não uses a nota nem as avaliações daqui`;
+  } catch { return ""; }
+}
+async function pesquisarSerper(consultas: string[], signal: AbortSignal, ano: number | null, dominios: string[]):
+  Promise<{ texto: string; fontes: { titulo: string; url: string }[]; confianca: Record<string, number> }> {
   if (!SEARCH_API_KEY) throw new Error("a pesquisa externa não está configurada (falta SEARCH_API_KEY)");
   const respostas = await Promise.all(consultas.map(async (q) => {
     const r = await fetch(SEARCH_API_URL, {
@@ -398,12 +487,23 @@ async function pesquisarSerper(consultas: string[], signal: AbortSignal):
     vistos.add(url);
     linhas.push(x);
   }
-  const texto = linhas.map((x, i) =>
-    `[${i + 1}] ${String(x?.title || "").trim()}\nURL: ${String(x.link).trim()}\n` +
-    `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}` + (x?.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : "")).join("\n\n");
+  const confianca: Record<string, number> = Object.fromEntries(dominios.map((d) => [d, 0]));
+  const deConfianca = (x: any) => dominios.find((d) => doSite(String(x.link), d)) ?? "";
+  linhas.forEach((x) => { const d = deConfianca(x); if (d) confianca[d]++; });
+  // Os dos sites de confiança à frente — é a eles que a regra manda ir primeiro.
+  linhas.sort((a, b) => Number(!deConfianca(a)) - Number(!deConfianca(b)));
+  const texto = linhas.map((x, i) => {
+    const url = String(x.link).trim();
+    const viv = vivinoDeQue(url, ano);
+    return `[${i + 1}]${deConfianca(x) ? " ★ FONTE DE CONFIANÇA" : ""} ${String(x?.title || "").trim()}\nURL: ${url}\n` +
+      (viv ? `(${viv})\n` : "") +
+      `Resumo: ${String(x?.snippet || "").replace(/\s+/g, " ").trim()}` +
+      (x?.rating != null ? `\nEstrelas no Google: ${x.rating}${x.ratingCount != null ? ` (${x.ratingCount} avaliações)` : ""}` : "");
+  }).join("\n\n");
   return {
-    texto: texto.slice(0, 8000),
+    texto: texto.slice(0, 9000),
     fontes: linhas.slice(0, 8).map((x) => ({ titulo: String(x?.title || x.link).slice(0, 120), url: String(x.link).slice(0, 400) })),
+    confianca,
   };
 }
 
@@ -414,32 +514,41 @@ async function pesquisarSerper(consultas: string[], signal: AbortSignal):
 const CUSTO_PESQUISA_EUR = 0.01;
 const CUSTO_GEMINI_SO_EUR = 0.002; // a profunda: o Gemini só lê, não pesquisa
 
-/* ── A REGRA DO VIVINO, e porque tem DUAS versões ──
-   Espelho da mesma correção em `vinho-info.ts` (Garrafeira) — ver o
-   comentário grande lá para o porquê e para o teste que a validou (Villa
-   Platanus 2022: com o ano a fazer parte da identidade da página do
-   Vivino, nota/avaliações/link vinham sempre vazios; sem essa exigência,
-   vieram certos e estáveis em três tentativas seguidas). O Vivino é do
-   VINHO, não da colheita — a nota que mostra por omissão é uma média entre
-   colheitas.
-
-   Duas versões, e quem escolhe é `colheitaEspecifica` (vem do ecrã de
-   escolha de campos, nunca por omissão): a ESTRITA exige o ano, para
-   quando a pergunta é mesmo sobre ESTA colheita; a RELAXADA (o novo
-   default) não exige, e diz ao modelo onde ler cada número. */
-const regraVivino = (colheitaEspecifica: boolean) => colheitaEspecifica
-  ? `Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA
-   página do Vivino e do vinho certo — confirma produtor, ano e região antes
-   de aceitar. Em dúvida, deixa os três vazios.`
-  : `A página do Vivino é do VINHO, não de uma colheita específica: o ANO NÃO
-   faz parte da identidade da página, e a nota que lá aparece é uma média
-   entre colheitas. Para confirmares que é a página certa, basta o nome (já
-   desambiguado na regra anterior) e o produtor baterem certo — não deixes
-   "vivinoNota"/"vivinoAvaliacoes"/"vivinoUrl" vazios só por causa do ano. A
-   nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm
-   logo a seguir, entre parêntesis — não uses números de outra zona da
-   página. Mesmo sem confirmares a nota, mantém o link se tiveres a certeza
-   da página.`;
+/* ── A REGRA DO VIVINO: a página é do vinho, as notas são DUAS ──
+   Espelho da mesma lição da `vinho-info.ts` (Garrafeira): a página do
+   Vivino é do VINHO, não da colheita — o ano não faz parte da identidade
+   dela (Villa Platanus 2022: exigir o ano deixava nota, avaliações e link
+   sempre vazios). Mas as NOTAS são duas desde 26/09/2026 (ver o CLAUDE.md,
+   "A nota do Vivino são duas"): a de todas as colheitas (a página sem ano)
+   e a de UMA (`?year=`). Até 27/09/2026 esta regra dizia ao modelo que "a
+   nota que lá aparece é uma média entre colheitas" e pedia-a na
+   `vivinoNota` — que é a da COLHEITA: o Quinta do Carmo 2022 ficou com
+   13 543 avaliações "da colheita". A escolha "tem de ser esta colheita"
+   (`colheitaEspecifica`) deixou de ser sobre o Vivino (as duas notas já
+   vêm separadas) e passou a ser sobre o resto da ficha (`regraColheita`).
+   A MESMA regra está no `app.js` (`wcManualRegraVivino`), para os prompts
+   manuais — mexer numa é mexer na outra. */
+const regraVivino = (ano: number | null) => `O Vivino tem DUAS notas, e não se misturam:
+   · "vivinoNotaGlobal"/"vivinoAvaliacoesGlobal" — a de TODAS as colheitas: a
+     que a página do vinho mostra sem ano escolhido (…/w/<nº>, sem "?year=").
+${ano
+  ? `   · "vivinoNota"/"vivinoAvaliacoes" — SÓ a da colheita ${ano}: a da página com
+     "?year=${ano}", ou a dessa colheita na lista de colheitas. Se só vires a de
+     todas as colheitas, deixa estas duas vazias — nunca copies a de todas para aqui.`
+  : `   · "vivinoNota"/"vivinoAvaliacoes" ficam de fora: este vinho não tem colheita, e
+     a única nota que serve é a de todas as colheitas.`}
+   A nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm logo
+   a seguir, entre parêntesis — não uses números de outra zona da página. Uma
+   colheita nunca tem mais avaliações do que o vinho todo.
+   "vivinoUrl" é a página do VINHO (…/<nome>/w/<nº>), a mesma para todas as
+   colheitas: o ano não faz parte da identidade dela — basta o nome (já
+   desambiguado na regra anterior) e o produtor baterem certo. Mantém o link se
+   tiveres a certeza da página, mesmo sem nota.`;
+/* "Tem de ser exatamente a colheita X" (o visto no ecrã). */
+const regraColheita = (ano: number | null) => ano
+  ? `O que responderes tem de ser da colheita ${ano}: teor, estágio, preço, notas de
+   prova e janela de uma colheita diferente ficam fora do JSON.`
+  : "";
 /* Villa Platanus voltou a mostrar isto nos testes: o mesmo produtor tinha
    "Reserva" e "Terroir Blend" — escolher a cuvée errada é um erro tão real
    como não encontrar nada. */
@@ -470,7 +579,7 @@ SÓ INTERESSAM ESTES CAMPOS: ${campos.map((k) => CAMPOS[k]).filter(Boolean).join
 Concentra a pesquisa NELES e deixa os outros fora da resposta.
 ` : ""}
 ${sites.length ? `
-FONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(", ")}. Só uses outra fonte se estas não tiverem a resposta.
+FONTES DE CONFIANÇA: dá prioridade a informação vinda de ${sites.join(", ")}. Só uses outra fonte se estas não tiverem a resposta.${evidencia ? ` Na base de evidência, os resultados destes sites vêm primeiro, marcados com ★ FONTE DE CONFIANÇA.` : ""}
 ` : ""}${evidencia ? `
 BASE DE EVIDÊNCIA:
 ${evidencia}
@@ -479,7 +588,7 @@ REGRAS:
 1. NÃO INVENTES. Um campo que não confirmes fica FORA do JSON (ou null).
    Este catálogo é lido por outras aplicações — um palpite aqui propaga-se.
 2. ${regraCuvee}
-3. ${regraVivino(colheitaEspecifica)}
+3. ${regraVivino(ano)}
 4. "imagemUrl" tem de ser link DIRETO de imagem (.jpg/.jpeg/.png/.webp/.avif),
    nunca o link da página.
 5. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que
@@ -490,7 +599,8 @@ REGRAS:
 9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja
    oficial — usa o que vier em "Produtor" acima se estiver certo, ou
    corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
-
+${colheitaEspecifica && ano ? `10. ${regraColheita(ano)}
+` : ""}
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
 {
   "encontrado": true,
@@ -506,8 +616,10 @@ Responde SÓ com este JSON, sem texto à volta e sem blocos de código:
   "teor": 14.5,
   "estagioMeses": 18,
   "estagioTexto": "18 meses em barrica de carvalho francês",
-  "vivinoNota": 4.1,
-  "vivinoAvaliacoes": 1234,
+${ano ? `  "vivinoNota": 4.2,
+  "vivinoAvaliacoes": 312,
+` : ""}  "vivinoNotaGlobal": 4.1,
+  "vivinoAvaliacoesGlobal": 5234,
   "vivinoUrl": "",
   "imagemUrl": "",
   "precoMedio": 18.5,
@@ -676,6 +788,13 @@ async function processarPesquisa(
       await fechar(pesquisaId, { estado: "erro", erro: "a linha do catálogo desapareceu" });
       return;
     }
+    // A nota da colheita traz a de todas; sem colheita, só a de todas.
+    campos = camposComGlobal(campos, antes.ano);
+    // Os sites de confiança que são domínios (ver `dominioDe`); o que
+    // aconteceu com eles vai para o resultado e para o registo.
+    const dominios = [...new Set(sites.map(dominioDe).filter(Boolean))];
+    let confianca: Record<string, number> | null = null;
+    let consultasFeitas: string[] = [];
 
     let parsed: any;
     let usage: UsageMetadata | null = null;
@@ -712,11 +831,16 @@ async function processarPesquisa(
       let evidencia = "";
       if (SEARCH_API_KEY) {
         const quem_ = [antes.nome, antes.produtor, antes.ano ?? ""].filter(Boolean).join(" ");
-        const siteQ = sites.length ? ` (${sites.map((s) => `site:${s}`).join(" OR ")})` : "";
-        const consultas = [`${quem_} vinho preço${siteQ}`, `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " ")];
+        const consultas = [`${quem_} vinho preço`, `"${antes.nome.replace(/"/g, "")}" ${antes.produtor} site:vivino.com`.replace(/\s+/g, " ")];
+        // O Vivino já tem a sua consulta; os outros sites de confiança têm
+        // uma só deles (nunca a restringir a geral — ver `dominioDe`).
+        const outros = dominios.filter((d) => !doSite(`https://${d}/`, "vivino.com"));
+        if (outros.length) consultas.push(`${quem_} (${outros.map((d) => `site:${d}`).join(" OR ")})`);
         try {
-          const s = await pesquisarSerper(consultas, ctrl.signal);
+          const s = await pesquisarSerper(consultas, ctrl.signal, antes.ano, dominios);
           serperConsultas = consultas.length;
+          consultasFeitas = consultas;
+          confianca = s.confianca;
           evidencia = s.texto;
           if (evidencia) fontes = s.fontes;
         } catch (e) {
@@ -785,7 +909,7 @@ async function processarPesquisa(
       // Todos os campos que se pediram (ou todos, se não se escolheu), sem a
       // janela quando não há colheita.
       const pedidos = (camposSemJanela(campos, antes.ano) ?? Object.keys(CAMPOS))
-        .filter((k) => antes.ano !== null || (k !== "beber_de" && k !== "beber_ate"));
+        .filter((k) => antes.ano !== null || (k !== "beber_de" && k !== "beber_ate" && !(k in PAR_VIVINO)));
       const vazioV = (x: unknown) => x == null || x === "" || (Array.isArray(x) && !x.length);
 
       let r: Resposta | null = null;
@@ -794,7 +918,7 @@ async function processarPesquisa(
         if ("gd" in r) { parsed = extrairJson(r.bruto); pesquisaWeb = true; }
       }
       // O grounding: pelo que o Serper não trouxe, ou por tudo sem Serper.
-      const jaTem = parsed ? normalizar(parsed, campos) : {};
+      const jaTem = parsed ? normalizar(parsed, campos, antes.ano) : {};
       const faltam = pedidos.filter((k) => vazioV((jaTem as any)[k]));
       if (!parsed || faltam.length) {
         usouGround = true;
@@ -847,7 +971,7 @@ async function processarPesquisa(
       }
     }
 
-    const ficha = normalizar(parsed, campos);
+    const ficha = normalizar(parsed, campos, antes.ano);
     // O link do Vivino que quem pesquisa colou nos sites de confiança é
     // FACTO (abriu-o), e ganha ao que o modelo escreveu — que, de memória,
     // costuma ser inventado.
@@ -868,7 +992,13 @@ async function processarPesquisa(
         + (usouGround ? CUSTO_PESQUISA_EUR : 0);
     // A app diz "a pesquisa avançada" quando houve Serper.
     profunda = serperConsultas > 0;
-    const serperLog = serperConsultas ? { pesquisa: usouGround ? "serper+grounding" : "serper", serper_consultas: serperConsultas } : {};
+    const serperLog = {
+      ...(serperConsultas ? { pesquisa: usouGround ? "serper+grounding" : "serper", serper_consultas: serperConsultas, consultas: consultasFeitas } : {}),
+      // O que se fez com os sites de confiança: sem isto não havia maneira de
+      // saber se tinham servido para alguma coisa.
+      ...(sites.length ? { sites, ...(confianca ? { confianca } : {}) } : {}),
+    };
+    const sitesRes = sites.length ? { sites, confianca } : {};
 
     /* O PRODUTOR não é campo de ficha — não passa pela `juntar` nem pela
        `forca()` que decide os outros. É IDENTIDADE (parte da `chave`), e
@@ -890,7 +1020,7 @@ async function processarPesquisa(
         custo_estimado_eur: custoEstimado, manual: respostaManual !== null }, quem);
       await fechar(pesquisaId, {
         estado: "concluido",
-        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes, pesquisaWeb, profunda, ...(rever ? { rever: true } : {}) },
+        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas: [], fontes, pesquisaWeb, profunda, ...sitesRes, ...(rever ? { rever: true } : {}) },
       });
       return;
     }
@@ -929,7 +1059,7 @@ async function processarPesquisa(
       }, quem);
       await fechar(pesquisaId, {
         estado: "concluido",
-        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda, rever: true },
+        resultado: { modelo: model, campos: 0, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda, ...sitesRes, rever: true },
       });
       return;
     }
@@ -1005,7 +1135,7 @@ async function processarPesquisa(
     }, quem);
     await fechar(pesquisaId, {
       estado: "concluido",
-      resultado: { modelo: model, campos: entraram, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda },
+      resultado: { modelo: model, campos: entraram, aviso: aviso || null, propostas, fontes, pesquisaWeb, profunda, ...sitesRes },
     });
   } catch (e) {
     const err = e as Error;
@@ -1123,8 +1253,11 @@ Deno.serve(async (req) => {
        e a dar prioridade a fontes de confiança. Só entram no prompt
        automático — a manual gera o seu próprio texto do lado do browser. */
     const notas = texto(body?.notas, 300);
+    // Um domínio fica só o domínio (sem "www.", sem caminho); um nome sem
+    // domínio ("Garrafeira Nacional") fica como foi escrito — vai para o
+    // prompt, mas não pode ir para uma consulta `site:` (ver `dominioDe`).
     const sites: string[] = Array.isArray(body?.sites)
-      ? [...new Set(body.sites.map((s: unknown) => texto(s, 100).replace(/^https?:\/\//i, "").replace(/\/.*$/, "")).filter(Boolean))].slice(0, 5) as string[]
+      ? [...new Set(body.sites.map((s: unknown) => dominioDe(texto(s, 300)) || texto(s, 60)).filter(Boolean))].slice(0, 5) as string[]
       : [];
     // Os sites viram só o domínio (acima) — mas um link do Vivino de UM vinho
     // colado ali é a resposta, não uma fonte: guarda-se inteiro, antes de o

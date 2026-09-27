@@ -473,8 +473,21 @@ com JSON direto) e depois o grounding SÓ pelos campos que ele não trouxe —
 quem pesquisa aqui é o admin, que tem o pacote completo. Sem Serper (chave em
 falta, erro, nada encontrado) faz só o grounding. A "pesquisa avançada" que
 a revisão oferecia deixou de existir: já está dentro da pesquisa. O
-`profunda` no resultado passou a querer dizer "houve Serper". E a
-**pesquisa manual (colar a resposta de outro assistente) saiu do ecrã da
+`profunda` no resultado passou a querer dizer "houve Serper".
+**Os sites de confiança (27/09/2026)**: até aqui iam como ` (site:a OR
+site:b)` colados à consulta GERAL do Serper — o que não dava prioridade,
+RESTRINGIA (sem o vinho nesses sites a consulta geral voltava vazia), e um
+nome sem domínio ("Garrafeira Nacional") partia a consulta toda. E nada dizia
+se tinham servido. Agora a consulta geral é livre; os domínios (sem o Vivino,
+que tem a sua) ganham uma consulta SÓ deles, a mais (uma consulta Serper a
+mais quando há sites); os resultados deles vão à frente, marcados "★ FONTE DE
+CONFIANÇA"; e o resultado da pesquisa (e o log: `sites`, `confianca`,
+`consultas`) diz quantos vieram de cada um — é o que a revisão mostra
+(`wcRvSitesHTML`). Um nome sem domínio, a fase de grounding e a pesquisa
+colada só os levam no texto do pedido: aí não há como confirmar, e o ecrã
+di-lo. Um link de uma página de loja colado ali é reduzido ao domínio (a
+página em si não é aberta; o do Vivino é a exceção, ver "Links do Vivino").
+E a **pesquisa manual (colar a resposta de outro assistente) saiu do ecrã da
 pesquisa para o EDITAR** (`wcEditarManual`): é aí que se procura quem não
 quer gastar IA; entra pela mesma porta e pela mesma revisão.
 
@@ -1327,10 +1340,24 @@ num vinho com colheita, uma segunda abertura da mesma página sem `?year=`
 avaliações como a colheita — senão fica de fora); num vinho sem colheita, o
 que se leu já é a global e a da colheita fica vazia. No motor Serper, as
 estrelas de um resultado sem `?year=` são a global, as de um com o nosso ano
-são a colheita, as de outro ano não contam. As pesquisas (IA) continuam a
-escrever na `vivino_nota` — não as conhecem, e por isso as globais não
-estão em `WC_CAMPOS` nem na escolha de campos da "Procurar informação"
-(`WC_VIVINO_GLOBAL`); mexem-se no Editar. **Os valores que já existiam não
+são a colheita, as de outro ano não contam.
+**As pesquisas (IA) também as pedem, desde 27/09/2026** (`vivinoNotaGlobal`/
+`vivinoAvaliacoesGlobal` na `catalogo-info` e nos prompts manuais e do
+lote). Até aí não as conheciam, e a regra do Vivino dizia ao modelo que "a
+nota que lá aparece é uma média entre colheitas" — e pedia-a na
+`vivinoNota`, que é a da COLHEITA: o Quinta do Carmo 2022 ficou com 13 543
+avaliações "da colheita", e vinhos sem ano (Papa Figos, Foral d'Évora…) com
+nota da colheita. Agora: pedir a da colheita traz também a de todas
+(`camposComGlobal`); sem colheita só se pede a de todas; e depois de lidas
+(`vivinoDuas`) a mesma nota com as mesmas avaliações nas duas fica só como
+a de todas, e uma colheita com mais avaliações do que o vinho todo deita a
+de todas fora (a regra do `lerGlobal`). No Serper, cada resultado do Vivino
+leva escrito de que colheita são os números (sem `year=` todas; o nosso ano
+a colheita; outro ano não serve). O visto "Tem de ser exatamente a colheita"
+deixou de ser sobre o Vivino e passou a ser sobre o resto da ficha
+(`regraColheita`). A regra está em duas cópias que têm de bater:
+`regraVivino` (Edge Function) e `wcManualRegraVivino` (`app.js`). Os valores
+errados que já lá estavam não se mexeram (a decisão de 26/09). **Os valores que já existiam não
 se mexeram** (decisão do dono): muita da `vivino_nota` de antes é, na
 verdade, a do vinho todo (as 157 vindas das garrafeiras têm em média 3737
 avaliações; as 13 lidas pelo script com `?year=`, 297). O script vai

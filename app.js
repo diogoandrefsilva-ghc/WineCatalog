@@ -294,6 +294,7 @@ const WC_CAMPOS_JSON={
   mencao:'mencao',classificacao:'classificacao',castas:'castas',teor:'teor',
   estagio_meses:'estagioMeses',estagio_texto:'estagioTexto',vivino_nota:'vivinoNota',
   vivino_avaliacoes:'vivinoAvaliacoes',vivino_url:'vivinoUrl',imagem_url:'imagemUrl',
+  vivino_nota_global:'vivinoNotaGlobal',vivino_avaliacoes_global:'vivinoAvaliacoesGlobal',
   preco_medio:'precoMedio',beber_de:'beberDe',beber_ate:'beberAte',notas_prova:'notasProva',
   harmonizacao:'harmonizacao',ai_resumo:'resumo',
   /* O PRODUTOR não é campo da ficha — é IDENTIDADE (faz parte da `chave`) —
@@ -304,20 +305,15 @@ const WC_CAMPOS_JSON={
      identidade, que recusa se passar a ser a mesma linha que outra. */
   produtor:'produtorConfirmado'
 };
-/* Total de campos que se podem PEDIR à pesquisa — os da ficha (WC_CAMPOS)
-   mais o Produtor, que não está lá por não ser campo de ficha. Usa-se para
-   decidir quando "todos estão marcados" (e por isso não vale a pena escrever
-   "SÓ INTERESSAM ESTES CAMPOS" no prompt manual). */
-const WC_PROC_TOTAL=WC_CAMPOS.length+1;
 /* Os que envelhecem (winecatalog.volatil). A lista está repetida do SQL de
    propósito e SÓ para efeitos de ECRÃ — quem decide se um campo expirou é
    sempre a BD, na `procurar`. Aqui serve só para pôr um aviso ao lado de
    um preço de há oito meses, que é coisa que quem olha quer saber. */
 const WC_VOLATEIS=['vivino_nota','vivino_avaliacoes','vivino_url','vivino_nota_global','vivino_avaliacoes_global',
   'preco_medio','imagem_url','precos'];
-/* Campos que só o script escreve e que por isso NÃO entram em WC_CAMPOS
-   (que é também a lista do que se pode pedir às pesquisas e ao lote — e
-   nenhuma delas sabe o que é `precos`). Aparecem na ficha com este nome. */
+/* Campos que NÃO entram em WC_CAMPOS e aparecem na ficha com este nome: o
+   `precos` (só o script o escreve; nenhuma pesquisa sabe o que é) e as
+   duas notas de todas as colheitas (ver WC_VIVINO_GLOBAL). */
 const WC_ROTULOS_EXTRA={precos:'Preços nas lojas',
   vivino_nota_global:'Nota Vivino (todas as colheitas)',
   vivino_avaliacoes_global:'Avaliações Vivino (todas as colheitas)'};
@@ -325,14 +321,20 @@ const WC_ROTULOS_EXTRA={precos:'Preços nas lojas',
    `vivino_avaliacoes` são as da COLHEITA (o script abre a página com
    `?year=`); estas são as de TODAS as colheitas (a página sem ano). Um 4,5
    com 40 avaliações de 2019 e um 4,2 com 5000 do vinho todo respondem a
-   perguntas diferentes. Só o script as escreve — as pesquisas não as
-   conhecem, e por isso ficam fora de `WC_CAMPOS` (o que se pode pedir) e
-   da escolha de campos da "Procurar informação"; mexem-se no Editar. */
+   perguntas diferentes. Ficam fora de `WC_CAMPOS` só por causa da ORDEM da
+   ficha (ver `WC_FICHA`, logo abaixo). Desde 27/09/2026 as pesquisas também
+   as pedem (`vivinoNotaGlobal`/`vivinoAvaliacoesGlobal`): até aí não as
+   conheciam, e a média de todas as colheitas ia parar à nota da COLHEITA. */
 const WC_VIVINO_GLOBAL=['vivino_nota_global','vivino_avaliacoes_global'];
 /* A ordem da FICHA: a de `WC_CAMPOS`, com a nota de todas as colheitas logo
    a seguir à da colheita — lida ao lado dela, e não perdida no fim. */
 const WC_FICHA=WC_CAMPOS.flatMap(c=>c[0]==='vivino_avaliacoes'
   ?[c].concat(WC_VIVINO_GLOBAL.map(k=>[k,WC_ROTULOS_EXTRA[k]])):[c]);
+/* Total de campos que se podem PEDIR à pesquisa — os da ficha (`WC_FICHA`:
+   os de WC_CAMPOS e as duas notas de todas as colheitas) mais o Produtor, que não está lá por não ser campo de ficha. Usa-se para
+   decidir quando "todos estão marcados" (e por isso não vale a pena escrever
+   "SÓ INTERESSAM ESTES CAMPOS" no prompt manual). */
+const WC_PROC_TOTAL=WC_FICHA.length+1;
 /* QUAL DAS DUAS SE MOSTRA num cartão — a mesma regra do `notaVivino` da
    Garrafeira (mexer numa é mexer na outra, no mesmo dia):
    · a da colheita, se tiver pelo menos 100 avaliações;
@@ -1855,8 +1857,10 @@ function wcContextoHTML(){
     <div class="ed-campo">
       <label>Sites de confiança (opcional)</label>
       <textarea id="pr-sites" rows="1" placeholder="ex.: vivino.com, wine-searcher.com"></textarea>
-      <p class="wc-note" style="margin-top:5px">Um ou mais, separados por vírgula — a pesquisa dá
-        prioridade a estes.</p>
+      <p class="wc-note" style="margin-top:5px">Um ou mais domínios, separados por vírgula
+        (ex.: garrafeiranacional.com). A pesquisa faz uma procura só nestes e põe os resultados
+        deles à frente; no fim diz quantos vieram de cada um. Um link do Vivino de um vinho é
+        usado como o link dele.</p>
     </div>`;
 }
 function wcContextoLer(){
@@ -1881,9 +1885,10 @@ function wcAbrirProcurar(){
   ${wcContextoHTML()}
   <label class="ed-check"><input type="checkbox" id="pr-colheita-esp">
     Tem de ser exatamente a colheita ${esc(String(_wcFicha.ano||''))}</label>
-  <p class="wc-note">Por omissão a pesquisa é sobre o vinho em geral — a nota do Vivino, por
-    exemplo, é uma média entre colheitas. Liga só se precisares mesmo dos factos desta colheita
-    específica.</p>
+  <p class="wc-note">Por omissão a pesquisa é sobre o vinho em geral — o preço, o teor ou as notas
+    de prova podem vir de outra colheita. Liga só se precisares mesmo dos factos desta colheita.
+    A nota do Vivino vem sempre às duas: a da colheita e a de todas as colheitas (pedir a da
+    colheita traz também a de todas).</p>
   <div class="pr-acoes">
     <button class="btn-n" onclick="wcProcTodos(true)">Todos</button>
     <button class="btn-n" onclick="wcProcTodos(false)">Nenhum</button>
@@ -1904,7 +1909,8 @@ function wcAbrirProcurar(){
   </label>`;
   for(const [k,lbl] of WC_EDIT.map(([k,l])=>[k,l])){
     if(_wcFicha.ano==null&&WC_JANELA.includes(k))continue;   // sem colheita não há janela
-    if(WC_VIVINO_GLOBAL.includes(k))continue;                // só o script as lê (ver WC_VIVINO_GLOBAL)
+    // …nem nota da colheita: só a de todas (`camposComGlobal` na catalogo-info)
+    if(_wcFicha.ano==null&&(k==='vivino_nota'||k==='vivino_avaliacoes'))continue;
     const tem=k in ficha;
     const o=origens[k]||{}, f=Number(o.f||0);
     h+=`<label class="pr-campo">
@@ -2134,7 +2140,7 @@ function wcRvIgual(a,b){
 function wcRvNome(k){
   if(k==='produtor')return 'Produtor';
   if(k==='vivino_url')return 'Link do Vivino';
-  const c=WC_CAMPOS.find(([x])=>x===k);
+  const c=WC_FICHA.find(([x])=>x===k);
   return c?c[1]:k;
 }
 /* Os links vão INTEIROS: é o fim deles (o número do vinho no Vivino) que
@@ -2155,7 +2161,7 @@ function wcRvValorHTML(k,v){
 }
 function wcRvOrdem(k){
   if(k==='produtor')return -1;
-  const i=WC_CAMPOS.findIndex(([c])=>c===k);
+  const i=WC_FICHA.findIndex(([c])=>c===k);
   return i<0?999:i;
 }
 /* As linhas (e o que ficou de fora por vir igual). */
@@ -2216,12 +2222,32 @@ function wcRevisaoCorpo(res,o){
   const fontes=Array.isArray(res.fontes)?res.fontes:[];
   if(fontes.length)h+=`<div class="rv-fontes">Fontes: ${fontes.map(f=>
     `<a href="${esc(f.url||'#')}" target="_blank" rel="noopener">${esc(f.titulo||f.url||'fonte')}</a>`).join(' · ')}</div>`;
+  h+=wcRvSitesHTML(res);
   h+=`<div class="rv-fontes"><i>${
     res.pesquisaWeb===false?'⚠️ Isto saiu da memória do modelo, sem pesquisa na net — confere tudo antes de aceitar.'
     :res.pesquisaWeb===true?(res.profunda?'Pesquisado no Google (e lido dos resultados).':'Pesquisado no Google.')+
       ' Leitura automática de páginas da net — vale como ponto de partida, não como certeza.'
     :'Resposta colada de um assistente de IA — confere antes de aceitar.'}${res.modelo?` · ${esc(res.modelo)}`:''}</i></div>`;
   return h;
+}
+/* O QUE SE FEZ COM OS SITES DE CONFIANÇA (27/09/2026). A `catalogo-info`
+   faz uma procura só neles e conta quantos resultados vieram de cada um
+   (`confianca`); sem essa contagem (pesquisa colada, ou sem Serper) foram
+   só uma frase no pedido à IA, e diz-se isso — era o que não se sabia. */
+function wcRvSitesHTML(res){
+  const sites=Array.isArray(res.sites)?res.sites:[];
+  if(!sites.length)return '';
+  const c=res.confianca&&typeof res.confianca==='object'?res.confianca:null;
+  if(!c)return `<div class="rv-fontes">Sites de confiança (${esc(sites.join(', '))}): foram só
+    no texto do pedido — ${res.pesquisaWeb===true||res.pesquisaWeb===false
+      ?'não houve pesquisa nossa no Google desta vez, por isso não há como confirmar se a IA os usou.'
+      :'não há como confirmar se o assistente os usou.'}</div>`;
+  const partes=sites.map(s=>s in c
+    ?`${esc(s)}: <b>${Number(c[s])||0}</b> resultado${Number(c[s])===1?'':'s'}`
+    :`${esc(s)}: não é um domínio — só no texto do pedido`);
+  const nada=Object.values(c).every(n=>!Number(n));
+  return `<div class="rv-fontes">Sites de confiança — ${partes.join(' · ')}.${nada
+    ?' Nenhum resultado deles: o que veio é de outras fontes.':' Foram os primeiros a ser lidos.'}</div>`;
 }
 function wcRevNovos(res){return wcRvLinhas(res).linhas.length;}
 function wcRevTodos(id,on){
@@ -2335,14 +2361,21 @@ async function wcRevDescartar(quieto){
    (`wcProcIniciarPolling`) não sabe a diferença — e não precisa de saber. */
 let _wcManualCampos=null;
 
-/* Espelho das duas versões da regra do Vivino em `catalogo-info.ts`
-   (`regraVivino`) — ver o comentário grande lá para o porquê. A ESTRITA
-   exige o ano; a RELAXADA (o novo default) não, porque a página do Vivino
-   é do vinho e não da colheita. */
-function wcManualRegraVivino(colheitaEspecifica){
-  return colheitaEspecifica
-    ? 'Vivino: "vivinoNota", "vivinoAvaliacoes" e "vivinoUrl" têm de vir da MESMA página do Vivino e do vinho certo — confirma produtor, ano e região antes de aceitar. Em dúvida, deixa os três vazios.'
-    : 'A página do Vivino é do VINHO, não de uma colheita específica: o ANO NÃO faz parte da identidade da página, e a nota que lá aparece é uma média entre colheitas. Para confirmares que é a página certa, basta o nome (já desambiguado na regra anterior) e o produtor baterem certo — não deixes a nota, as avaliações nem o link vazios só por causa do ano. A nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm logo a seguir, entre parêntesis — não uses números de outra zona da página. Mesmo sem confirmares a nota, mantém o link se tiveres a certeza da página.';
+/* Espelho da regra do Vivino de `catalogo-info.ts` (`regraVivino`) — ver
+   o comentário grande lá. A página é do VINHO; as NOTAS são duas (a de
+   todas as colheitas e a de uma). `ano` undefined é o LOTE, onde cada
+   vinho traz (ou não) o seu ano na lista. */
+function wcManualRegraVivino(ano){
+  const col=ano===undefined
+    ?'"vivinoNota"/"vivinoAvaliacoes" — SÓ a da colheita indicada na lista (a página com "?year=<ano>", ou a dessa colheita na lista de colheitas); um vinho SEM ano na lista não as tem, fica só com a de todas. Se só vires a de todas as colheitas, deixa estas duas vazias — nunca copies a de todas para aqui.'
+    :ano
+    ?`"vivinoNota"/"vivinoAvaliacoes" — SÓ a da colheita ${ano}: a da página com "?year=${ano}", ou a dessa colheita na lista de colheitas. Se só vires a de todas as colheitas, deixa estas duas vazias — nunca copies a de todas para aqui.`
+    :'"vivinoNota"/"vivinoAvaliacoes" ficam de fora: este vinho não tem colheita, e a única nota que serve é a de todas as colheitas.';
+  return 'O Vivino tem DUAS notas, e não se misturam: "vivinoNotaGlobal"/"vivinoAvaliacoesGlobal" — a de TODAS as colheitas: a que a página do vinho mostra sem ano escolhido (…/w/<nº>, sem "?year="); '+col+' A nota é o número entre 1.0 e 5.0 ao lado das estrelas; as avaliações vêm logo a seguir, entre parêntesis — não uses números de outra zona da página. Uma colheita nunca tem mais avaliações do que o vinho todo. "vivinoUrl" é a página do VINHO (…/<nome>/w/<nº>), a mesma para todas as colheitas: o ano não faz parte da identidade dela — basta o nome e o produtor baterem certo. Mantém o link se tiveres a certeza da página, mesmo sem nota.';
+}
+/* "Tem de ser exatamente a colheita X" — espelho da `regraColheita`. */
+function wcManualRegraColheita(ano){
+  return `O que responderes tem de ser da colheita ${ano}: teor, estágio, preço, notas de prova e janela de uma colheita diferente ficam fora do JSON.`;
 }
 /* A pesquisa manual é grátis (é a conta do admin num assistente), por isso
    pede-se SEMPRE a pesquisa a sério — o equivalente à "pesquisa profunda"
@@ -2374,14 +2407,14 @@ ${sitesTxt}${so}
 REGRAS, e são a sério:
 1. NÃO INVENTES. Um campo que não confirmes por pesquisa fica FORA do JSON (ou null) — este catálogo é lido por outras aplicações, e um palpite aqui propaga-se.
 2. ${WC_MANUAL_REGRA_CUVEE}
-3. ${wcManualRegraVivino(colheitaEspecifica)}
+3. ${wcManualRegraVivino(v.ano||null)}
 4. "imagemUrl" é o link DIRETO de uma fotografia (acaba em .jpg/.jpeg/.png/.webp/.avif), nunca o link da página.
 5. Se houver dúvida de homónimo, prioriza ano + produtor + região e diz o que ficou por confirmar em "aviso".
 6. Castas separadas por nome (nunca "blend"/"lote"/"várias castas").
 7. "precoMedio" é o preço de retalho em euros, garrafa de 0,75L.
 8. ${v.ano?'"beberDe"/"beberAte" são anos (a janela DESTA colheita).':'Este vinho não tem colheita: NÃO há janela de consumo — deixa "beberDe"/"beberAte" de fora.'}
 9. "produtorConfirmado" é o produtor tal como consta no rótulo ou numa loja oficial — usa o que vier em "Produtor" acima se estiver certo, ou corrige-o; deixa vazio se não tiveres a certeza, nunca inventes um nome.
-
+${colheitaEspecifica&&v.ano?`10. ${wcManualRegraColheita(v.ano)}\n`:''}
 Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
 {
   "encontrado": true,
@@ -2397,8 +2430,10 @@ Responde SÓ com este JSON, sem texto à volta e sem blocos de código \`\`\`:
   "teor": 14.5,
   "estagioMeses": 18,
   "estagioTexto": "18 meses em barrica de carvalho francês",
-  "vivinoNota": 4.1,
-  "vivinoAvaliacoes": 1234,
+${v.ano?`  "vivinoNota": 4.2,
+  "vivinoAvaliacoes": 312,
+`:''}  "vivinoNotaGlobal": 4.1,
+  "vivinoAvaliacoesGlobal": 5234,
   "vivinoUrl": "",
   "imagemUrl": "",
   "precoMedio": 18.5,
@@ -2712,7 +2747,7 @@ function wcLotePassoCampos(){
       <span>Campos</span>
       <span class="lote-cont" id="lote-conta-campos"></span>
     </div>
-    <div class="lote-campos" id="lote-campos">${WC_CAMPOS.map(([k,lbl])=>{
+    <div class="lote-campos" id="lote-campos">${WC_FICHA.map(([k,lbl])=>{
       const on=_wcLoteCampos.includes(k);
       /* "Vivino" e "Imagem" chegam de `WC_CAMPOS` com o nome que fazem na
          ficha, onde o valor ao lado diz que são links. Numa lista de
@@ -2774,7 +2809,8 @@ function wcLoteCampoExemplo(k){
     castas:'["Touriga Nacional", "Touriga Franca"]',
     teor:'14.5', estagio_meses:'18',
     estagio_texto:'"18 meses em barrica de carvalho francês"',
-    vivino_nota:'4.1', vivino_avaliacoes:'1234', vivino_url:'""', imagem_url:'""',
+    vivino_nota:'4.2', vivino_avaliacoes:'312',
+    vivino_nota_global:'4.1', vivino_avaliacoes_global:'5234', vivino_url:'""', imagem_url:'""',
     preco_medio:'18.5', beber_de:'2026', beber_ate:'2034',
     notas_prova:'"duas ou três frases sobre aroma, boca e final"',
     harmonizacao:'"com que pratos"',
@@ -2789,7 +2825,7 @@ function wcLoteRegras(campos){
       'para as duas.',
     WC_MANUAL_REGRA_CUVEE,
   ];
-  if(campos.some(k=>k.startsWith('vivino_')))r.push(wcManualRegraVivino(false));
+  if(campos.some(k=>k.startsWith('vivino_')))r.push(wcManualRegraVivino(undefined));
   if(campos.includes('castas'))
     r.push('Castas separadas por nome (nunca "blend"/"lote"/"várias castas").');
   if(campos.includes('imagem_url'))
@@ -3465,7 +3501,7 @@ async function wcCarregarReportes(estado){
 }
 
 function wcReporteHTML(r){
-  const nome=(()=>{const c=WC_CAMPOS.find(([x])=>x===r.campo);return c?c[1]:r.campo;})();
+  const nome=(()=>{const c=WC_FICHA.find(([x])=>x===r.campo);return c?c[1]:r.campo;})();
   const v=x=>(x==null?'<em>vazio</em>':esc(Array.isArray(x)?x.join(', '):String(x)));
   /* O valor de AGORA só aparece quando é DIFERENTE do que estava então —
      senão era repetir a mesma coisa três vezes e fazer o cartão parecer
