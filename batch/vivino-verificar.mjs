@@ -231,6 +231,10 @@ async function lerPagina(page) {
       canonico: document.querySelector('link[rel="canonical"]')?.href || null,
       h1,
       ldNome: prod?.name || null,
+      // É a página de UM produto? (Magento, WooCommerce, PrestaShop, og:type)
+      // — uma lista de resultados também tem preços à vista.
+      ehProduto: !!prod || meta("og:type") === "product" || !!document.body?.classList.contains("catalog-product-view")
+        || !!document.body?.classList.contains("single-product") || document.body?.id === "product",
       // A adega: a marca/fabricante do JSON-LD, senão o link da adega (Vivino).
       ldProdutor: (() => { const b = prod && (prod.brand || prod.manufacturer); const x = Array.isArray(b) ? b[0] : b;
         return typeof x === "string" ? x : (x && x.name) || null; })(),
@@ -923,6 +927,35 @@ async function produtosDaPagina(page, chaves) {
   }, chaves).catch(() => ({ itens: [], como: "erro" }));
 }
 
+function resumoProcuras(det) {
+  const ps = (det?.procuras || []).map(p => `"${p.q}"${p.formulario ? " (formulário)" : ""} → ${p.itens ?? 0}` +
+    (p.nomes && p.nomes.length ? ` (${p.nomes.slice(0, 4).join(" · ")})` : "") +
+    (!p.itens && p.titulo ? ` [página: ${p.titulo}]` : "") + (p.como === "saltou para o produto" ? " [saltou para o produto]" : ""));
+  const e = det?.pelo_endereco;
+  if (e) ps.push(`endereço com o ano: ${e.para} → ${e.http ?? "sem resposta"}${e.nome ? ` "${e.nome}"` : ""}${e.serve ? "" : " (não serviu)"}`);
+  return `      procurou: ${ps.join(" | ") || "nada"}`;
+}
+
+// O nome do produto numa página de loja: o do JSON-LD ou o h1 primeiro — o
+// título do separador leva "| Garrafeira Nacional", e "Garrafeira" é uma menção.
+function nomeDoProduto(info) {
+  return String((info && (info.ldNome || info.h1 || nomeDe(info))) || "").replace(/\s+/g, " ").trim();
+}
+
+// A procura que saltou para a página de um produto: outro caminho no
+// endereço final, uma página que É de um produto (`ehProduto`) e um preço.
+function produtoDaProcura(a, url) {
+  if (!a || !a.info || !a.final || !a.status || a.status >= 400) return null;
+  let de, para;
+  try { de = new URL(url).pathname; para = new URL(a.final).pathname; } catch { return null; }
+  if (para === de || para === "/") return null;
+  const temPreco = a.info.ldPreco?.preco != null || a.info.metaPreco || a.info.precoTexto;
+  const nome = nomeDoProduto(a.info);
+  if (!a.info.ehProduto || !temPreco || !nome) return null;
+  return { href: a.final.split(/[?#]/)[0], nome: String(nome).replace(/\s+/g, " ").trim(), texto: "",
+    preco: a.info.ldPreco?.preco ?? a.info.metaPreco ?? null };
+}
+
 // Uma procura sem produtos: o que a página era. A Granvine passou a meio
 // de duas corridas (27/09/2026) a responder 200 sem produto nenhum, durante
 // horas e para todos os vinhos, e o `bloqueio` não a reconheceu; sem o
@@ -968,9 +1001,9 @@ async function lerLoja(page, loja, v) {
     return { achado: { preco: pp.preco, url: colado.split(/[?#]/)[0], colheita: colheitaDe(nomeP), nome: nomeP }, detalhe: det, ficha };
   }
   // A página do produto escolhido: o preço e a ficha que ela diz.
-  const abrirEscolhido = async (b, como) => {
-    await pausa();
-    const pg = await abrir(page, b.href);
+  const abrirEscolhido = async (b, como, aberta) => {
+    let pg = aberta;
+    if (!pg) { await pausa(); pg = await abrir(page, b.href); }
     if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
     const pp = precoDaPagina(pg.info, b.href) || (numero(b.preco) ? { preco: numero(b.preco), url: b.href } : null);
     const ficha = fichaDosPares(pg.info);
@@ -981,6 +1014,27 @@ async function lerLoja(page, loja, v) {
     if (!pp) { det.sem_preco = true; return { detalhe: det, ficha }; }
     return { achado: { preco: pp.preco, url: b.href, colheita: b.colheita, nome: b.nome }, detalhe: det, ficha };
   };
+  // O endereço de um produto de outra colheita com o nosso ano no lugar do
+  // dele. Só serve se abrir (não 404, não a página inicial) e se o nome da
+  // página tiver o NOSSO ano e passar as mesmas regras de nome.
+  const outraColheitaPeloEndereco = async (b) => {
+    const href = String(b.href || "");
+    const re = new RegExp(`(^|[^0-9])${b.colheita}(?![0-9])`, "g");
+    const caminho = (() => { try { return new URL(href).pathname; } catch { return ""; } })();
+    if (!b.colheita || (caminho.match(re) || []).length !== 1) return null;
+    const novo = href.replace(caminho, caminho.replace(re, (_, antes) => `${antes}${v.ano}`));
+    await pausa();
+    const pg = await abrir(page, novo);
+    if (bloqueio(pg.status, pg.info)) return { bloqueado: true, detalhe: det };
+    const nomeP = nomeDoProduto(pg.info);
+    const caminhoFinal = (() => { try { return new URL(pg.final).pathname; } catch { return ""; } })();
+    const serve = pg.status && pg.status < 400 && caminhoFinal.includes(String(v.ano))
+      && colheitaDe(nomeP) === v.ano && bateNome(v, nomeP) && corBate(v, nomeP)
+      && parecenca(v, nomeP) >= LIMIAR && !NAO_E_GARRAFA.test(nomeP);
+    det.pelo_endereco = { de: href, para: novo, http: pg.status, nome: nomeP || undefined, serve: !!serve };
+    if (!serve) return null;
+    return await abrirEscolhido({ href: novo, nome: nomeP, colheita: v.ano, preco: null }, "pelo endereço", pg);
+  };
   // A última tentativa leva a COLHEITA: a GN é estrita, e "Cartuxa Colheita
   // Tinto" deu as colheitas que calharam (só passou a de 2008, a 49,95 €),
   // com o 2018, o 2019 e o 2020 lá à venda. Quando a colheita certa não vem,
@@ -988,7 +1042,7 @@ async function lerLoja(page, loja, v) {
   // mais recente das duas, como sempre.
   const qAno = v.ano && soDistintivas ? `${soDistintivas} ${v.ano}` : null;
   const consultas = [...new Set([nome, semCor, soDistintivas, qAno])].filter(x => x && x.length >= 3);
-  let outra = null;
+  let outra = null, tentouEndereco = false;
   for (let i = 0; i < consultas.length; i++) {
     const q = consultas[i];
     if (q === qAno && outra) await pausa();
@@ -999,6 +1053,11 @@ async function lerLoja(page, loja, v) {
       const a = await abrir(page, url);
       if (bloqueio(a.status, a.info)) return { bloqueado: true, detalhe: { ...det, http: a.status } };
       const r = await produtosDaPagina(page, chaves);
+      // Uma procura com UM resultado pode saltar direto para a página do
+      // produto (outro caminho no endereço, e um preço na página): aí não há
+      // lista, e o que lá se lia eram os "relacionados". O produto é a página.
+      const saltou = produtoDaProcura(a, url);
+      if (saltou) { r.itens = [saltou, ...r.itens.filter(it => it.href !== saltou.href)]; r.como = "saltou para o produto"; }
       // Os primeiros nomes que a loja mostrou: é o que diz porque é que
       // nenhum passou nas regras de nome (a Carvalhas teve 4 e nenhum).
       det.procuras.push({ q, url, http: a.status, itens: r.itens.length, como: r.como,
@@ -1041,6 +1100,14 @@ async function lerLoja(page, loja, v) {
       b = { ...escolhido, colheita: colheitaDe(escolhido.nome) };
     }
     if (qAno && b.colheita !== v.ano) {
+      // Primeiro a MESMA página com o nosso ano no endereço: a GN põe a
+      // colheita no endereço (/2008-cartuxa-tinto.html → /2018-…), e a
+      // procura dela não deu o 2018 nem com o ano (27/09/2026).
+      if (!tentouEndereco) {
+        tentouEndereco = true;
+        const t = await outraColheitaPeloEndereco(b);
+        if (t) return t;
+      }
       if (q !== qAno) {
         if (!outra) outra = { b, como };
         i = consultas.indexOf(qAno) - 1;
@@ -1379,6 +1446,9 @@ async function main() {
             precosMudaram = true;
             achadaAgora = achadaAgora || loja.id;
             console.log(`   ${loja.nome}: ${r.achado.preco.toFixed(2)} €${r.achado.colheita ? ` (colheita ${r.achado.colheita})` : ""} — "${r.achado.nome}"`);
+            // Outra colheita: o que se procurou e o que a loja mostrou — é o que
+            // diz porque é que a nossa não veio (a GN deu o 2008 com o 2018 à venda).
+            if (v.ano && r.achado.colheita && r.achado.colheita !== v.ano) console.log(resumoProcuras(r.detalhe));
             // Só preços: a primeira loja que o tem decide, as outras nem se abrem.
             if (MODO === "precos") break;
           } else {
@@ -1762,7 +1832,7 @@ async function aplicarSimulacao(fich) {
   console.log(`Gravados: ${ok} · falharam: ${falhou}`);
 }
 
-export { canon, palavrasDaRegiao, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
+export { canon, resumoProcuras, palavrasDaRegiao, compararComAgora, ajustarAoAgora, linkDaColheita, linksDoVinho, produtorDaPagina, castaAMais, colheitaMostrada, desambiguarPorCasta, aMaisSemAsNossasCastas, ambiguoPorCasta, palavras, lerPagina as lerPaginaExport, regiaoDe, imagemDe, castasDe, castasBatem, bateNome, fichaDosPares, planoDoVinho, comAno, lerLoja, precoDaPagina, colheitaDe, tituloLimpo, aMais, mencao, parecenca, corBate, urlLimpo, idDoVinho, numerosDe, nomeDe, bloqueio, verificar,
          verificarSerper, numerosDoResultado };
 
 // Corre só quando é chamado diretamente (o teste importa as funções).

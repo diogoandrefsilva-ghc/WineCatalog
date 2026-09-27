@@ -857,6 +857,20 @@ valores errados que deixou foram corrigidos à mão (no histórico):
   procura com o ANO (`qAno`: as palavras distintivas + a colheita, "cartuxa
   2018"); sem ela, fica a mais recente das duas. Custa uma página a mais por
   loja nos vinhos cuja colheita a loja não mostra à primeira.
+  **E nem assim a GN deu o 2018** (a corrida seguinte, com a regra já no
+  PC). O que resolve é o ENDEREÇO: a GN põe a colheita nele
+  (`/2008-cartuxa-tinto.html`), e antes da procura com o ano abre-se o mesmo
+  endereço com o nosso (`outraColheitaPeloEndereco`) — serve se abrir, se o
+  endereço final ainda tiver o ano e se o NOME da página (`nomeDoProduto`: o
+  do JSON-LD ou o `h1`, nunca o título do separador, que leva "| Garrafeira
+  Nacional" e "Garrafeira" é uma menção) tiver a nossa colheita e passar as
+  regras de nome. Uma procura que SALTA para a página do produto
+  (`produtoDaProcura`: outro caminho, uma página que É de um produto —
+  `ehProduto`, pelo JSON-LD, `og:type` ou a classe do `body` do
+  Magento/WooCommerce — e um preço) conta esse produto como o resultado, em
+  vez dos "relacionados" que lá estão. E quando a colheita não bate, o
+  registo diz o que cada procura deu (`resumoProcuras`) — era o que faltava
+  para se saber porquê sem abrir o ficheiro da simulação.
 - **"1,5Lt" não era uma garrafa grande** (`NAO_E_GARRAFA`): a Granvine
   escreve assim, e o "Cartuxa Tinto 2020 1,5Lt" (48,89 €) passou no 2020. O
   regex conhecia só algumas grafias (1,5L, 3L, 37,5cl…); agora é qualquer
