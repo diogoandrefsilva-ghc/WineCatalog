@@ -70,7 +70,6 @@ DECLARE
   ok       boolean;
   resto    text[];
   cor_fim  text;
-  v_manter text;
   regioes  text[] := ARRAY['douro','duriense','alentejo','alentejano','dao','bairrada','tejo','lisboa',
                            'setubal','peninsula','minho','verde','verdes','madeira','porto','algarve',
                            'beira','beiras','interior','tras','montes','transmontano','tavora','varosa',
@@ -79,7 +78,7 @@ DECLARE
                            'regional','ipr','preta','branca','portugal'];
 BEGIN
   IF btrim(COALESCE(p_nome,'')) = '' THEN
-    RETURN jsonb_build_object('nome', p_nome, 'ano', p_ano, 'nome_sem_cor', p_nome, 'mudancas', '[]'::jsonb, 'avisos', '[]'::jsonb, 'chave_manter', '');
+    RETURN jsonb_build_object('nome', p_nome, 'ano', p_ano, 'nome_sem_cor', p_nome, 'mudancas', '[]'::jsonb, 'avisos', '[]'::jsonb);
   END IF;
 
   -- 1. O ANO. Só uma palavra que É um ano (19xx/20xx), e nunca a única.
@@ -113,10 +112,6 @@ BEGIN
     END IF;
   END IF;
 
-  -- Um nome da lista do admin (`nomes_manter`, ver nomes-manter.sql) fica
-  -- com o produtor à frente: "1836 Grande Reserva" sozinho é vago.
-  v_manter := winecatalog.chave_manter(w);
-
   -- 3. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e as
   -- variantes da oficial. Fica a mais comprida que case palavra a palavra.
   cand := ARRAY[COALESCE(p_produtor,''), COALESCE(winecatalog.produtor_oficial(p_produtor),'')];
@@ -134,7 +129,9 @@ BEGIN
     END LOOP;
     IF ok AND array_length(cw, 1) > melhor THEN melhor := array_length(cw, 1); END IF;
   END LOOP;
-  IF melhor > 0 AND EXISTS (SELECT 1 FROM winecatalog.nomes_manter m WHERE m.chave = v_manter) THEN
+  -- Um produtor da lista do admin (`produtores_no_nome`, nomes-manter.sql)
+  -- fica à frente: "1836 Grande Reserva" sozinho é vago.
+  IF melhor > 0 AND winecatalog.produtor_no_nome(p_produtor) THEN
     melhor := 0;
   END IF;
   IF melhor > 0 THEN
@@ -158,8 +155,7 @@ BEGIN
     'ano', v_ano,
     'nome_sem_cor', array_to_string(w, ' '),   -- igual ao nome desde a fase 4
     'mudancas', to_jsonb(mud),
-    'avisos', to_jsonb(avisos),
-    'chave_manter', v_manter);
+    'avisos', to_jsonb(avisos));
 END;
 $$;
 REVOKE ALL ON FUNCTION winecatalog.nome_normal(text, text, text, integer) FROM PUBLIC, anon;

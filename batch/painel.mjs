@@ -220,14 +220,14 @@ const servidor = http.createServer(async (req, res) => {
       // A regra do nome (db/nomes-normalizar.sql): sem `aplicar` é a simulação
       // de tudo; com ele, só os itens escolhidos (a função recalcula a regra).
       const b = await lerCorpo(req);
-      // A lista dos nomes que ficam como estão (db/nomes-manter.sql).
-      if (b.acao === "listar") return sbRpc(res, "winecatalog", "nomes_manter_listar", {});
-      if (b.acao === "tirar") return sbRpc(res, "winecatalog", "nomes_manter_tirar", { p_chave: String(b.chave ?? "").trim().slice(0, 300) });
+      // Os produtores que ficam no nome dos seus vinhos (db/nomes-manter.sql).
+      if (b.acao === "listar") return sbRpc(res, "winecatalog", "produtores_no_nome_listar", {});
+      if (b.acao === "tirar") return sbRpc(res, "winecatalog", "produtores_no_nome_tirar", { p_chave: String(b.chave ?? "").trim().slice(0, 300) });
       if (b.acao === "manter") {
         const its = (Array.isArray(b.itens) ? b.itens : []).slice(0, 200)
           .map(x => ({ fonte: x.fonte === "garrafeira" ? "garrafeira" : "catalogo", id: Number(x.id) }))
           .filter(x => Number.isInteger(x.id) && x.id > 0);
-        return sbRpc(res, "winecatalog", "nomes_manter_marcar", { p_itens: its });
+        return sbRpc(res, "winecatalog", "produtores_no_nome_marcar", { p_itens: its });
       }
       const aplicar = b.aplicar === true;
       const itens = (Array.isArray(b.itens) ? b.itens : []).slice(0, 1000)
@@ -442,7 +442,7 @@ a{color:var(--bd)}
 </section>
 <section class="tab" id="t-nomes" hidden>
 <div class="card"><h2>Nomes dos vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. Quando o nome que sobra fica vago ("1836 Grande Reserva"), desmarca-o e carrega em <b>Manter o nome dos desmarcados</b>: fica numa lista e o produtor nunca mais sai da frente desse nome — aqui, nas garrafeiras e nas escritas futuras. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. Quando o nome que sobra fica vago ("1836 Grande Reserva"), desmarca-o e carrega em <b>Manter o produtor no nome</b>: o PRODUTOR desse vinho fica numa lista, e nos vinhos dele o produtor nunca mais sai da frente do nome — nos que já cá estão, nas garrafeiras e nos que vierem. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
   <div class="filtros"><input type="search" id="nomes-q" placeholder="procurar por nome, produtor, garrafeira, dono…" oninput="nomesPintar()">
     <label>Onde <select id="nomes-onde" onchange="nomesPintar()"><option value="">catálogo e garrafeiras</option><option value="catalogo">só o catálogo</option><option value="garrafeira">só as garrafeiras</option></select></label>
     <label>O que sai do nome <select id="nomes-mud" onchange="nomesPintar()"><option value="">qualquer coisa</option><option value="ano">a colheita</option><option value="produtor">o produtor</option><option value="cor">a cor</option><option value="avisos">só os com avisos</option></select></label>
@@ -450,10 +450,10 @@ a{color:var(--bd)}
   <div class="linha" style="margin-top:10px"><span id="nomes-n" class="nota"></span></div>
   <div class="linha" style="margin-top:8px"><button onclick="nomesMarcar(true)">Marcar os que se veem</button><button onclick="nomesMarcar(false)">Desmarcar os que se veem</button>
     <button class="prim" id="btn-nomes" onclick="nomesAplicar()" disabled>Aplicar os marcados</button>
-    <button id="btn-nomes-manter" onclick="nomesManter()" disabled title="Os desmarcados que se veem e a quem a regra tirava o produtor da frente: o nome fica como está">Manter o nome dos desmarcados</button>
+    <button id="btn-nomes-manter" onclick="nomesManter()" disabled title="Os produtores dos desmarcados que se veem e a quem a regra tirava o produtor da frente: nos vinhos deles, o produtor fica no nome">Manter o produtor no nome</button>
     <button onclick="nomesProcurar()" title="Volta a correr a regra sobre o catálogo e as garrafeiras de agora">🔄 Simular de novo</button></div>
   <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
-  <details style="margin-top:10px" ontoggle="if(this.open)nomesManterListar()"><summary class="nota">Nomes que ficam como estão</summary><div id="nomes-manter" style="margin-top:6px"></div></details>
+  <details style="margin-top:10px" ontoggle="if(this.open)nomesManterListar()"><summary class="nota">Produtores que ficam no nome</summary><div id="nomes-manter" style="margin-top:6px"></div></details>
 </div>
 </section>
 <section class="tab" id="t-produtores" hidden>
@@ -847,7 +847,7 @@ function nomesContar(){
   const todos=NOMES.linhas||[],vis=nomesVisiveis().length,m=nomesMarcados().length;
   document.getElementById("nomes-n").textContent=todos.filter(nomesMuda).length+" a mudar agora · "+todos.length+" com alguma coisa · "+vis+" à vista · "+m+" marcado"+(m===1?"":"s");
   const b=document.getElementById("btn-nomes");b.disabled=!m;b.textContent="Aplicar os marcados"+(m?" ("+m+")":"");
-  const k=nomesAManter().length,bm=document.getElementById("btn-nomes-manter");bm.disabled=!k;bm.textContent="Manter o nome dos desmarcados"+(k?" ("+k+")":"");
+  const k=nomesAManter().length,bm=document.getElementById("btn-nomes-manter");bm.disabled=!k;bm.textContent="Manter o produtor no nome"+(k?" ("+k+")":"");
 }
 function nomesPintar(){
   if(!NOMES)return;
@@ -877,16 +877,17 @@ async function nomesAplicar(){
 }
 async function nomesManter(){
   const itens=nomesAManter().map(x=>({fonte:x.fonte,id:x.id}));
-  if(!itens.length)return alert("Desmarca os vinhos cujo nome queres manter (os que perdiam o produtor da frente).");
-  if(!confirm("Manter o nome de "+itens.length+" vinho(s)? O produtor não volta a sair da frente destes nomes (a colheita e a cor no fim continuam a sair)."))return;
-  try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" nome(s) na lista.");await nomesProcurar();
+  if(!itens.length)return alert("Desmarca os vinhos cujo produtor deve ficar no nome (os que o perdiam da frente).");
+  const prods=[...new Set(nomesAManter().map(x=>x.produtor||""))].filter(Boolean);
+  if(!confirm("Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\n\n"+prods.join("\n")))return;
+  try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" produtor(es) acrescentado(s) à lista.");await nomesProcurar();
     const d=document.getElementById("nomes-manter").closest("details");if(d.open)nomesManterListar();}
   catch(e){alert(e.message);}
 }
 async function nomesManterListar(){
   const el=document.getElementById("nomes-manter");el.innerHTML='<p class="nota">A carregar…</p>';
   try{const L=await post("/nomes",{acao:"listar"});
-    el.innerHTML=L.length?L.map(m=>'<div>'+esc(m.nome)+' <a href="#" data-k="'+esc(m.chave)+'" onclick="nomesManterTirar(this.dataset.k);return false" title="Deixar a regra voltar a tirar o produtor deste nome">✕</a></div>').join(""):'<p class="nota">Nenhum.</p>';}
+    el.innerHTML=L.length?L.map(m=>'<div>'+esc(m.produtor)+' <a href="#" data-k="'+esc(m.chave)+'" onclick="nomesManterTirar(this.dataset.k);return false" title="Deixar a regra voltar a tirar este produtor da frente dos nomes">✕</a></div>').join(""):'<p class="nota">Nenhum.</p>';}
   catch(e){el.innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
 }
 async function nomesManterTirar(k){

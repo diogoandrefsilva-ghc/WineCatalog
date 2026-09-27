@@ -50,7 +50,7 @@ tudo o que aqui está foi pago com um erro.
   `produtores.sql` → `nomes-normalizar.sql` → **`cor-na-chave.sql`** (a cor na
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
-  marcadas como substituídas) → `nomes-manter.sql` (os nomes que ficam como estão) (+ `README.md`
+  marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -1030,9 +1030,10 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
 - **Nomes de vinhos** — a simulação da regra do nome, com procura, "Onde"
   (catálogo/garrafeiras) e "O que sai do nome" (colheita/produtor/cor/com
   avisos). Um desmarcado fica desmarcado ao mudar os filtros (`NOMES_OFF`),
-  e "Aplicar" leva só os marcados **que se veem**; "Manter o nome dos
-  desmarcados" (a lista `nomes_manter`, ver "Os nomes que ficam como estão")
-  leva os desmarcados que se veem e a quem a regra tirava o produtor;
+  e "Aplicar" leva só os marcados **que se veem**; "Manter o produtor no
+  nome" (a lista `produtores_no_nome`, ver "Os produtores que ficam no
+  nome") leva os PRODUTORES dos desmarcados que se veem e a quem a regra
+  tirava o produtor;
 - **Produtores** — as sugestões e os oficiais, com uma procura.
 Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
 que se abrem. Enquanto o script corre, só os botões que o põem a correr
@@ -1331,17 +1332,22 @@ velha). Recalcularam-se as chaves todas (`cor_na_chave_recalcular`). A lição
 é a do costume: um trigger que engole erros tem de ser testado a ver o que
 ESCREVE, não só a ver que não rebenta.
 
-**Os nomes que ficam como estão** (27/09/2026, `db/nomes-manter.sql`). A
+**Os produtores que ficam no nome** (27/09/2026, `db/nomes-manter.sql`). A
 regra tira o produtor da frente quando o resto tem uma palavra "distintiva"
 — e um número ou uma expressão comum passam por isso sem o serem: "1836
 Grande Reserva", "Clássico 80 anos", "1255 Grande Villae", "Colecção da
 Família". O dono das apps: "eu sei que é complicado fazer uma regra a partir
-disto" — por isso não há regra, há uma LISTA (`nomes_manter`), que ele
-enche no painel ("Manter o nome dos desmarcados"). Um nome da lista não
-perde o produtor da frente, no catálogo, nas garrafeiras e nas escritas
-futuras (a `nome_normal` é a mesma para todos); a colheita e a cor no fim
-continuam a sair. A chave da lista é o nome sem ano nem cor, palavra a
-palavra normalizada.
+disto" — por isso não há regra, há uma LISTA DE PRODUTORES
+(`produtores_no_nome`: Caves Primavera, Companhia das Lezírias, Quinta do
+Piloto, Taboadella), que ele enche no painel ("Manter o produtor no nome").
+Nos vinhos de um produtor da lista o produtor não sai da frente do nome, no
+catálogo, nas garrafeiras e nas escritas futuras (a `nome_normal` é a mesma
+para todos, pela `produtor_no_nome`); a colheita e a cor no fim continuam a
+sair — o "Taboadella 1255 Grande Villae Branco" ficou "Taboadella 1255
+Grande Villae", com o branco em itálico ao lado. A chave é a do produtor
+OFICIAL, e apanha as grafias dele. Foi primeiro uma lista de NOMES
+(`nomes_manter`, umas horas); o dono preferiu a do produtor — um vinho novo
+da mesma casa nasce certo sem ninguém o pôr na lista.
 
 **A chave de um fundido não trava a alvo** (`libertar_chave`, no mesmo
 ficheiro). A `chave` é única e uma perdedora de um `alias` guarda a sua: o
