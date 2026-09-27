@@ -3213,6 +3213,135 @@ async function wcProdTirar(chave){
   catch(e){toast('Erro: '+e.message,1);}
 }
 
+/* ── NOMES DOS VINHOS (27/09/2026, db/nomes-normalizar.sql + nomes-manter.sql) ──
+   O separador "Nomes de vinhos" do painel do PC, trazido para aqui a pedido
+   do dono: não abre site nenhum, é a BD a comparar a BD. `nomes_rever` sem
+   `p_aplicar` é a simulação (catálogo e garrafeiras); com ele aplica só os
+   itens escolhidos, recalculando a regra no momento. As mesmas funções que o
+   painel chama — a regra vive só no SQL.
+   Um desmarcado fica desmarcado ao mudar os filtros (`_wcNomesOff`), e
+   "Aplicar" leva só os marcados QUE SE VEEM: o que um filtro esconde não vai
+   sem se ver. "Manter o produtor no nome" leva os PRODUTORES dos desmarcados
+   que se veem e a quem a regra tirava o produtor da frente. */
+let _wcNomes=null;
+const _wcNomesOff=new Set();
+const WC_NOMES_MUD={ano:'colheita',produtor:'produtor',cor:'cor'};
+const wcSemAc=t=>String(t==null?'':t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+const wcPalavras=id=>wcSemAc((document.getElementById(id)||{}).value).split(/\s+/).filter(Boolean);
+const wcNomesChave=x=>x.fonte+':'+x.id;
+function wcNomesMuda(x){return x.novo_nome!==x.nome||String(x.novo_ano??'')!==String(x.ano??'');}
+async function wcNomesCarregar(){
+  const box=document.getElementById('nomes-lista');
+  if(!box)return;
+  box.innerHTML='<p class="wc-note">A simular…</p>';
+  try{
+    _wcNomes=await catRpc('nomes_rever',{});
+    _wcNomesOff.clear();
+    document.getElementById('nomes-ctl').style.display='';
+    document.getElementById('nomes-acoes').style.display='';
+    wcNomesPintar();
+  }catch(e){box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;}
+}
+function wcNomesVisiveis(){
+  const so=document.getElementById('nomes-so').checked;
+  const onde=document.getElementById('nomes-onde').value,mud=document.getElementById('nomes-mud').value;
+  const q=wcPalavras('nomes-q');
+  return ((_wcNomes&&_wcNomes.linhas)||[]).filter(x=>(!so||wcNomesMuda(x))&&(!onde||x.fonte===onde)
+    &&(!mud||(mud==='avisos'?(x.avisos||[]).length>0:(x.mudancas||[]).includes(mud)))
+    &&(!q.length||(t=>q.every(p=>t.includes(p)))(wcSemAc([x.nome,x.novo_nome,x.produtor,x.garrafeira,x.dono,x.ano,
+      x.fonte==='catalogo'?'catalogo #'+x.id:''].join(' ')))));
+}
+const wcNomesMarcados=()=>wcNomesVisiveis().filter(x=>wcNomesMuda(x)&&!_wcNomesOff.has(wcNomesChave(x)));
+const wcNomesAManter=()=>wcNomesVisiveis().filter(x=>_wcNomesOff.has(wcNomesChave(x))&&(x.mudancas||[]).includes('produtor'));
+function wcNomesContar(){
+  const todos=(_wcNomes&&_wcNomes.linhas)||[],vis=wcNomesVisiveis().length,m=wcNomesMarcados().length;
+  document.getElementById('nomes-n').textContent=`${todos.filter(wcNomesMuda).length} a mudar agora · ${todos.length} com alguma coisa · ${vis} à vista · ${m} marcado${m===1?'':'s'}`;
+  const b=document.getElementById('btn-nomes');b.disabled=!m;b.textContent='Aplicar os marcados'+(m?` (${m})`:'');
+  const k=wcNomesAManter().length,bm=document.getElementById('btn-nomes-manter');
+  bm.disabled=!k;bm.textContent='Manter o produtor no nome'+(k?` (${k})`:'');
+}
+function wcNomesPintar(){
+  if(!_wcNomes)return;
+  const L=wcNomesVisiveis();
+  document.getElementById('nomes-lista').innerHTML=L.length?`<div class="rv-lista arr-rol">${L.map(x=>{
+    const m=wcNomesMuda(x),on=m&&!_wcNomesOff.has(wcNomesChave(x));
+    const onde=x.fonte==='catalogo'
+      ?`<a href="#" onclick="event.preventDefault();wcVerFicha(${Number(x.id)})">catálogo #${esc(String(x.id))}</a>`
+      :`${esc(x.garrafeira||'garrafeira')} · ${esc(x.dono||'')}`;
+    const tags=(x.mudancas||[]).map(k=>`<span class="arr-tag">sai ${esc(WC_NOMES_MUD[k]||k)}</span>`).join('');
+    const av=(x.avisos||[]).map(a=>`<span class="arr-tag aviso">${esc(a)}</span>`).join('');
+    const ano=a=>a?` · ${esc(String(a))}`:'';
+    return `<label class="rv-linha${m&&!on?' off':''}">
+      ${m?`<input type="checkbox" data-k="${esc(wcNomesChave(x))}"${on?' checked':''} onchange="wcNomesMarca(this)">`:'<span class="arr-sem"></span>'}
+      <span class="rv-campo">
+        <b>${onde}</b>
+        ${m?`<span class="rv-antes">${esc(x.nome)}${ano(x.ano)}</span><span class="rv-seta">→</span><span class="rv-novo">${esc(x.novo_nome)}${ano(x.novo_ano)}</span>`
+          :`<span class="rv-novo">${esc(x.nome)}${ano(x.ano)}</span>`}
+        <span class="arr-sub">${esc(x.produtor||'(sem produtor)')} · ${esc(x.tipo||'sem cor')}</span>
+        ${tags||av?`<span class="arr-tags">${tags}${av}</span>`:''}
+      </span>
+    </label>`;}).join('')}</div>`
+    :`<p class="wc-note">${(_wcNomes.linhas||[]).length?'Nenhum com estes filtros.':'Nada a mudar — os nomes estão todos arrumados.'}</p>`;
+  wcNomesContar();
+}
+function wcNomesMarca(el){
+  const k=el.dataset.k;
+  if(el.checked)_wcNomesOff.delete(k);else _wcNomesOff.add(k);
+  el.closest('.rv-linha').classList.toggle('off',!el.checked);
+  wcNomesContar();
+}
+function wcNomesMarcar(on){
+  for(const x of wcNomesVisiveis())if(wcNomesMuda(x)){if(on)_wcNomesOff.delete(wcNomesChave(x));else _wcNomesOff.add(wcNomesChave(x));}
+  wcNomesPintar();
+}
+async function wcNomesAplicar(){
+  const itens=wcNomesMarcados().map(x=>({fonte:x.fonte,id:x.id}));
+  if(!itens.length)return toast('Marca pelo menos um vinho.',1);
+  if(!confirm(`Aplicar o nome novo a ${itens.length} vinho(s) — os marcados que se veem?\n\nFica no histórico do catálogo e no registo da Garrafeira.`))return;
+  try{
+    const r=await catRpc('nomes_rever',{p_itens:itens,p_aplicar:true});
+    const d=r.duplicados||[];
+    toast(`Nomes ✓ ${r.catalogo} no catálogo · ${r.garrafeiras} nas garrafeiras`);
+    if(d.length)alert(`Ficaram por mexer ${d.length} do catálogo, porque passavam a ser o mesmo vinho e colheita que outro — junta-os aqui nos Duplicados:\n`+
+      d.map(x=>`#${x.id} ${x.nome}${x.ano?' '+x.ano:''} → #${x.com}`).join('\n'));
+    wcNomesCarregar();
+    if(d.length)wcCarregarDuplicados();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+async function wcNomesManter(){
+  const lista=wcNomesAManter();
+  const itens=lista.map(x=>({fonte:x.fonte,id:x.id}));
+  if(!itens.length)return toast('Desmarca os vinhos cujo produtor deve ficar no nome (os que o perdiam da frente).',1);
+  const prods=[...new Set(lista.map(x=>x.produtor||''))].filter(Boolean);
+  if(!confirm(`Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\n\n${prods.join('\n')}`))return;
+  try{
+    const r=await catRpc('produtores_no_nome_marcar',{p_itens:itens});
+    toast(`${r.marcados} produtor(es) acrescentado(s) à lista ✓`);
+    await wcNomesCarregar();
+    const d=document.getElementById('nomes-manter');
+    if(d&&d.closest('details').open)wcNomesManterListar();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+async function wcNomesManterListar(){
+  const el=document.getElementById('nomes-manter');
+  if(!el)return;
+  el.innerHTML='<p class="wc-note">A carregar…</p>';
+  try{
+    const L=await catRpc('produtores_no_nome_listar',{});
+    el.innerHTML=(L||[]).length?L.map(m=>`<div class="prod-ofi">${esc(m.produtor)}
+        <a href="#" title="Deixar a regra voltar a tirar este produtor da frente dos nomes" onclick="event.preventDefault();wcNomesManterTirar('${escJs(m.chave)}')">✕</a></div>`).join('')
+      :'<p class="wc-note">Nenhum.</p>';
+  }catch(e){el.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;}
+}
+async function wcNomesManterTirar(chave){
+  if(!confirm('Tirar da lista? Os nomes deste produtor voltam a aparecer na simulação.'))return;
+  try{
+    await catRpc('produtores_no_nome_tirar',{p_chave:chave});
+    wcNomesManterListar();
+    if(_wcNomes)wcNomesCarregar();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
 async function wcFundir(idDe,idPara){
   if(!confirm('Fundir as duas linhas numa só?\n\nOs campos da outra passam para esta (respeitando a força de cada um), a outra fica estacionada — não se apaga — e isto dá para desfazer.'))return;
   try{
@@ -3564,6 +3693,230 @@ function wcVivinoUsar(i,k){
   const c=cands[k];
   if(!c)return;
   wcVivinoResolver(r.id,'aceite',{vivino_url:c.vivino_url});
+}
+
+/* ══════════════════════════════════════════════
+   AS GARRAFEIRAS × O CATÁLOGO — os links do Vivino e o resto da ficha
+
+   Os dois cartões do painel do PC que não abrem site nenhum, trazidos para
+   a app a pedido do dono (27/09/2026): "o que é só comparação e análise de
+   dados, podemos ter". As regras são as MESMAS e vivem num sítio só — as
+   `garrafeira.links_vivino_rever`/`fichas_catalogo_rever` (migrações 18 e
+   19 do repo Garrafeira) —, a que a app chega pelos invólucros de
+   `db/garrafeiras-rever.sql`, com o `sou_admin()` à porta. Sem `p_aplicar`
+   é só a lista; com ele, só o que se marcou, e as regras voltam a correr no
+   momento (o que mudou entretanto não se aplica). Cada troca fica no
+   `garrafeira.sync_log`, com o email do admin.
+
+   Só se compara quando se pede: são dois ou três segundos a varrer todas as
+   garrafeiras, e o separador Alertas abre muitas vezes para outra coisa.
+   ══════════════════════════════════════════════ */
+function wcLinkCat(id){
+  return id?`<a href="#" onclick="event.preventDefault();wcVerFicha(${Number(id)})">catálogo #${esc(String(id))}</a>`:'';
+}
+
+/* ── Os links do Vivino ── */
+let _wcGl=null;
+const WC_GL_CASO={formato_invalido:'sem o nº do vinho',outro_vinho:'abre outro vinho',vazio:'sem link'};
+const WC_GL_CONTA={mesmo_vinho:'já com o link do catálogo',catalogo_sem_link:'sem link no catálogo',
+  sem_catalogo:'fora do catálogo',cor_diferente:'com cor diferente da do catálogo (não se tocam)'};
+async function wcGlComparar(){
+  const box=document.getElementById('gl-lista');
+  if(!box)return;
+  box.innerHTML='<p class="wc-note">A comparar…</p>';
+  document.getElementById('gl-n').textContent='';
+  try{_wcGl=await catRpc('garrafeiras_links_rever',{});wcGlPintar();}
+  catch(e){box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;}
+}
+function wcGlPintar(){
+  const L=_wcGl.linhas||[],P=_wcGl.por_confirmar||[],C=_wcGl.contagens||{};
+  const ficam=Object.entries(WC_GL_CONTA).filter(([k])=>C[k]).map(([k,t])=>`${C[k]} ${t}`).join(' · ');
+  /* A força não vem na lista; o link é volátil, e vindo de uma garrafeira
+     vale 2 (invariante 5) — é o único caso em que a legenda depende dela. */
+  const og=o=>o?`<span class="og-tag ${wcOrigemCls(o,2)}">${esc(wcOrigemTxt(o,2))}</span>`:'';
+  let h='';
+  if(L.length){
+    h+=`<div class="rv-lista arr-rol">${L.map(x=>`<label class="rv-linha">
+      <input type="checkbox" class="gl-c" data-id="${Number(x.vinho_id)}" checked onchange="wcGlBotao()">
+      <span class="rv-campo">
+        <b>${esc(x.garrafeira||'garrafeira')} · ${esc(x.dono||'')}</b>
+        <span class="arr-nome">${esc(x.nome)}${x.ano?' '+esc(String(x.ano)):''} <span class="arr-tag">${esc(WC_GL_CASO[x.caso]||x.caso)}</span></span>
+        ${x.caso==='vazio'?'':`<span class="rv-antes">${wcRvValorHTML('vivino_url',x.antes)}</span><span class="rv-seta">→</span>`}<span class="rv-novo">${wcRvValorHTML('vivino_url',x.depois)}</span>
+        <span class="arr-sub">${wcLinkCat(x.catalogo_id)} ${og(x.catalogo_origem)}</span>
+      </span>
+    </label>`).join('')}</div>`;
+  }else h+='<p class="wc-note">Nada a corrigir.</p>';
+  if(P.length){
+    h+=`<p class="wc-note" style="margin-top:12px"><strong>Por confirmar</strong> — o link da garrafeira parece errado,
+      mas o do catálogo ainda não foi confirmado. Abre os dois: se o do catálogo for o certo, marca
+      <strong>usar o do catálogo</strong>. Na dúvida, pede primeiro a verificação no Vivino (o script trata-os
+      antes dos outros, na próxima corrida) e volta a comparar.</p>
+      <div class="rv-lista">${P.map(x=>`<div class="rv-linha">
+        <span class="rv-campo">
+          <b>${esc(x.garrafeira||'garrafeira')} · ${esc(x.dono||'')}</b>
+          <span class="arr-nome">${esc(x.nome)}${x.ano?' '+esc(String(x.ano)):''} <span class="arr-tag">${esc(WC_GL_CASO[x.caso]||x.caso)}</span></span>
+          <span class="rv-antes">${wcRvValorHTML('vivino_url',x.antes)}</span><span class="rv-seta">→</span><span class="rv-novo">${wcRvValorHTML('vivino_url',x.catalogo_url)}</span>
+          <span class="arr-sub">${wcLinkCat(x.catalogo_id)} ${og(x.catalogo_origem)}</span>
+          ${x.catalogo_url?`<label class="arr-chk"><input type="checkbox" class="gl-f" data-id="${Number(x.vinho_id)}" onchange="wcGlBotao()"> usar o do catálogo</label>`:''}
+        </span>
+      </div>`).join('')}</div>
+      <div class="arr-barra"><button class="btn-n" onclick="wcGlPedir()">🍷 Pedir a verificação no Vivino</button></div>`;
+  }
+  if(ficam)h+=`<p class="wc-note">Ficam como estão: ${esc(ficam)}.</p>`;
+  if(L.length||P.length)h+=`<div class="arr-barra"><button class="btn-prim auto" id="btn-gl" onclick="wcGlCorrigir()" disabled>Corrigir os marcados</button></div>`;
+  document.getElementById('gl-lista').innerHTML=h;
+  document.getElementById('gl-n').textContent=`${L.length} a corrigir`+(P.length?` · ${P.length} por confirmar`:'');
+  wcGlBotao();
+}
+function wcGlBotao(){
+  const b=document.getElementById('btn-gl');
+  if(!b)return;
+  const n=document.querySelectorAll('.gl-c:checked,.gl-f:checked').length;
+  b.disabled=!n;
+  b.textContent='Corrigir os marcados'+(n?` (${n})`:'');
+}
+/* Os "Por confirmar" vão para a fila do script (a mesma do "🍷 Verificar no
+   Vivino" da ficha): ele abre a página do vinho do CATÁLOGO, e um link lido
+   lá passa a confirmado — na comparação seguinte já sai na lista de cima. */
+async function wcGlPedir(){
+  const ids=[...new Set((_wcGl.por_confirmar||[]).map(x=>Number(x.catalogo_id)).filter(Boolean))];
+  if(!ids.length)return;
+  try{
+    const r=await catRpc('vivino_pedir',{p_ids:ids});
+    toast(`Na fila ✓ ${ids.length} vinho(s) do catálogo (${r.fila} na fila)`);
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+async function wcGlCorrigir(){
+  const ids=[...document.querySelectorAll('.gl-c:checked')].map(c=>Number(c.dataset.id));
+  const forcar=[...document.querySelectorAll('.gl-f:checked')].map(c=>Number(c.dataset.id));
+  const n=ids.length+forcar.length;
+  if(!n)return toast('Marca pelo menos um vinho.',1);
+  if(!confirm(`Trocar o link do Vivino de ${n} vinho(s) nas garrafeiras pelo do catálogo?`+
+    (forcar.length?`\n\n${forcar.length} por confirmar, confirmados por ti.`:'')))return;
+  try{
+    const r=await catRpc('garrafeiras_links_rever',{p_ids:[...new Set([...ids,...forcar])],p_aplicar:true,p_forcar:forcar.length?forcar:null});
+    toast(`${r.aplicados} link(s) corrigido(s) ✓ — fica no registo da Garrafeira`);
+    wcGlComparar();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* ── O resto da ficha ── */
+let _wcFich=null;
+const _wcFichOff=new Set();          // `vinho:campo` desmarcados (sobrevivem aos filtros)
+const WC_FICH_CONTA={outra_colheita:'de outra colheita (não se tocam)',
+  cor_diferente:'com cor diferente da do catálogo (não se tocam)',sem_catalogo:'fora do catálogo'};
+const wcFichNome=k=>WC_ROTULOS_EXTRA[k]||wcRvNome(k);
+async function wcFichComparar(erros){
+  const box=document.getElementById('fich-lista');
+  if(!box)return;
+  box.innerHTML='<p class="wc-note">A comparar…</p>';
+  document.getElementById('fich-n').textContent='';
+  try{
+    _wcFich=await catRpc('garrafeiras_fichas_rever',{});
+    if(erros&&erros.length)_wcFich.erros=erros;
+    _wcFichOff.clear();
+    wcFichCampos();
+    document.getElementById('fich-ctl').style.display='';
+    document.getElementById('fich-acoes').style.display='';
+    wcFichPintar();
+  }catch(e){box.innerHTML=`<p class="wc-note erro">${esc(e.message)}</p>`;}
+}
+/* O filtro por campo: os campos que vieram, pela ordem da ficha, com quantos
+   vinhos cada um tem. Refeito a cada comparação, mantendo a escolha se o
+   campo ainda lá estiver. */
+function wcFichCampos(){
+  const sel=document.getElementById('fich-campo'),antes=sel.value,n={};
+  for(const x of _wcFich.linhas||[])for(const c of x.campos||[])n[c.campo]=(n[c.campo]||0)+1;
+  const ks=Object.keys(n).sort((a,b)=>wcRvOrdem(a)-wcRvOrdem(b)||a.localeCompare(b));
+  sel.innerHTML='<option value="">todos os campos</option>'+ks.map(k=>`<option value="${esc(k)}">${esc(wcFichNome(k))} (${n[k]})</option>`).join('');
+  sel.value=ks.includes(antes)?antes:'';
+}
+/* Os vinhos à vista, cada um só com os campos à vista. */
+function wcFichVisiveis(){
+  const q=wcPalavras('fich-q'),campo=document.getElementById('fich-campo').value,caso=document.getElementById('fich-caso').value;
+  return (_wcFich.linhas||[]).map(x=>{
+    if(q.length){const t=wcSemAc([x.nome,x.produtor,x.ano,x.garrafeira,x.dono].join(' '));if(!q.every(p=>t.includes(p)))return null;}
+    const cs=(x.campos||[]).filter(c=>(!campo||c.campo===campo)&&(!caso||c.caso===caso));
+    return cs.length?{x,cs}:null;
+  }).filter(Boolean);
+}
+const wcFichK=(v,c)=>v+':'+c;
+function wcFichMarcados(){
+  return wcFichVisiveis().map(({x,cs})=>({vinho_id:x.vinho_id,
+    campos:cs.filter(c=>!_wcFichOff.has(wcFichK(x.vinho_id,c.campo))).map(c=>c.campo)})).filter(i=>i.campos.length);
+}
+function wcFichContar(){
+  const tot=(_wcFich.linhas||[]).reduce((a,x)=>a+(x.campos||[]).length,0);
+  const vis=wcFichVisiveis(),nv=vis.reduce((a,v)=>a+v.cs.length,0);
+  const m=wcFichMarcados().reduce((a,i)=>a+i.campos.length,0);
+  const nl=(_wcFich.linhas||[]).length;
+  document.getElementById('fich-n').textContent=`${tot} campo${tot===1?'':'s'} em ${nl} vinho${nl===1?'':'s'}`+
+    (nv!==tot?` · ${nv} à vista`:'')+` · ${m} marcado${m===1?'':'s'}`;
+  const b=document.getElementById('btn-fich');
+  b.disabled=!m;b.textContent='Trazer os marcados'+(m?` (${m})`:'');
+}
+function wcFichPintar(){
+  if(!_wcFich)return;
+  const V=wcFichVisiveis(),C=_wcFich.contagens||{};
+  const ficam=Object.entries(WC_FICH_CONTA).filter(([k])=>C[k]).map(([k,t])=>`${C[k]} ${t}`).join(' · ');
+  let h='';
+  if((_wcFich.erros||[]).length)h+=`<p class="wc-note erro">Não gravou: ${_wcFich.erros.map(e=>`${esc(e.nome)} (${esc(e.erro)})`).join('; ')}</p>`;
+  if(V.length){
+    h+=`<div class="arr-rol">${V.map(({x,cs})=>{
+      const todos=cs.every(c=>!_wcFichOff.has(wcFichK(x.vinho_id,c.campo)));
+      return `<div class="arr-vinho">
+        <label class="rv-linha arr-vcab">
+          <input type="checkbox"${todos?' checked':''} onchange="wcFichVinho(${Number(x.vinho_id)},this.checked)">
+          <span class="rv-campo">
+            <span class="arr-nome">${esc(x.nome)}${x.ano?' '+esc(String(x.ano)):''}</span>
+            <span class="arr-sub">${esc(x.garrafeira||'garrafeira')} · ${esc(x.dono||'')} · ${wcLinkCat(x.catalogo_id)}</span>
+          </span>
+        </label>
+        ${cs.map(c=>{
+          const on=!_wcFichOff.has(wcFichK(x.vinho_id,c.campo));
+          const vazio=c.caso==='vazio'||wcRvVazio(c.antes);
+          return `<label class="rv-linha${on?'':' off'}">
+            <input type="checkbox" data-v="${Number(x.vinho_id)}" data-c="${esc(c.campo)}"${on?' checked':''} onchange="wcFichMarca(this)">
+            <span class="rv-campo">
+              <b>${esc(wcFichNome(c.campo))} · ${c.caso==='vazio'?'vazio na garrafeira':'mais recente no catálogo'}</b>
+              ${vazio?'':`<span class="rv-antes">${wcRvValorHTML(c.campo,c.antes)}</span><span class="rv-seta">→</span>`}<span class="rv-novo">${wcRvValorHTML(c.campo,c.depois)}</span>
+              ${c.origem?`<span class="og-tag ${wcOrigemCls(c.origem,c.forca)}">no catálogo: ${esc(wcOrigemTxt(c.origem,c.forca))}${c.em?' · '+esc(dataFmt(c.em)):''}</span>`:''}
+            </span>
+          </label>`;}).join('')}
+      </div>`;}).join('')}</div>`;
+  }else h+=`<p class="wc-note">${(_wcFich.linhas||[]).length?'Nenhum com estes filtros.':'Nada a acertar — as garrafeiras batem com o catálogo.'}</p>`;
+  if(ficam)h+=`<p class="wc-note">Ficam como estão: ${esc(ficam)}.</p>`;
+  document.getElementById('fich-lista').innerHTML=h;
+  wcFichContar();
+}
+function wcFichMarca(el){
+  const k=wcFichK(el.dataset.v,el.dataset.c);
+  if(el.checked)_wcFichOff.delete(k);else _wcFichOff.add(k);
+  el.closest('.rv-linha').classList.toggle('off',!el.checked);
+  wcFichContar();
+}
+/* O visto do vinho marca e desmarca os campos DELE que estão à vista. */
+function wcFichVinho(id,on){
+  const v=wcFichVisiveis().find(({x})=>Number(x.vinho_id)===Number(id));
+  if(!v)return;
+  for(const c of v.cs){const k=wcFichK(id,c.campo);if(on)_wcFichOff.delete(k);else _wcFichOff.add(k);}
+  wcFichPintar();
+}
+function wcFichMarcar(on){
+  for(const {x,cs} of wcFichVisiveis())for(const c of cs){const k=wcFichK(x.vinho_id,c.campo);if(on)_wcFichOff.delete(k);else _wcFichOff.add(k);}
+  wcFichPintar();
+}
+async function wcFichTrazer(){
+  const itens=wcFichMarcados();
+  const n=itens.reduce((a,i)=>a+i.campos.length,0);
+  if(!n)return toast('Marca pelo menos um campo.',1);
+  if(!confirm(`Trazer do catálogo ${n} campo(s) em ${itens.length} vinho(s) das garrafeiras — os marcados que se veem?\n\nFica no registo da Garrafeira, com o antes e o depois.`))return;
+  try{
+    const r=await catRpc('garrafeiras_fichas_rever',{p_itens:itens,p_aplicar:true});
+    const erros=r.erros||[];
+    toast(`${r.aplicados} campo(s) em ${r.vinhos_aplicados} vinho(s) ✓`+(erros.length?` · ${erros.length} não gravaram`:''),erros.length>0);
+    wcFichComparar(erros);
+  }catch(e){toast('Erro: '+e.message,1);}
 }
 
 /* ══════════════════════════════════════════════

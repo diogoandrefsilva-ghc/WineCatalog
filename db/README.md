@@ -42,6 +42,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             nomes-normalizar.sql, o trigger do cor-na-chave.sql e o produtores.sql, que as usam)
 15. db/painel.sql          (o back-office do painel do PC: `painel_vinho` e `painel_editar`, só service_role —
                             depois do cor-na-chave.sql, cuja `editar` aceita a service_role, e do historico.sql)
+16. db/garrafeiras-rever.sql (as garrafeiras × o catálogo na app: a porta do admin para a `links_vivino_rever` e a
+                            `fichas_catalogo_rever` — depois das migrações 18 e 19 do repo Garrafeira, na versão
+                            de 27/09/2026, que aceita o admin do catálogo)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores
