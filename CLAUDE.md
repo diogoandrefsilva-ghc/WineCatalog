@@ -13,7 +13,8 @@ tudo o que aqui está foi pago com um erro.
 
 ## Estrutura
 - `index.html` — só markup: os quatro separadores (Catálogo, o inicial ·
-  Duplicados · Alertas, só ao admin · Definições) + os três ecrãs de autenticação (`page-login`,
+  Duplicados — com os Produtores e os **Nomes dos vinhos**, só ao admin · Alertas, só ao admin,
+  com **as garrafeiras × o catálogo** · Definições) + os três ecrãs de autenticação (`page-login`,
   `page-nova-pass`, `page-sem-acesso`) + o splash + os seis modais: a
   ficha, **Editar**, **Vinho novo**, **Procurar informação**,
   **Atualizar informação** (em lote) e Alertas vivem em `t-alertas` + o
@@ -26,7 +27,9 @@ tudo o que aqui está foi pago com um erro.
   (a capa + **Editar** + **Vinho novo** + **Procurar informação**, ver
   abaixo) · **Rever antes de gravar** (`wcRevisaoCorpo`) · **FAB do
   Catálogo** · **Atualizar informação em lote**
-  (`wcLotePrompt`/`wcLoteEnviar`/`wcLoteRever`) · **Alertas** · **Duplicados** ·
+  (`wcLotePrompt`/`wcLoteEnviar`/`wcLoteRever`) · **Duplicados** (com os
+  Produtores e os **Nomes dos vinhos**, `wcNomes*`) · **Alertas** · **Links do
+  Vivino** · **As garrafeiras × o catálogo** (`wcGl*`/`wcFich*`) · Histórico ·
   Utilizadores (admin) · **Auth (Supabase)** · Init.
 - `style.css` — todo o CSS (paleta bordô/dourado das apps irmãs).
 - `sw.js` — service worker (cache PWA).
@@ -52,6 +55,7 @@ tudo o que aqui está foi pago com um erro.
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
   marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) → `painel.sql`
   (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor`, só `service_role`) →
+  `garrafeiras-rever.sql` (a porta da app para as garrafeiras × o catálogo) →
   `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
@@ -131,8 +135,15 @@ Cada uma custou um erro.
    Vivino nas garrafeiras** (ver "Links do Vivino nas garrafeiras"). Só no
    PC do admin, com a service role; ele vê o vinho, a garrafeira e o dono
    — "não há segredos numa correção que melhora a informação" (o dono das
-   apps). Nenhuma app ganha com isto uma porta nova. O mesmo vale para o
-   resto da ficha ("Fichas das garrafeiras × catálogo").
+   apps). O mesmo vale para o resto da ficha ("Fichas das garrafeiras ×
+   catálogo"). **Desde 27/09/2026 também nesta app** (Alertas), a pedido do
+   dono — "o que é só comparação e análise de dados, podemos ter na app" —,
+   e só ao ADMIN DO CATÁLOGO (`sou_admin()`), pelos invólucros de
+   `db/garrafeiras-rever.sql`: é a mesma pessoa a ver o mesmo que já via no
+   PC, e o mesmo que os Nomes e os Produtores já lhe mostravam. Continua a
+   não haver porta nenhuma na Garrafeira nem na WineSelection, e quem não é
+   o admin do catálogo não vê uma linha. **Passar o admin do catálogo
+   (`definir_admin`) passa também isto** — é uma das coisas a pesar antes.
 3. **A `pontuacaoAprox` da WineSelection NUNCA entra.** É uma estimativa de
    memória do modelo, sem pesquisa. A `forca()` devolve 0 para ela.
 4. **O "barato/justo/caro" também não entra**, por outra razão: não é do
@@ -603,6 +614,31 @@ chave mexida) nem a alvo (que tem outra), e nascia uma **terceira** linha.
 O duplicado voltava, e voltava por causa da própria ferramenta que servia
 para o resolver. É o género de avaria que não dá erro nenhum — só a conta a
 não descer.
+
+### O painel do PC sem os sites — também na app (27/09/2026)
+O dono das apps: "o que é só comparação e análise de dados, podemos ter na
+app"; o que abre páginas (Vivino, lojas) fica no PC, porque é lá que corre o
+browser. Vieram, só para o admin do catálogo:
+- **Duplicados › Nomes dos vinhos** (`wcNomes*`) — o separador "Nomes de
+  vinhos" do painel: a simulação da `nomes_rever`, os filtros (onde, o que
+  sai, só os que mudam), "Aplicar os marcados" e "Manter o produtor no nome"
+  com a lista dos `produtores_no_nome`. As funções já aceitavam o admin
+  (`produtores_autorizado`); faltava o ecrã. Os Produtores já cá estavam.
+- **Alertas › As garrafeiras × o catálogo** — "Links do Vivino nas
+  garrafeiras" (`wcGl*`) e "Fichas das garrafeiras × catálogo" (`wcFich*`),
+  pelas `winecatalog.garrafeiras_links_rever`/`garrafeiras_fichas_rever`
+  (`db/garrafeiras-rever.sql`), que confirmam o `sou_admin()` e chamam as da
+  Garrafeira (migrações 18 e 19 — as regras vivem lá, uma cópia só). Os "Por
+  confirmar" vão para a fila do script (`vivino_pedir`) em vez de para a
+  escolha do painel. Só se compara quando se pede: são 2–3 s a varrer as
+  garrafeiras todas (medido a 27/09/2026, abaixo dos 8 s do PostgREST —
+  se um dia passar, é aqui que parte).
+Nos três, **um desmarcado fica desmarcado ao mudar os filtros, e o botão de
+gravar leva só o que está marcado E à vista** — um filtro esconde, não
+desmarca, e o que não se vê não se grava (a regra que o painel já tinha nos
+Nomes). As linhas são as da revisão (`.rv-linha`: o que está, riscado → o que
+fica, com a `og-tag` de onde veio). Ficou no PC: Simular/Enriquecer, as
+simulações, o Vinho novo pelo painel e a escolha dos vinhos a enriquecer.
 
 ### Links do Vivino — *a verificação à mão* (25/09/2026)
 Olhou-se para os 135 links do Vivino do catálogo: 18 errados quase de
@@ -1427,7 +1463,8 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    sai, mas só na fase 4 (ver abaixo). O duvidoso (a cor a meio do nome, um
    ano no nome diferente da colheita) é aviso, não muda.
 3. **Os dados de agora**: `nomes_rever` sem `p_aplicar` é a simulação (o
-   separador "Nomes de vinhos" do painel); com ele aplica só o que o admin
+   separador "Nomes de vinhos" do painel, e Duplicados › Nomes dos vinhos na
+   app); com ele aplica só o que o admin
    marcou, no catálogo (chaves recalculadas, colisões para os Duplicados) e
    nas garrafeiras (`sync_log`, acao `nome_normalizado`).
 4. **A cor na chave — FEITA** (`db/cor-na-chave.sql`, ver "A cor na

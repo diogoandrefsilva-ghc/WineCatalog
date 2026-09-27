@@ -785,3 +785,46 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .prod-ofi{margin:4px 0}
 .prod-ofi a{color:inherit}
 .prod-acoes .btn-n{font-size:12px;padding:7px 10px}
+
+/* A foto carregou: a garrafa desenhada sai de trás. As fotos das lojas são
+   PNG com fundo transparente e o desenho via-se pelos buracos. */
+.com-foto>svg{visibility:hidden}
+
+/* ── ARRUMAR: Duplicados › Nomes; Alertas › as garrafeiras × o catálogo ──
+   O que o painel do PC fazia sem abrir sites. As linhas são as da revisão
+   (`.rv-linha`: o que está, riscado → o que fica), agora dentro de um
+   `.wc-card` — e a `.wc-card label` (bloco, 11px, MAIÚSCULAS) passava-lhes
+   por cima: as regras daqui são mais específicas de propósito, como a da
+   caixa de procura do Catálogo. */
+.arr-barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.arr-barra .wc-note{margin:0}
+.arr input[type=text]{margin-top:10px}
+.arr-filtros{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+.arr-filtros select{font-size:13px;padding:10px 30px 10px 10px;background-position:right 8px center}
+.wc-card label.arr-chk{display:inline-flex;align-items:center;gap:7px;margin:10px 0 0;font-size:13px;
+  font-weight:500;color:var(--tx);text-transform:none;letter-spacing:0;cursor:pointer}
+.arr-chk input{width:17px;height:17px;flex-shrink:0;accent-color:var(--wine)}
+.wc-card label.rv-linha{display:flex;margin:0;font-size:inherit;font-weight:400;color:var(--tx);
+  text-transform:none;letter-spacing:0}
+.arr .rv-linha.off .rv-campo{opacity:.5}
+.arr .rv-campo b a,.arr-sub a{color:var(--wine)}
+/* A lista rola por dentro: numa comparação com cem vinhos, a página inteira
+   a rolar enterrava o botão de gravar e o cartão seguinte. */
+.arr-rol{max-height:70vh;overflow-y:auto;overscroll-behavior:contain;margin-top:10px;
+  border:1px solid var(--bo);border-radius:12px;padding:0 12px;background:#fdfbfa}
+.arr-rol>.rv-linha:last-child,.arr-vinho>.rv-linha:last-child{border-bottom:none}
+.arr-nome{display:block;font-weight:600;font-size:13.5px}
+.arr-sub{display:block;font-size:11.5px;color:var(--mu);margin-top:2px}
+.arr-tag{display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px;
+  background:#fdf6e8;color:#8a6a1f;border:1px solid #f0e0b8;vertical-align:middle;font-style:normal}
+.arr-tag.aviso{background:#fdf2f1;color:var(--dg);border-color:#f2cdcb}
+.arr-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px}
+.arr-sem{width:17px;flex-shrink:0}
+.arr .rv-campo .og-tag{font-size:10.5px}
+/* Um vinho das fichas: o cabeçalho com o visto de todos, e os campos dele
+   recolhidos por baixo — é a indentação que diz de quem é cada campo. */
+.arr-vinho{border-bottom:2px solid var(--bo)}
+.arr-vinho:last-child{border-bottom:none}
+.arr-vinho>.rv-linha:not(.arr-vcab){padding-left:22px}
+.arr-det{margin-top:12px}
+.arr-det summary{font-size:12.5px;color:var(--mu);cursor:pointer}

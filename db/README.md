@@ -43,7 +43,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 15. db/painel.sql          (o back-office do painel do PC: `painel_vinho` e `painel_editar`, só service_role —
                             depois do cor-na-chave.sql, cuja `editar` aceita a service_role, e do historico.sql;
                             e a `painel_autor`, quem criou/alterou, que a `vivino_catalogo` do vivino.sql chama)
-16. db/parecidos.sql       ("este vinho é aquele": os `parecidos` — uma letra de diferença, qualquer colheita —,
+16. db/garrafeiras-rever.sql (as garrafeiras × o catálogo na app: a porta do admin para a `links_vivino_rever` e a
+                            `fichas_catalogo_rever` — depois das migrações 18 e 19 do repo Garrafeira, na versão
+                            de 27/09/2026, que aceita o admin do catálogo)
+17. db/parecidos.sql       ("este vinho é aquele": os `parecidos` — uma letra de diferença, qualquer colheita —,
                             a `corresponde` e a `nao_correspondem`; depois do painel.sql. A `fundir`, a
                             `marcar_distintos` e a `candidatos` aceitam a service_role desde este dia)
 ```
