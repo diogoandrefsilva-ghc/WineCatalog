@@ -1197,8 +1197,11 @@ IGUAIS. Duas peças:
   funde-se nela. Colheitas diferentes continuam a nunca se fundir. O que não
   resolve: mudado o nome, a grafia errada sai do catálogo e, se voltar a ser
   escrita, nasce outra linha (na fusão não — a perdedora guarda a chave).
-  **A causa fica no repo Garrafeira**: a `vinho-info` escrever no catálogo
-  antes de o vinho ser gravado, com o nome por confirmar.
+  **A causa era do repo Garrafeira**, e está corrigida lá (27/09/2026): a
+  `vinho-info` escrevia no catálogo antes de o vinho ser gravado, com o nome
+  por confirmar. Agora só escreve com um vinho já gravado ou um nome que o
+  catálogo já conhece; o vinho novo com um nome desconhecido entra quando
+  for gravado, pelo trigger, com o nome final (`catalogo: "adiado"` no log).
 A `fundir` e a `marcar_distintos` passaram a aceitar a `service_role` (e a
 gravar o `winecatalog.quem` quando não há email), como a `editar`. No
 painel: o separador **Duplicados** e, na ficha, **🔗 É o mesmo que…**.
