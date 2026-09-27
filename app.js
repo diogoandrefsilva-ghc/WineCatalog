@@ -854,6 +854,15 @@ function wcJanelaTxt(de,ate){
 
 let _wcFicha=null;     // a linha aberta — usada pelo Editar e pelo Procurar
 
+/* O nome completo de cada produtor oficial ("Quinta Nova" → "Quinta Nova de
+   Nossa Senhora do Carmo"): só para se ler na ficha. Pede-se uma vez; se
+   falhar, a ficha aparece sem ele. */
+let _wcCompletos=null;
+async function wcProdCompletos(forcar){
+  if(_wcCompletos&&!forcar)return _wcCompletos;
+  try{_wcCompletos=(await catRpc('produtores_completos'))||{};}catch(_){_wcCompletos=_wcCompletos||{};}
+  return _wcCompletos;
+}
 async function wcVerFicha(id){
   const m=document.getElementById('modal-ficha');
   const corpo=document.getElementById('ficha-corpo');
@@ -862,7 +871,7 @@ async function wcVerFicha(id){
   m.classList.add('on');
   wcFabSincronizar();   // a ficha não passa pelo `abrirModal`, mas tapa o FAB na mesma
   try{
-    const v=await catRpc('ver',{p_id:id});
+    const [v]=await Promise.all([catRpc('ver',{p_id:id}),wcProdCompletos()]);
     if(!v){_wcFicha=null;corpo.innerHTML='<p class="wc-note">Essa linha já não existe.</p>';return;}
     _wcFicha=v;
     if(_wcRev&&_wcRev.vinhoId!==v.id)_wcRev=null;
@@ -985,6 +994,7 @@ function wcFichaHTML(v){
         <div class="mhero-k">${esc([ficha.estilo,ficha.classificacao].filter(Boolean).join(' · '))||'&nbsp;'}</div>
         <h3>${esc(v.nome||'(sem nome)')}${tipo?` <span class="mhero-cor">${esc(tipo)}</span>`:''}</h3>
         <div class="mhero-s"><span class="mhero-o">${origem||'<em>sem produtor nem região</em>'}${origem&&v.ano?' · ':''}</span>${v.ano?`<b>${esc(String(v.ano))}</b>`:''}</div>
+        ${v.produtor&&_wcCompletos&&_wcCompletos[v.produtor]?`<div class="mhero-pc">${esc(_wcCompletos[v.produtor])}</div>`:''}
         ${nv?`<span class="mhero-n" title="${esc(wcNotaVivinoTitulo(nv,v.ano))}">★ ${esc(nv.nota.toFixed(2))} Vivino${nv.aval?` · ${esc(nFmt(nv.aval))}`:''}${esc(nvDe)}</span>`:''}
         ${jan?`<span class="mhero-n">${esc(jan)}</span>`:''}
       </div>
@@ -3145,7 +3155,10 @@ function wcProdPintar(){
         ${dif.map(p=>`<button class="btn-n" onclick="wcProdDiferentes(${i},${g.pares.indexOf(p)})">${g.pares.length>1?`${esc(p.a.produtor)} ≠ ${esc(p.b.produtor)}`:'Não são o mesmo'}</button>`).join('')}</div>
     </div>`;}).join(''):'<p class="wc-note">Nada por decidir.</p>';
   const ofi=O.length?`<details style="margin-top:10px"><summary class="wc-note">Produtores oficiais já definidos (${O.length})</summary>
-    ${O.map(p=>`<div class="prod-ofi"><strong>${esc(p.nome)}</strong> <span class="wc-note">${(p.variantes||[]).map(v=>`${esc(v.escrito)} <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="wcProdTirar('${escJs(v.chave)}');return false">✕</a>`).join(' · ')}</span></div>`).join('')}
+    ${O.map(p=>`<div class="prod-ofi"><strong>${esc(p.nome)}</strong>
+      <span class="prod-compl"><input type="text" id="prod-compl-${p.id}" value="${esc(p.nome_completo||'')}" placeholder="nome completo (opcional)">
+        <button class="btn-n" onclick="wcProdCompleto(${p.id})">Guardar</button></span>
+      <span class="wc-note">${(p.variantes||[]).map(v=>`${esc(v.escrito)} <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="wcProdTirar('${escJs(v.chave)}');return false">✕</a>`).join(' · ')}</span></div>`).join('')}
   </details>`:'';
   document.getElementById('prod-lista').innerHTML=grupos+ofi;
 }
@@ -3171,6 +3184,16 @@ async function wcProdDiferentes(i,k){
   if(!confirm(`“${p.a.produtor}” e “${p.b.produtor}” são produtores diferentes? O par não volta a ser sugerido.`))return;
   try{await catRpc('produtores_diferentes',{p_a:p.a.produtor,p_b:p.b.produtor});wcProdCarregar();}
   catch(e){toast('Erro: '+e.message,1);}
+}
+/* O nome por extenso ao lado do oficial: só para se ler na ficha do vinho,
+   não mexe em vinho nenhum nem na chave. */
+async function wcProdCompleto(id){
+  const el=document.getElementById('prod-compl-'+id);if(!el)return;
+  try{
+    await catRpc('produtor_nome_completo',{p_id:id,p_nome_completo:el.value.trim()});
+    toast(el.value.trim()?'Nome completo guardado ✓':'Nome completo retirado');
+    wcProdCompletos(true);
+  }catch(e){toast('Erro: '+e.message,1);}
 }
 async function wcProdTirar(chave){
   if(!confirm('Deixar de trocar esta grafia pelo nome oficial? O que já foi corrigido fica como está.'))return;

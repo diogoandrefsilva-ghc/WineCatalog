@@ -206,6 +206,8 @@ const servidor = http.createServer(async (req, res) => {
       }
       if (b.acao === "diferentes") return sbRpc(res, "winecatalog", "produtores_diferentes", { p_a: txt(b.a), p_b: txt(b.b) });
       if (b.acao === "tirar") return sbRpc(res, "winecatalog", "produtor_tirar_variante", { p_chave: txt(b.chave) });
+      // o nome por extenso ao lado do oficial (só para se ler na ficha)
+      if (b.acao === "completo") return sbRpc(res, "winecatalog", "produtor_nome_completo", { p_id: Number(b.id) || 0, p_nome_completo: txt(b.completo) });
       return json(res, 400, { erro: "acao" });
     }
     if (req.method === "POST" && url.pathname === "/nomes") {
@@ -688,9 +690,15 @@ function prodPintar(){
   }).join(""):'<p class="nota">Nada por decidir.</p>';
   PROD._grupos=G;
   const O=PROD.oficiais||[];
-  document.getElementById("prod-oficiais").innerHTML=O.length?'<table><tr><th>Oficial</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td><b>'+esc(p.nome)+'</b></td><td>'+
+  document.getElementById("prod-oficiais").innerHTML=O.length?'<table><tr><th>Oficial</th><th>Nome completo</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td><b>'+esc(p.nome)+'</b></td><td>'+
+    '<input id="prod-compl-'+p.id+'" value="'+esc(p.nome_completo||"")+'" placeholder="opcional" style="width:220px"> <button onclick="prodCompleto('+p.id+')">Guardar</button></td><td>'+
     (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+'</td></tr>').join("")+'</table>'
     :'<p class="nota">Ainda nenhum.</p>';
+}
+async function prodCompleto(id){
+  const v=document.getElementById("prod-compl-"+id).value.trim();
+  try{await post("/produtores",{acao:"completo",id,completo:v});alert(v?"Nome completo guardado.":"Nome completo retirado.");}
+  catch(e){alert("Não consegui: "+e.message);}
 }
 async function prodJuntar(i){
   const el=document.querySelector('.prod-g[data-i="'+i+'"]'),g=PROD._grupos[i];

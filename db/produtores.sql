@@ -135,7 +135,7 @@ BEGIN
   END IF;
   RETURN (
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
-             'id', p.id, 'nome', p.nome, 'criado_em', p.criado_em,
+             'id', p.id, 'nome', p.nome, 'nome_completo', p.nome_completo, 'criado_em', p.criado_em,
              'variantes', (SELECT COALESCE(jsonb_agg(jsonb_build_object('chave', v.chave, 'escrito', v.escrito)
                                                      ORDER BY v.escrito), '[]'::jsonb)
                              FROM winecatalog.produtor_variantes v WHERE v.produtor_id = p.id))
@@ -326,3 +326,48 @@ GRANT EXECUTE ON FUNCTION winecatalog.produtores_listar()               TO authe
 GRANT EXECUTE ON FUNCTION winecatalog.produtor_definir(text, text[])    TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.produtores_diferentes(text, text) TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.produtor_tirar_variante(text)     TO authenticated, service_role;
+
+
+-- ---------------------------------------------------------------------
+-- O NOME COMPLETO (27/09/2026, o dono das apps). O nome OFICIAL é o que se
+-- escreve no vinho e entra na chave — curto, como se diz ("Quinta Nova",
+-- "Carlos Alonso"). Ao lado, o nome por extenso ("Quinta Nova de Nossa
+-- Senhora do Carmo", "Carlos Alonso Douro Wine Company"): só para se ler na
+-- ficha do vinho. NÃO entra na chave nem nas grafias — mudar o completo não
+-- mexe em vinho nenhum.
+-- ---------------------------------------------------------------------
+ALTER TABLE winecatalog.produtores ADD COLUMN IF NOT EXISTS nome_completo text;
+
+CREATE OR REPLACE FUNCTION winecatalog.produtor_nome_completo(p_id bigint, p_nome_completo text)
+  RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v text := NULLIF(btrim(regexp_replace(COALESCE(p_nome_completo, ''), '\s+', ' ', 'g')), '');
+BEGIN
+  IF NOT winecatalog.produtores_autorizado() THEN
+    RAISE EXCEPTION 'Só o admin do catálogo.';
+  END IF;
+  IF length(v) > 200 THEN RAISE EXCEPTION 'Nome comprido de mais.'; END IF;
+  UPDATE winecatalog.produtores SET nome_completo = v WHERE id = p_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Produtor não encontrado.'; END IF;
+  RETURN jsonb_build_object('ok', true, 'nome_completo', v);
+END;
+$$;
+
+-- Os nomes completos, para as apps mostrarem na ficha do vinho. Aberta a
+-- quem tem sessão (a Garrafeira, a WineCatalog): são nomes de adegas, e a
+-- lista dos oficiais não diz nada sobre o que alguém tem em casa.
+CREATE OR REPLACE FUNCTION winecatalog.produtores_completos()
+  RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT COALESCE(jsonb_object_agg(p.nome, p.nome_completo), '{}'::jsonb)
+    FROM winecatalog.produtores p
+   WHERE COALESCE(p.nome_completo, '') <> '' AND p.nome_completo <> p.nome;
+$$;
+
+REVOKE ALL ON FUNCTION winecatalog.produtor_nome_completo(bigint, text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION winecatalog.produtores_completos()               FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.produtor_nome_completo(bigint, text) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.produtores_completos()               TO authenticated, service_role;

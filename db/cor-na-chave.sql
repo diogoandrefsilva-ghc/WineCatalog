@@ -193,7 +193,9 @@ CREATE OR REPLACE FUNCTION winecatalog.vinhos_nomes()
   SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
-  id jsonb;
+  -- NÃO se chama `id`: dentro do NOT EXISTS de baixo, `id` colidia com a
+  -- coluna `o.id`, o erro era engolido e as chaves ficavam por recalcular.
+  v_idt jsonb;
   v_tipo text;
 BEGIN
   IF TG_OP = 'UPDATE'
@@ -210,15 +212,15 @@ BEGIN
     -- mas não mexe no nome: os nomes que já lá estavam arrumam-se pela
     -- simulação do painel, com o admin a ver (`nomes_rever`).
     IF TG_OP = 'INSERT' OR NEW.nome IS DISTINCT FROM OLD.nome THEN
-      id := winecatalog.identidade(NEW.nome, NEW.produtor, NEW.ano, v_tipo, true);
+      v_idt := winecatalog.identidade(NEW.nome, NEW.produtor, NEW.ano, v_tipo, true);
     ELSE
       NEW.produtor := winecatalog.produtor_oficial(winecatalog.nome_proprio(NEW.produtor));
-      id := winecatalog.identidade(NEW.nome, NEW.produtor, NEW.ano, v_tipo, false);
+      v_idt := winecatalog.identidade(NEW.nome, NEW.produtor, NEW.ano, v_tipo, false);
     END IF;
-    NEW.nome     := COALESCE(NULLIF(id ->> 'nome', ''), NEW.nome);
-    NEW.produtor := COALESCE(id ->> 'produtor', NEW.produtor);
-    NEW.ano      := (id ->> 'ano')::integer;
-    NEW.cor      := id ->> 'cor';
+    NEW.nome     := COALESCE(NULLIF(v_idt ->> 'nome', ''), NEW.nome);
+    NEW.produtor := COALESCE(v_idt ->> 'produtor', NEW.produtor);
+    NEW.ano      := (v_idt ->> 'ano')::integer;
+    NEW.cor      := v_idt ->> 'cor';
     -- A cor que só estava no nome passa para a ficha (força 0: qualquer
     -- escrita a sério ganha-lhe), para não se perder quando sai do nome.
     IF COALESCE(v_tipo, '') = '' AND NEW.cor IS NOT NULL THEN
@@ -226,13 +228,13 @@ BEGIN
       NEW.origens := NEW.origens || jsonb_build_object('tipo',
                        jsonb_build_object('o', 'nome', 'f', 0, 'em', now()));
     END IF;
-    IF id ->> 'chave_base' <> ''
+    IF v_idt ->> 'chave_base' <> ''
        AND NOT EXISTS (SELECT 1 FROM winecatalog.vinhos o
-                        WHERE o.chave = id ->> 'chave' AND o.id IS DISTINCT FROM NEW.id) THEN
-      NEW.chave      := id ->> 'chave';
-      NEW.chave_base := id ->> 'chave_base';
-      NEW.chave_nome := id ->> 'chave_nome';
-      NEW.base_nome  := id ->> 'base_nome';
+                        WHERE o.chave = v_idt ->> 'chave' AND o.id IS DISTINCT FROM NEW.id) THEN
+      NEW.chave      := v_idt ->> 'chave';
+      NEW.chave_base := v_idt ->> 'chave_base';
+      NEW.chave_nome := v_idt ->> 'chave_nome';
+      NEW.base_nome  := v_idt ->> 'base_nome';
     END IF;
   EXCEPTION WHEN OTHERS THEN
     NULL;

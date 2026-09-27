@@ -1253,6 +1253,24 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    apps): o **nome** grande, a **cor** em itálico logo a seguir, o
    **produtor** em itálico por baixo (na grelha, a cor por baixo do nome).
 
+**O nome completo** (27/09/2026, o dono das apps): ao lado do oficial, que
+é curto e é o que entra no vinho e na chave ("Quinta Nova", "Carlos
+Alonso"), o produtor pode ter o nome por extenso ("Quinta Nova de Nossa
+Senhora do Carmo") — `produtores.nome_completo`, editado ao lado do oficial
+(painel e Duplicados › Produtores, `produtor_nome_completo`) e lido pelas
+apps com a `produtores_completos` para a ficha do vinho. Não entra na chave
+nem nas grafias: mudá-lo não mexe em vinho nenhum.
+
+**O trigger dos nomes já engoliu um erro seu (27/09/2026).** A primeira
+versão da fase 4 tinha uma variável chamada `id` e, no `NOT EXISTS` que
+confere a chave de outra linha, `id` colidia com a coluna `o.id`: o erro era
+apanhado pelo `EXCEPTION WHEN OTHERS` e as chaves ficavam por recalcular em
+cada mudança de nome ou produtor. Apanhou-se porque corrigir uma gralha num
+nome fez nascer um duplicado (a `juntar` da garrafeira já não achava a linha
+velha). Recalcularam-se as chaves todas (`cor_na_chave_recalcular`). A lição
+é a do costume: um trigger que engole erros tem de ser testado a ver o que
+ESCREVE, não só a ver que não rebenta.
+
 **Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
 produtor no mesmo saco de palavras. Mudam as chaves só-do-nome
 (`chave_nome`/`base_nome`), que a `nomes_rever` recalcula.
