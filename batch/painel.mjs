@@ -6,7 +6,8 @@
 //   · lista as simulações guardadas numa tabela com caixas, e grava só o
 //     que ficou marcado (a opção APLICAR do script — sem voltar a abrir
 //     página nenhuma);
-//   · e, em separadores à parte, os Nomes de vinhos e os Produtores.
+//   · e, em separadores à parte, os Nomes de vinhos, os Produtores, os
+//     Duplicados e o que as garrafeiras escrevem (Comentários · Sugestões).
 //
 // Porque um servidor e não só uma página: uma página aberta do disco não
 // pode correr o node nem o git. Só escuta em 127.0.0.1, e cada pedido que
@@ -261,6 +262,24 @@ const servidor = http.createServer(async (req, res) => {
       }
       return json(res, 400, { erro: "acao" });
     }
+    if (req.method === "POST" && url.pathname === "/comentarios") {
+      // Os comentários sobre vinhos e as sugestões das garrafeiras
+      // (db/comentarios.sql): a lista de um tipo, os números dos dois
+      // separadores, e fechar/reabrir com a resposta que a pessoa lê.
+      const b = await lerCorpo(req);
+      const tipo = b.tipo === "sugestao" ? "sugestao" : "vinho";
+      const ESTADOS = ["aberto", "resolvido", "rejeitado"];
+      if (b.acao === "contar") return sbRpc(res, "winecatalog", "contar_comentarios", {});
+      if (b.acao === "listar")
+        return sbRpc(res, "winecatalog", "listar_comentarios",
+          { p_tipo: tipo, p_estado: [...ESTADOS, "todos"].includes(b.estado) ? b.estado : "aberto" });
+      if (b.acao === "responder") {
+        if (!ESTADOS.includes(b.estado)) return json(res, 400, { erro: "estado" });
+        return sbRpc(res, "winecatalog", "responder_comentario", { p_id: Number(b.id) || 0, p_estado: b.estado,
+          p_resposta: String(b.resposta ?? "").trim().slice(0, 1000) || null, p_quem: "painel do PC (admin)" });
+      }
+      return json(res, 400, { erro: "acao" });
+    }
     if (req.method === "POST" && url.pathname === "/nomes") {
       // A regra do nome (db/nomes-normalizar.sql): sem `aplicar` é a simulação
       // de tudo; com ele, só os itens escolhidos (a função recalcula a regra).
@@ -460,6 +479,8 @@ body.com-modal{overflow:hidden}
 .aviso{background:#fff7e6;border:1px solid #f0d9a8;border-radius:10px;padding:8px 10px;font-size:12.5px;margin:12px 0}
 .dup-g{border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px}.dup-g table td{border:0;padding:4px 6px}
 #prod-oficiais input,#mv-mesmo-q{padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit}
+.com-texto{white-space:pre-wrap;word-break:break-word;margin:8px 0 4px}
+.com-resp{flex:1 1 260px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 .ident{border:1px dashed var(--bo);border-radius:10px;padding:8px 10px}.ident .linha label{flex:1 1 200px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mu)}
 </style></head><body>
 <header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
@@ -468,6 +489,8 @@ body.com-modal{overflow:hidden}
   <button role="tab" data-tab="nomes" onclick="abrirTab('nomes')">Nomes de vinhos</button>
   <button role="tab" data-tab="produtores" onclick="abrirTab('produtores')">Produtores</button>
   <button role="tab" data-tab="duplicados" onclick="abrirTab('duplicados')" title="Vinhos que parecem o mesmo">Duplicados<span id="tab-dup"></span></button>
+  <button role="tab" data-tab="comentarios" onclick="abrirTab('comentarios')" title="O que as garrafeiras dizem de um vinho">Comentários<span id="tab-com-vinho"></span></button>
+  <button role="tab" data-tab="sugestoes" onclick="abrirTab('sugestoes')" title="Ideias e problemas da app, escritos na Garrafeira">Sugestões<span id="tab-com-sugestao"></span></button>
 </nav>
 <main>
 <section class="tab" id="t-info">
@@ -577,6 +600,22 @@ body.com-modal{overflow:hidden}
   <div id="dup-colheita"></div>
 </div>
 </section>
+<section class="tab" id="t-comentarios" hidden>
+<div class="card"><h2>Comentários sobre vinhos</h2>
+  <p class="nota" style="margin:0 0 10px">Escritos na Garrafeira, na página de cada vinho: <b>atributos errados</b>, um <b>site de onde atualizar</b> a ficha, ou outro problema. Corrige-se no catálogo — carrega no nome para abrir a ficha e editar, ou em <b>Escolher para enriquecer</b> para o correr na Informação de vinhos — e daí chega às garrafeiras (em "Fichas das garrafeiras × catálogo"). Fecha-se com uma <b>resposta</b>: é o que a pessoa lê na Garrafeira.</p>
+  <div class="linha"><label>Mostrar <select id="com-vinho-estado" onchange="comProcurar('vinho')"><option value="aberto">por tratar</option><option value="todos">todos</option><option value="resolvido">tratados</option><option value="rejeitado">recusados</option></select></label>
+    <button onclick="comProcurar('vinho')">🔄 Atualizar</button><span id="com-vinho-conta" class="nota"></span></div>
+  <div id="com-vinho-lista" style="margin-top:10px"></div>
+</div>
+</section>
+<section class="tab" id="t-sugestoes" hidden>
+<div class="card"><h2>Sugestões de melhoria</h2>
+  <p class="nota" style="margin:0 0 10px">Ideias para a app e coisas que não funcionam, escritas em Definições da Garrafeira. Fecha-se com uma <b>resposta</b>: é o que a pessoa lê lá.</p>
+  <div class="linha"><label>Mostrar <select id="com-sugestao-estado" onchange="comProcurar('sugestao')"><option value="aberto">por tratar</option><option value="todos">todas</option><option value="resolvido">tratadas</option><option value="rejeitado">recusadas</option></select></label>
+    <button onclick="comProcurar('sugestao')">🔄 Atualizar</button><span id="com-sugestao-conta" class="nota"></span></div>
+  <div id="com-sugestao-lista" style="margin-top:10px"></div>
+</div>
+</section>
 </main>
 <div class="modal" id="modal-vinho" hidden onclick="if(event.target===this)fecharVinho()">
   <div class="caixa" role="dialog" aria-modal="true" aria-labelledby="mv-titulo">
@@ -591,15 +630,16 @@ const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").t
 const palavras=el=>semAc(document.getElementById(el).value).split(/\\s+/).filter(Boolean);
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
 
-// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores, #duplicados)
-const TABS=["info","nomes","produtores","duplicados"],ABERTOS=new Set();
+// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores, #duplicados, #comentarios, #sugestoes)
+const TABS=["info","nomes","produtores","duplicados","comentarios","sugestoes"],ABERTOS=new Set();
 function abrirTab(t){
   if(!TABS.includes(t))t="info";
   for(const x of TABS)document.getElementById("t-"+x).hidden=x!==t;
   document.querySelectorAll("nav.tabs button").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-selected",on?"true":"false");});
   if(location.hash!=="#"+t)history.replaceState(null,"","#"+t);
   // Os Nomes e os Produtores só leem a BD: carregam sozinhos da primeira vez.
-  if(!ABERTOS.has(t)){ABERTOS.add(t);if(t==="nomes")nomesProcurar();if(t==="produtores")prodProcurar();}
+  if(!ABERTOS.has(t)){ABERTOS.add(t);if(t==="nomes")nomesProcurar();if(t==="produtores")prodProcurar();
+    if(t==="comentarios")comProcurar("vinho");if(t==="sugestoes")comProcurar("sugestao");}
 }
 window.addEventListener("hashchange",()=>abrirTab(location.hash.slice(1)));
 
@@ -1503,6 +1543,83 @@ async function dupNao(a,b){
   try{await post("/duplicados",{acao:"nao",id:a,outros:[b]});await dupProcurar();}catch(e){alert(e.message);}
 }
 
+// ── Comentários e sugestões (28/09/2026) ──
+// db/comentarios.sql: o que as garrafeiras escrevem — sobre um vinho (na
+// página dele, na Garrafeira) ou sobre a app (em Definições de lá). Os
+// números dos dois separadores carregam ao abrir a página: são o alerta,
+// como nos Duplicados. A resposta ao fechar é o que a pessoa lê na Garrafeira.
+const COM={vinho:[],sugestao:[]};
+const COM_MOTIVO={atributos:"Atributos errados",atualizar:"Atualizar a partir de um site",outro:"Outro problema",melhoria:"Ideia / melhoria",problema:"Algo não funciona"};
+const COM_ESTADO={aberto:"por tratar",resolvido:"tratado",rejeitado:"recusado"};
+async function comContar(){
+  try{const c=await post("/comentarios",{acao:"contar"});
+    for(const t of ["vinho","sugestao"]){const n=Number((c&&c[t])||0);document.getElementById("tab-com-"+t).textContent=n?" ("+n+")":"";}}
+  catch(e){}
+}
+async function comProcurar(tipo){
+  const box=document.getElementById("com-"+tipo+"-lista");
+  box.innerHTML='<p class="nota">A carregar…</p>';
+  try{COM[tipo]=(await post("/comentarios",{acao:"listar",tipo,estado:document.getElementById("com-"+tipo+"-estado").value}))||[];comPintar(tipo);}
+  catch(e){box.innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+  comContar();
+}
+function comCampoNome(k){const c=CAMPOS_ED.find(x=>x[0]===k);return c?c[1]:({nome:"Nome",produtor:"Produtor",ano:"Colheita"})[k]||k;}
+function comPintar(tipo){
+  const L=COM[tipo]||[],aberto=document.getElementById("com-"+tipo+"-estado").value==="aberto";
+  document.getElementById("com-"+tipo+"-conta").textContent=L.length?L.length+(aberto?" por tratar":""):"";
+  document.getElementById("com-"+tipo+"-lista").innerHTML=L.length?L.map(comHTML).join(""):'<p class="nota">Nada'+(aberto?" por tratar":"")+'.</p>';
+}
+function comHTML(c){
+  const vinho=c.tipo==="vinho",fechado=c.estado!=="aberto",id=Number(c.id);
+  const motivo='<span class="tag">'+esc(COM_MOTIVO[c.motivo]||c.motivo)+'</span>';
+  let h='<div class="dup-g"><div class="linha" style="justify-content:space-between;align-items:flex-start"><div>';
+  h+=vinho?(c.vinhoId?idLink(c.vinhoId)+' <a href="#" class="nm" onclick="abrirVinho('+Number(c.vinhoId)+');return false"><b>'+esc(c.nome)+'</b></a>':'<b>'+esc(c.nome)+'</b>')+
+      (c.cor?' <i class="nota">'+esc(String(c.cor).toLowerCase())+'</i>':'')+' · '+(c.ano?esc(c.ano):'sem colheita')+
+      '<br><span class="nota">'+esc(c.produtor||"(sem produtor)")+'</span> '+motivo
+    :motivo;
+  h+='</div><span class="tag'+(fechado?'':' mudou')+'">'+esc(COM_ESTADO[c.estado]||c.estado)+'</span></div>';
+  if(c.texto)h+='<p class="com-texto">'+esc(c.texto)+'</p>';
+  if(c.link)h+='<p class="nota">🔗 <a href="'+esc(c.link)+'" target="_blank" rel="noopener noreferrer">'+esc(c.link)+'</a></p>';
+  // Os campos de que se queixa: o que a pessoa tem, o que o catálogo tinha
+  // quando ela escreveu e o de agora (um vinho que ainda não estava no
+  // catálogo só tem o de agora).
+  if((c.campos||[]).length){
+    const cat=c.valoresCatalogo,ag=c.valoresAgora;
+    h+='<table class="ficha"><tr><th>Campo</th><th>Na garrafeira de quem escreveu</th><th>'+(cat?'No catálogo, então':'No catálogo, agora')+'</th>'+(cat&&ag?'<th>Agora</th>':'')+'</tr>'+
+      c.campos.map(k=>{const mud=cat&&ag&&JSON.stringify(ag[k]??null)!==JSON.stringify(cat[k]??null);
+        return '<tr><td class="k">'+esc(comCampoNome(k))+'</td><td>'+valorFicha(k,(c.valoresDeles||{})[k])+'</td><td>'+
+          (c.vinhoId?valorFicha(k,cat?cat[k]:ag?ag[k]:null):'<span class="nota">não está no catálogo</span>')+'</td>'+
+          (cat&&ag?'<td>'+(mud?valorFicha(k,ag[k]):'<span class="nota">igual</span>')+'</td>':'')+'</tr>';}).join("")+'</table>';
+  }
+  if(vinho&&c.vinhoId&&c.mesmaColheita===false)h+='<p class="nota">A linha do catálogo é da colheita '+(c.anoCatalogo?esc(c.anoCatalogo):'sem ano')+', não da de quem escreveu.</p>';
+  if(vinho&&!c.vinhoId)h+='<p class="nota">Este vinho ainda não está no catálogo.</p>';
+  h+='<p class="nota">'+esc(c.quem)+' · '+esc(dataHora(c.quando))+' · '+esc(c.app||"")+'</p>';
+  if(fechado)h+='<p class="nota">'+esc(COM_ESTADO[c.estado]||c.estado)+' a '+esc(dataHora(c.fechadoEm))+(c.fechadoPor?' por '+esc(c.fechadoPor):'')+(c.resposta?' — resposta: “'+esc(c.resposta)+'”':'')+'</p>';
+  h+='<div class="linha" style="margin-top:6px">';
+  if(vinho&&c.vinhoId)h+='<button onclick="abrirVinho('+Number(c.vinhoId)+')">Abrir a ficha</button>'+
+    '<button onclick="comEscolher('+Number(c.vinhoId)+')" title="Marca-o na Informação de vinhos, para o simular ou enriquecer">Escolher para enriquecer</button>';
+  h+=fechado?'<button onclick="comResponder('+id+',\\'aberto\\')">Reabrir</button>'
+    :'<input id="com-resp-'+id+'" class="com-resp" placeholder="resposta para quem escreveu (opcional)">'+
+     '<button class="prim" onclick="comResponder('+id+',\\'resolvido\\')">Tratado ✓</button>'+
+     '<button onclick="comResponder('+id+',\\'rejeitado\\')">Recusar</button>';
+  return h+'</div></div>';
+}
+async function comResponder(id,estado){
+  const tipo=COM.vinho.some(x=>x.id===id)?"vinho":"sugestao";
+  const el=document.getElementById("com-resp-"+id),resposta=el?el.value.trim():"";
+  if(estado==="rejeitado"&&!resposta&&!confirm("Recusar sem dizer porquê? Quem escreveu vê só que foi recusado."))return;
+  try{await post("/comentarios",{acao:"responder",id,estado,resposta});await comProcurar(tipo);}
+  catch(e){alert("Não consegui: "+e.message);}
+}
+// O vinho do comentário passa para a escolha da Informação de vinhos (como
+// os "Por confirmar" das garrafeiras), para o simular ou enriquecer.
+function comEscolher(id){
+  if(!ESC.has(id)){if(ESC.size>=50)return alert("Até 50 de cada vez.");ESC.add(id);}
+  document.getElementById("cat-so").checked=true;
+  abrirTab("info");pintarCatalogo();
+  document.getElementById("c-escolher").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
 filtrosHTML();
 ordensHTML();
 sitiosHTML("cat");sitiosHTML("novo");
@@ -1510,5 +1627,6 @@ novaLinha();
 abrirTab(location.hash.slice(1));
 carregarCatalogo();
 dupProcurar();
+comContar();
 listarSims();fetch("/estado").then(r=>r.json()).then(r=>{if(r&&r.fim==null)comecar();});
 </script></body></html>`;

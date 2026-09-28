@@ -175,7 +175,8 @@ function itab(tab){
   if(tab==='cfg'){wcCarregarNumeros();if(isAdmin())wcVivinoConfig();}
   if(tab==='catalogo')wcCarregarCatalogo(true);
   if(tab==='duplicados')wcCarregarDuplicados();
-  if(tab==='alertas'){wcCarregarReportes('aberto');wcVivinoLista('pendente');wcHistorico(null,'hist-lista');}
+  if(tab==='alertas'){wcCarregarReportes('aberto');wcComentarios('vinho','aberto');wcComentarios('sugestao','aberto');
+    wcVivinoLista('pendente');wcHistorico(null,'hist-lista');}
 }
 function restaurarTab(){
   let tab=null;
@@ -3516,12 +3517,17 @@ async function wcContarAlertas(){
   const el=document.getElementById('alertas-n');
   if(!el)return;
   try{
-    /* Os alertas das garrafeiras e os links do Vivino por validar contam
-       os dois: são as duas coisas à espera de uma decisão do admin. */
-    const [n1,n2]=await Promise.all([
+    /* Os alertas das garrafeiras, os comentários e sugestões por tratar e
+       os links do Vivino por validar contam todos: são as coisas à espera
+       de uma decisão do admin. Sem a `db/comentarios.sql` corrida, os
+       comentários contam zero em vez de apagar o número dos outros. */
+    const [n1,n2,c]=await Promise.all([
       catRpc('contar_reportes',{}),
-      catRpc('vivino_contar',{}).catch(()=>0)]);
-    const n=Number(n1||0)+Number(n2||0);
+      catRpc('vivino_contar',{}).catch(()=>0),
+      catRpc('contar_comentarios',{}).catch(()=>null)]);
+    const cv=Number((c&&c.vinho)||0), cs=Number((c&&c.sugestao)||0);
+    wcComContagem('vinho',cv);wcComContagem('sugestao',cs);
+    const n=Number(n1||0)+Number(n2||0)+cv+cs;
     el.textContent=Number(n)>0?String(n):'';
     el.classList.toggle('on',Number(n)>0);
   }catch(e){el.textContent='';}
@@ -3594,6 +3600,139 @@ async function wcResolverReporte(id,estado){
     toast(estado==='aberto'?'Reaberto':'Tratado ✓');
     wcCarregarReportes(_wcRepEstado);
   }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* ══════════════════════════════════════════════
+   COMENTÁRIOS E SUGESTÕES — o que as garrafeiras têm a dizer
+
+   Vêm da Garrafeira (db/comentarios.sql; a porta de lá é a migração 26):
+   um comentário sobre um vinho — atributos errados, um site de onde
+   atualizar, outro problema — escrito na página do vinho, e uma sugestão
+   sobre a app, escrita em Definições. Não é o "o errado é o catálogo" de
+   cima: esse é UM campo que a comparação já viu diferente; aqui é o que a
+   pessoa escreveu, mesmo quando o catálogo e a garrafeira dizem o mesmo —
+   e estão os dois errados, que é o caso mais comum (a garrafeira trouxe o
+   erro do catálogo).
+
+   A resposta que se escreve ao fechar é o que a pessoa lê na Garrafeira,
+   ao lado do que escreveu — por isso pede-se sempre, e não só ao recusar.
+   ══════════════════════════════════════════════ */
+const WC_COM_MOTIVO={
+  atributos:'Atributos errados',atualizar:'Atualizar a partir de um site',outro:'Outro problema',
+  melhoria:'Ideia / melhoria',problema:'Algo não funciona'
+};
+const WC_COM_ESTADO={aberto:'por tratar',resolvido:'tratado',rejeitado:'recusado'};
+const _wcCom={vinho:{estado:'aberto',lista:[]},sugestao:{estado:'aberto',lista:[]}};
+
+function wcComContagem(tipo,n){
+  const el=document.getElementById('com-'+tipo+'-n');
+  if(!el)return;
+  el.textContent=n>0?String(n):'';
+  el.classList.toggle('on',n>0);
+}
+function wcComCampoNome(k){
+  const id={nome:'Nome',produtor:'Produtor',ano:'Ano'};
+  if(id[k])return id[k];
+  const c=WC_FICHA.find(([x])=>x===k);return c?c[1]:k;
+}
+
+async function wcComentarios(tipo,estado){
+  const st=_wcCom[tipo];if(!st)return;
+  st.estado=estado||'aberto';
+  const box=document.getElementById('com-'+tipo+'-lista');
+  if(!box)return;
+  box.innerHTML='<div class="wc-card"><p class="wc-note">A carregar…</p></div>';
+  try{
+    const l=await catRpc('listar_comentarios',{p_tipo:tipo,p_estado:st.estado});
+    st.lista=Array.isArray(l)?l:[];
+    if(st.estado==='aberto')wcComContagem(tipo,st.lista.length);
+    box.innerHTML=st.lista.length?st.lista.map(wcComentarioHTML).join('')
+      :`<div class="wc-card"><p class="wc-note">${st.estado==='aberto'?'Nada por tratar.':'Ainda não chegou nada.'} ${
+        tipo==='vinho'?'Os comentários chegam da página de cada vinho, na Garrafeira.'
+                      :'As sugestões chegam de Definições, na Garrafeira.'}</p></div>`;
+  }catch(e){
+    // O "falta correr" do catRpc aponta para o catalogo.sql; aqui é outro.
+    const m=/Falta correr/.test(e.message)?'Falta correr db/comentarios.sql no Supabase (ver db/README.md).':e.message;
+    box.innerHTML=`<div class="wc-card"><p class="wc-note erro">${esc(m)}</p></div>`;
+  }
+}
+
+function wcComentarioHTML(c){
+  const vinho=c.tipo==='vinho';
+  const val=x=>(x==null||x===''||(Array.isArray(x)&&!x.length)?'<em>vazio</em>'
+    :esc(Array.isArray(x)?x.join(', '):String(x)));
+  const motivo=esc(WC_COM_MOTIVO[c.motivo]||c.motivo);
+  const cab=vinho
+    ?`<div class="cat-nome">${esc(c.nome||'')}${c.ano?` <span class="cat-ano">${esc(String(c.ano))}</span>`:''}</div>
+      <div class="cat-sub">${esc([c.produtor||'—',c.cor].filter(Boolean).join(' · '))} · <strong>${motivo}</strong></div>`
+    :`<div class="cat-nome">${motivo}</div>`;
+  /* Os campos de que se queixa: o que a pessoa tem, o que o catálogo tinha
+     quando ela escreveu e — só se mudou entretanto — o de agora. Um vinho
+     que ainda não estava no catálogo mostra só o de agora, se já lá estiver. */
+  const cat=c.valoresCatalogo, ag=c.valoresAgora;
+  const campos=(c.campos||[]).map(k=>{
+    const agV=ag?ag[k]:undefined, catV=cat?cat[k]:undefined;
+    const mudou=cat&&ag&&JSON.stringify(agV??null)!==JSON.stringify(catV??null);
+    return `<div class="com-campo"><div class="com-campo-k">${esc(wcComCampoNome(k))}</div>
+      <div class="rep-vals">
+        <div class="deles"><span>na garrafeira de quem escreveu</span><b>${val((c.valoresDeles||{})[k])}</b></div>
+        ${cat?`<div><span>no catálogo, então</span><b>${val(catV)}</b></div>`:''}
+        ${mudou||(!cat&&ag)?`<div class="agora"><span>no catálogo, agora</span><b>${val(agV)}</b></div>`:''}
+      </div></div>`;
+  }).join('');
+  const fechado=c.estado!=='aberto';
+  return `<div class="wc-card rep">
+    <div class="rep-cab"><div>${cab}</div>
+      <span class="rep-est ${esc(c.estado)}">${esc(WC_COM_ESTADO[c.estado]||c.estado)}</span></div>
+    ${c.texto?`<p class="com-texto">${esc(c.texto)}</p>`:''}
+    ${c.link?`<p class="wc-note com-link">🔗 <a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${esc(c.link)}</a></p>`:''}
+    ${campos}
+    ${vinho&&c.vinhoId&&c.mesmaColheita===false?`<p class="wc-note">A linha do catálogo é da colheita
+      ${c.anoCatalogo?esc(String(c.anoCatalogo)):'sem ano'}, não da de quem escreveu.</p>`:''}
+    <p class="wc-note">${esc(c.quem||'')} · ${esc(dataFmt(c.quando))} · ${esc(c.app||'')}</p>
+    ${fechado?`<p class="wc-note">${esc(WC_COM_ESTADO[c.estado]||c.estado)} · ${esc(dataFmt(c.fechadoEm))}${c.fechadoPor?' · '+esc(c.fechadoPor):''}${
+      c.resposta?`<br>Resposta: ${esc(c.resposta)}`:''}</p>`:''}
+    <div class="rep-acoes">
+      ${vinho?(c.vinhoId?`<button class="btn-n" onclick="wcVerFicha(${Number(c.vinhoId)})">Abrir a ficha</button>
+        ${c.link?`<button class="btn-n" onclick="wcComProcurar(${Number(c.id)})" title="Abre o Procurar informação com este link nos sites de confiança">🔎 Procurar com este site</button>`:''}`
+        :'<span class="wc-note">Este vinho ainda não está no catálogo.</span>'):''}
+      ${fechado?`<button class="btn-n" onclick="wcComResponder(${Number(c.id)},'aberto')">Reabrir</button>`
+        :`<button class="btn-n" onclick="wcComResponder(${Number(c.id)},'resolvido')">Tratado ✓</button>
+          <button class="btn-n" onclick="wcComResponder(${Number(c.id)},'rejeitado')">Recusar</button>`}
+    </div>
+  </div>`;
+}
+
+async function wcComResponder(id,estado){
+  let resposta=null;
+  if(estado!=='aberto'){
+    resposta=prompt(estado==='rejeitado'
+      ?'Porquê? Quem escreveu lê isto na Garrafeira (deixa vazio se não quiseres explicar).'
+      :'Uma resposta para quem escreveu? Aparece-lhe na Garrafeira (opcional).');
+    if(resposta===null)return;
+  }
+  try{
+    await catRpc('responder_comentario',{p_id:id,p_estado:estado,p_resposta:resposta||null});
+    toast(estado==='aberto'?'Reaberto':'Tratado ✓');
+    const tipo=['vinho','sugestao'].find(t=>_wcCom[t].lista.some(c=>c.id===id))||'vinho';
+    await wcComentarios(tipo,_wcCom[tipo].estado);
+    wcContarAlertas();
+  }catch(e){toast('Erro: '+e.message,1);}
+}
+
+/* "Atualizem a partir deste site": abre a ficha e o Procurar informação
+   por cima, já com o link nos sites de confiança e, se o comentário disse
+   que campos, só esses marcados. Nada grava sem a revisão de sempre. */
+async function wcComProcurar(id){
+  const c=_wcCom.vinho.lista.find(x=>x.id===id);
+  if(!c||!c.vinhoId)return;
+  await wcVerFicha(c.vinhoId);
+  if(!_wcFicha||_wcFicha.id!==c.vinhoId)return;
+  wcAbrirProcurar();
+  const s=document.getElementById('pr-sites');
+  if(s&&c.link)s.value=c.link;
+  const ks=new Set(c.campos||[]), cx=wcProcCaixas();
+  if(cx.some(x=>ks.has(x.value))){cx.forEach(x=>x.checked=ks.has(x.value));wcProcContar();}
 }
 
 /* ══════════════════════════════════════════════

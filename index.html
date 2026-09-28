@@ -244,6 +244,36 @@ setTimeout(function(){ if (window.wcEsconderSplash) window.wcEsconderSplash(); }
     </div>
     <div id="rep-lista"></div>
 
+    <!-- O que as garrafeiras têm a dizer (db/comentarios.sql): um comentário
+         sobre um vinho (na página dele, na Garrafeira) e uma sugestão sobre a
+         app (Definições da Garrafeira). Quem escreveu vê lá a resposta. -->
+    <div class="wc-card">
+      <h3>Comentários sobre vinhos<span class="it-n" id="com-vinho-n"></span></h3>
+      <p class="wc-note">
+        Quem tem o vinho diz o que não está bem — <strong>atributos errados</strong>, um
+        <strong>site de onde atualizar</strong> a ficha, ou outro problema. Corrige-se aqui no
+        catálogo, e daí chega às garrafeiras. A resposta que escreveres ao fechar é o que
+        a pessoa lê, na Garrafeira.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcComentarios('vinho','aberto')">Por tratar</button>
+        <button class="btn-n" onclick="wcComentarios('vinho','todos')">Todos</button>
+      </div>
+    </div>
+    <div id="com-vinho-lista"></div>
+
+    <div class="wc-card">
+      <h3>Sugestões de melhoria<span class="it-n" id="com-sugestao-n"></span></h3>
+      <p class="wc-note">
+        Ideias para a app e coisas que não funcionam, escritas em Definições da Garrafeira.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button class="btn-n" onclick="wcComentarios('sugestao','aberto')">Por tratar</button>
+        <button class="btn-n" onclick="wcComentarios('sugestao','todos')">Todas</button>
+      </div>
+    </div>
+    <div id="com-sugestao-lista"></div>
+
     <!-- Os links do Vivino verificados à noite (batch/vivino-verificar.mjs).
          O batch só PROPÕE; decide-se aqui. Ver db/vivino.sql. -->
     <div class="wc-card">

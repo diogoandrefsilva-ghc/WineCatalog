@@ -49,6 +49,11 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 17. db/parecidos.sql       ("este vinho é aquele": os `parecidos` — uma letra de diferença, qualquer colheita —,
                             a `corresponde` e a `nao_correspondem`; depois do painel.sql. A `fundir`, a
                             `marcar_distintos` e a `candidatos` aceitam a service_role desde este dia)
+18. db/comentarios.sql     (os comentários sobre vinhos e as sugestões das garrafeiras: a tabela `comentarios`,
+                            a `comentar` — só service_role, as apps chegam-lhe pelas portas delas —, a
+                            `listar_comentarios`/`contar_comentarios`/`responder_comentario` do admin e do painel
+                            e a `meus_comentarios` de quem escreveu; depois do cor-na-chave.sql. Na Garrafeira, a
+                            seguir: migracao-comentarios.sql, a migração 26)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

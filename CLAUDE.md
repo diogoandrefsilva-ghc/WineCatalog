@@ -14,7 +14,7 @@ tudo o que aqui está foi pago com um erro.
 ## Estrutura
 - `index.html` — só markup: os quatro separadores (Catálogo, o inicial ·
   Duplicados — com os Produtores e os **Nomes dos vinhos**, só ao admin · Alertas, só ao admin,
-  com **as garrafeiras × o catálogo** · Definições) + os três ecrãs de autenticação (`page-login`,
+  com **os comentários e sugestões** e **as garrafeiras × o catálogo** · Definições) + os três ecrãs de autenticação (`page-login`,
   `page-nova-pass`, `page-sem-acesso`) + o splash + os seis modais: a
   ficha, **Editar**, **Vinho novo**, **Procurar informação**,
   **Atualizar informação** (em lote) e Alertas vivem em `t-alertas` + o
@@ -56,7 +56,8 @@ tudo o que aqui está foi pago com um erro.
   marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) → `painel.sql`
   (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor`, só `service_role`) →
   `garrafeiras-rever.sql` (a porta da app para as garrafeiras × o catálogo) →
-  `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) (+ `README.md`
+  `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) →
+  `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -591,6 +592,34 @@ haver duas cópias — ver `db/catalogo-partilhado.sql`), e as três que a
 app chama, `comparar_catalogo`/`aplicar_do_catalogo`/`reportar_ao_catalogo`.
 Nenhuma pode deitar a ficha de um vinho abaixo se o catálogo não
 responder: o catálogo é uma poupança e um espelho, nunca uma dependência.
+
+### Comentários e sugestões — *o que as garrafeiras têm a dizer* (28/09/2026)
+`db/comentarios.sql` (a porta da Garrafeira é a migração 26 de lá). Uma
+tabela, `winecatalog.comentarios`, para duas conversas: um **comentário
+sobre um vinho** (a página do vinho na Garrafeira, "Algo não está bem?":
+atributos errados, atualizar a partir de um site, outro problema) e uma
+**sugestão** sobre a app (Definições da Garrafeira). O `reportar` continua:
+é UM campo que a comparação já viu diferente; isto é o que a pessoa
+escreveu, mesmo quando catálogo e garrafeira dizem o mesmo (e estão os dois
+errados, o caso mais comum).
+- **Onde se lê**: dois cartões em **Alertas** (`wcComentarios`, o número de
+  cada um no título e somado ao do separador) e dois separadores no
+  **painel do PC** ("Comentários" · "Sugestões", rota `/comentarios`, pela
+  `service_role`). Em cada comentário: o texto, o link, e cada atributo
+  apontado com três valores — na garrafeira de quem escreveu, no catálogo
+  então, e o de agora quando mudou. **"🔎 Procurar com este site"** (app)
+  abre a ficha e o Procurar informação com o link nos sites de confiança e
+  os atributos apontados marcados; no painel, **"Escolher para enriquecer"**
+  põe o vinho na escolha da Informação de vinhos.
+- **A resposta** que se escreve ao fechar (Tratado ✓ · Recusar) é o que a
+  pessoa lê na Garrafeira (`meus_comentarios`). Reabrir apaga-a.
+- **Quem escreve**: só a `service_role` executa a `comentar` — as apps
+  chegam-lhe por portas SECURITY DEFINER delas, que conferem quem pode falar
+  de que vinho e tiram os valores da BD. O `quem` sai do JWT. Guarda o que o
+  reporte já guardava (o email, o vinho como a pessoa o tem): não é uma
+  exceção nova à invariante 2.
+- O vinho do catálogo resolve-se ao LER: um id fundido responde pelo que
+  ficou, e um vinho que ainda não estava no catálogo procura-se outra vez.
 
 ### Duplicados — *a fusão manual*
 Três coisas que não são negociáveis:

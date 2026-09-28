@@ -651,6 +651,15 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .rep-vals b{display:block;font-size:14px;margin-top:2px;word-break:break-word}
 .rep-vals .og-tag{display:inline-block;margin-top:5px;text-transform:none;letter-spacing:0;font-weight:600}
 .rep-nota{font-style:italic;margin-top:8px}
+/* Os comentários e sugestões das garrafeiras: o texto da pessoa à frente
+   (com as mudanças de linha que ela escreveu), e cada campo de que se
+   queixa com os valores lado a lado, como nos alertas. */
+.wc-card h3 .it-n{vertical-align:middle}
+.com-texto{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.5;margin-top:10px}
+.com-link{margin-top:8px}.com-link a{word-break:break-all}
+.com-campo{margin-top:10px}
+.com-campo .rep-vals{margin-top:4px}
+.com-campo-k{font-size:10.5px;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.4px}
 .rep-acoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--bo)}
 
 @media (max-width:520px){
