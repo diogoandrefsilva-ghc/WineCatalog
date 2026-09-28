@@ -1195,9 +1195,16 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
   nome" (a lista `produtores_no_nome`, ver "Os produtores que ficam no
   nome") leva os PRODUTORES dos desmarcados que se veem e a quem a regra
   tirava o produtor;
-- **Produtores** — as sugestões e os oficiais, com uma procura; num
-  oficial, **Mudar** o nome e **+ Acrescentar** uma grafia (ver "Mudar o nome
-  de um produtor", abaixo);
+- **Produtores** — três vistas com uma procura por cima (28/09/2026, o
+  dono: "grafismo esquisito/confuso"): **Por decidir** (cada grupo de
+  sugestões numa tabela com colunas "É ele" / "Nome oficial", e o botão diz o
+  que vai fazer — "Juntar 2 grafias em «Duorum»"), **Produtores oficiais**
+  (um cartão cada: as grafias em pastilhas, "=" entre as que dão a mesma
+  chave, **+ grafia**, ✏️ para o nome oficial e o completo, e o visto **no
+  nome dos vinhos**) e **Produtor no nome dos vinhos** (a lista, ver "Os
+  produtores que ficam no nome"). O resultado de cada ação fica no cartão
+  onde se carregou (`PROD_RES`), grafia a grafia, e não num `alert` (ver
+  "Mudar o nome de um produtor", abaixo);
 - **Duplicados** (o 4.º, desde a tarde de 27/09) — ver "Este vinho é aquele",
   abaixo.
 Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
@@ -1254,6 +1261,23 @@ garrafeiras com `sync_log`, duplicados devolvidos). Se o nome novo já for de
 outro oficial (o nome, ou uma grafia dele), é juntar dois produtores: recusa
 e diz qual. A lista de onde se escolhem as grafias é a
 `produtores_grafias_lista` (com quantos vinhos e de que oficial já são).
+
+**As grafias com a mesma chave** (28/09/2026, o dono: "fiz uma fusão de
+Duorum Vinhos e Herdade do Esporão, mas não vejo essas grafias associadas" e
+"quando tento associar grafias novas, não parece acontecer nada — tentei com
+o CARM e com o Esporão"). Uma variante é uma CHAVE, e "Duorum Vinhos"/"Duorum"
+ou "Esporão"/"Herdade do Esporão" dão a mesma (a `tokens` deita fora
+"vinhos", "herdade", "do"): a segunda grafia caía no `ON CONFLICT` sem deixar
+rasto, o ecrã só mostrava a `escrito` da primeira, e o "+ Acrescentar" de uma
+grafia assim respondia "0 vinhos" — funcionava (a chave já era do produtor),
+mas não se via. `produtor_variantes.escritos` guarda agora cada grafia
+confirmada tal como foi escrita (recuperadas do histórico e do `sync_log` as
+que já tinham sido juntadas), a `produtores_listar` devolve-as (e quantos
+vinhos cada oficial tem, e se está no nome dos vinhos), a `produtor_definir`
+diz o que aconteceu a cada grafia (`nova` · `mesma_chave` · `ja_estava` ·
+`de_outro`) e a `nome_normal` tira qualquer uma delas da frente do nome
+("Duorum Vinhos Tons" → "Tons"). Tirar continua a ser pela chave: para o
+catálogo, as grafias de uma chave são a mesma coisa.
 
 **Este vinho é aquele** (27/09/2026, `db/parecidos.sql`, o dono: "alguém
 criou um vinho chamado 'Cristo Vinhas Velhas', que na verdade corresponde ao
@@ -1648,6 +1672,20 @@ Grande Villae", com o branco em itálico ao lado. A chave é a do produtor
 OFICIAL, e apanha as grafias dele. Foi primeiro uma lista de NOMES
 (`nomes_manter`, umas horas); o dono preferiu a do produtor — um vinho novo
 da mesma casa nasce certo sem ninguém o pôr na lista.
+**E desde 28/09/2026 o produtor ENTRA** (o dono: "quero poder dizer: nos
+vinhos deste produtor, o nome do produtor deve aparecer no nome do vinho"):
+num produtor da lista, um nome que não o diga ganha o nome oficial à frente
+("1836 Grande Reserva" → "Companhia das Lezírias 1836 Grande Reserva",
+mudança `produtor_entra`). "Dizer o produtor" é o nome ter uma palavra que o
+identifique, de qualquer grafia dele — "Primavera Reserva" já diz a Caves
+Primavera, porque "caves" (como "companhia", "wines"…, a lista `de_casa` da
+`nome_normal`), as gamas, as castas e as regiões não dizem qual é; sem isto
+nascia "Caves Primavera Primavera Reserva". Liga-se no painel, em
+Produtores (o visto de cada oficial, ou a lista, para um produtor sem
+oficial): vale logo para as escritas futuras, e os nomes que já cá estão
+aparecem a seguir — a `nomes_rever` só desse produtor (`p_produtor`) — com um
+visto por vinho e "Aplicar". Nos quatro da lista, a 28/09, nenhum nome
+mudava: já tinham todos o produtor.
 
 **A chave de um fundido não trava a alvo** (`libertar_chave`, no mesmo
 ficheiro). A `chave` é única e uma perdedora de um `alias` guarda a sua: o

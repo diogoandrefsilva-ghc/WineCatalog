@@ -50,6 +50,45 @@ CREATE TABLE IF NOT EXISTS winecatalog.produtores_distintos (
 );
 ALTER TABLE winecatalog.produtores_distintos ENABLE ROW LEVEL SECURITY;
 
+-- ---------------------------------------------------------------------
+-- TODAS AS GRAFIAS DE UMA CHAVE (28/09/2026, o dono das apps: "fiz uma
+-- fusão de Duorum Vinhos e Herdade do Esporão, mas não vejo essas grafias
+-- associadas" e "quando tento associar grafias novas, não parece acontecer
+-- nada"). Uma variante é uma CHAVE, e "Duorum Vinhos"/"Duorum" ou
+-- "Esporão"/"Herdade do Esporão" dão a mesma ("vinhos", "herdade" e "do"
+-- não contam): a segunda grafia não fazia linha nova e o ecrã só mostrava a
+-- primeira. No "+ Acrescentar" era pior: "Esporão" num Herdade do Esporão
+-- não deixava rasto nenhum — e já funcionava (a chave era a mesma, o vinho
+-- já caía no oficial), só que ninguém o via. `escritos` guarda cada grafia
+-- confirmada tal como foi escrita (a `escrito` incluída), o ecrã mostra-as
+-- todas, e a `nome_normal` tira qualquer uma delas da frente do nome.
+-- Tirar uma variante continua a ser pela chave: as grafias de uma chave
+-- são, para o catálogo, a mesma coisa.
+-- ---------------------------------------------------------------------
+ALTER TABLE winecatalog.produtor_variantes ADD COLUMN IF NOT EXISTS escritos text[] NOT NULL DEFAULT '{}';
+UPDATE winecatalog.produtor_variantes SET escritos = ARRAY[escrito] WHERE escritos = '{}';
+-- As que já tinham sido confirmadas e ficaram sem rasto: o histórico diz o
+-- que a `produtor_definir` trocou pelo oficial (no catálogo e nas
+-- garrafeiras), e cada uma volta à chave que é a sua. Idempotente.
+DO $$
+DECLARE
+  gs text[];
+  g  text;
+BEGIN
+  SELECT array_agg(DISTINCT btrim(a.antes #>> '{}')) INTO gs FROM winecatalog.alteracoes a
+   WHERE a.campo = 'produtor' AND a.quem = 'produtores: nome oficial';
+  IF to_regclass('garrafeira.sync_log') IS NOT NULL THEN
+    gs := COALESCE(gs, '{}') || (SELECT array_agg(DISTINCT btrim(s.detalhe ->> 'antes'))
+                                   FROM garrafeira.sync_log s WHERE s.acao = 'produtor_oficial');
+  END IF;
+  FOREACH g IN ARRAY COALESCE(gs, '{}') LOOP
+    CONTINUE WHEN COALESCE(g, '') = '';
+    UPDATE winecatalog.produtor_variantes SET escritos = escritos || g
+     WHERE chave = winecatalog.chave_produtor(g)
+       AND NOT EXISTS (SELECT 1 FROM unnest(escritos) e WHERE lower(e) = lower(g));
+  END LOOP;
+END $$;
+
 -- O admin da app ou o painel do PC — e mais ninguém.
 CREATE OR REPLACE FUNCTION winecatalog.produtores_autorizado()
   RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
@@ -123,7 +162,11 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------
--- A LISTA dos oficiais, com as grafias de cada um.
+-- A LISTA dos oficiais, com as grafias de cada um. Cada variante é uma
+-- chave com as grafias que lhe dão (`escritos`); a do próprio nome oficial
+-- vem marcada (`oficial`, não se tira) e à frente. `chave` é a do nome
+-- oficial — a da lista `produtores_no_nome` (`no_nome`, nomes-manter.sql);
+-- `catalogo`/`garrafeiras` contam os vinhos escritos com qualquer grafia.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.produtores_listar()
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -134,13 +177,28 @@ BEGIN
     RAISE EXCEPTION 'Só o admin do catálogo.';
   END IF;
   RETURN (
+    WITH n AS MATERIALIZED (
+      SELECT x.chave, sum(x.n_catalogo) AS c, sum(x.n_garrafeiras) AS g
+        FROM winecatalog.produtores_grafias() x GROUP BY x.chave
+    ), o AS MATERIALIZED (
+      SELECT p.*, winecatalog.chave_produtor(p.nome) AS k FROM winecatalog.produtores p
+    )
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
-             'id', p.id, 'nome', p.nome, 'nome_completo', p.nome_completo, 'criado_em', p.criado_em,
-             'variantes', (SELECT COALESCE(jsonb_agg(jsonb_build_object('chave', v.chave, 'escrito', v.escrito)
-                                                     ORDER BY v.escrito), '[]'::jsonb)
-                             FROM winecatalog.produtor_variantes v WHERE v.produtor_id = p.id))
-           ORDER BY lower(p.nome)), '[]'::jsonb)
-      FROM winecatalog.produtores p
+             'id', o.id, 'nome', o.nome, 'nome_completo', o.nome_completo, 'criado_em', o.criado_em,
+             'chave', o.k,
+             'no_nome', EXISTS (SELECT 1 FROM winecatalog.produtores_no_nome m WHERE m.chave = o.k),
+             'catalogo', (SELECT COALESCE(sum(n.c), 0) FROM winecatalog.produtor_variantes v
+                            JOIN n ON n.chave = v.chave WHERE v.produtor_id = o.id),
+             'garrafeiras', (SELECT COALESCE(sum(n.g), 0) FROM winecatalog.produtor_variantes v
+                               JOIN n ON n.chave = v.chave WHERE v.produtor_id = o.id),
+             'variantes', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                                     'chave', v.chave, 'escrito', v.escrito, 'oficial', v.chave = o.k,
+                                     'escritos', to_jsonb(CASE WHEN cardinality(v.escritos) > 0 THEN v.escritos
+                                                               ELSE ARRAY[v.escrito] END))
+                                   ORDER BY v.chave = o.k DESC, lower(v.escrito)), '[]'::jsonb)
+                             FROM winecatalog.produtor_variantes v WHERE v.produtor_id = o.id))
+           ORDER BY lower(o.nome)), '[]'::jsonb)
+      FROM o
   );
 END;
 $$;
@@ -149,8 +207,11 @@ $$;
 -- CONFIRMAR: `p_oficial` é o nome oficial; `p_grafias` as maneiras de o
 -- escrever que passam a ser ele (o próprio oficial entra sozinho). Grava
 -- as variantes e corrige o que já lá está — no catálogo (com as chaves) e
--- em todas as garrafeiras. Devolve o que mudou e os duplicados que
--- sobraram (a juntar nos Duplicados).
+-- em todas as garrafeiras. Devolve o que mudou, os duplicados que
+-- sobraram (a juntar nos Duplicados) e o que aconteceu a cada grafia
+-- (`grafias`: `nova` · `mesma_chave` — já era deste produtor por dar a
+-- mesma chave que `como` · `ja_estava` · `de_outro` — era do oficial `de`
+-- e passou para este), que é o que o ecrã diz em vez de "0 vinhos".
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.produtor_definir(p_oficial text, p_grafias text[])
   RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
@@ -160,7 +221,9 @@ DECLARE
   v_oficial text := btrim(regexp_replace(COALESCE(p_oficial,''), '\s+', ' ', 'g'));
   v_id      bigint;
   v_chaves  text[];
+  v_todas   text[];
   g         text;
+  i         integer;
   k         text;
   r         record;
   v_base    text;
@@ -168,6 +231,11 @@ DECLARE
   n_cat     integer := 0;
   n_garr    integer := 0;
   v_dup     jsonb := '[]'::jsonb;
+  v_graf    jsonb := '[]'::jsonb;
+  a_prod    bigint;
+  a_escrito text;
+  a_escritos text[];
+  a_oficial text;
 BEGIN
   IF NOT winecatalog.produtores_autorizado() THEN
     RAISE EXCEPTION 'Só o admin do catálogo.';
@@ -193,13 +261,32 @@ BEGIN
   END IF;
 
   -- As variantes: o oficial e cada grafia. Uma grafia que era de outro
-  -- oficial passa para este (foi o admin que o disse agora).
-  FOREACH g IN ARRAY (ARRAY[v_oficial] || COALESCE(p_grafias, ARRAY[]::text[])) LOOP
+  -- oficial passa para este (foi o admin que o disse agora). Cada grafia
+  -- fica nos `escritos` da sua chave, mesmo quando a chave já lá estava.
+  v_todas := ARRAY[v_oficial] || COALESCE(p_grafias, ARRAY[]::text[]);
+  FOR i IN 1..array_length(v_todas, 1) LOOP
+    g := btrim(regexp_replace(COALESCE(v_todas[i], ''), '\s+', ' ', 'g'));
     k := winecatalog.chave_produtor(g);
     CONTINUE WHEN k = '';
-    INSERT INTO winecatalog.produtor_variantes (chave, produtor_id, escrito)
-    VALUES (k, v_id, btrim(g))
-    ON CONFLICT (chave) DO UPDATE SET produtor_id = EXCLUDED.produtor_id;
+    SELECT pv.produtor_id, pv.escrito, pv.escritos, p.nome
+      INTO a_prod, a_escrito, a_escritos, a_oficial
+      FROM winecatalog.produtor_variantes pv JOIN winecatalog.produtores p ON p.id = pv.produtor_id
+     WHERE pv.chave = k;
+    INSERT INTO winecatalog.produtor_variantes (chave, produtor_id, escrito, escritos)
+    VALUES (k, v_id, g, ARRAY[g])
+    ON CONFLICT (chave) DO UPDATE SET
+      produtor_id = EXCLUDED.produtor_id,
+      escritos = CASE WHEN EXISTS (SELECT 1 FROM unnest(array_prepend(produtor_variantes.escrito, produtor_variantes.escritos)) e
+                                    WHERE lower(e) = lower(EXCLUDED.escrito))
+                      THEN produtor_variantes.escritos
+                      ELSE produtor_variantes.escritos || EXCLUDED.escrito END;
+    CONTINUE WHEN i = 1;   -- o próprio oficial não é uma grafia a relatar
+    v_graf := v_graf || jsonb_build_object('escrito', g, 'chave', k,
+      'estado', CASE WHEN a_prod IS NULL THEN 'nova'
+                     WHEN a_prod <> v_id THEN 'de_outro'
+                     WHEN EXISTS (SELECT 1 FROM unnest(array_prepend(a_escrito, a_escritos)) e WHERE lower(e) = lower(g)) THEN 'ja_estava'
+                     ELSE 'mesma_chave' END,
+      'como', a_escrito, 'de', CASE WHEN a_prod <> v_id THEN a_oficial END);
   END LOOP;
   -- As que já eram deste oficial também contam (renomear o oficial corrige-as).
   SELECT array_agg(pv.chave) INTO v_chaves FROM winecatalog.produtor_variantes pv WHERE pv.produtor_id = v_id;
@@ -248,7 +335,7 @@ BEGIN
   END IF;
 
   RETURN jsonb_build_object('ok', true, 'id', v_id, 'oficial', v_oficial,
-    'catalogo', n_cat, 'garrafeiras', n_garr, 'duplicados', v_dup);
+    'catalogo', n_cat, 'garrafeiras', n_garr, 'duplicados', v_dup, 'grafias', v_graf);
 END;
 $$;
 
@@ -275,7 +362,8 @@ $$;
 
 -- Tirar uma grafia de um oficial. NÃO desfaz o que ela já corrigiu (isso
 -- está no histórico e no `sync_log`): só deixa de a trocar daqui para a
--- frente. A do próprio nome oficial não se tira.
+-- frente. A do próprio nome oficial não se tira. Tira-se a CHAVE, com as
+-- grafias todas que lhe dão (`escritos`): para o catálogo são a mesma.
 CREATE OR REPLACE FUNCTION winecatalog.produtor_tirar_variante(p_chave text)
   RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
