@@ -15,7 +15,11 @@
 --    comum passam por distintivos e não o são. O dono das apps: "eu sei que é
 --    complicado fazer uma regra a partir disto" — por isso não há regra: há
 --    uma LISTA DE PRODUTORES, escolhida por ele no painel. Nos vinhos de um
---    produtor da lista, o produtor fica à frente do nome. O ano e a cor no
+--    produtor da lista, o produtor fica à frente do nome — e, desde
+--    28/09/2026, ENTRA à frente quando o nome não o diz ("nos vinhos deste
+--    produtor, o nome do produtor deve aparecer no nome do vinho"; a regra
+--    está na `nome_normal`). Liga-se por produtor no separador Produtores
+--    do painel, que mostra logo os nomes que mudam. O ano e a cor no
 --    fim continuam a sair (a cor diz-se ao lado do nome, em itálico).
 --    Vale para o catálogo, as garrafeiras e as escritas futuras: a
 --    `nome_normal` é a mesma para todos (a `identidade` chama-a). A chave é
