@@ -499,7 +499,7 @@ devolver (`paginaDoResultado`). Do HTML lê-se o JSON-LD do produto (nome,
 marca, preço, imagem, descrição — a avaliação dos clientes da loja vai dita
 como NÃO sendo o Vivino), as etiquetas `og:`/`product:price` e o texto do
 `<main>` sem menus nem rodapé, tabelas como "rótulo | valor" (`abrirPagina`,
-`textoDaPagina`). As páginas vão à frente na base de evidência, numeradas de
+`linhasDaPagina`). As páginas vão à frente na base de evidência, numeradas de
 seguida com os resultados do Serper, e o Gemini devolve `deOnde`
 (campo → número); a proposta leva `fonte` (a página, o resultado, "da
 pesquisa Google" no que só o grounding trouxe, ou o link do Vivino colado) e
@@ -519,6 +519,24 @@ mexer numa é mexer na outra. A `fonte` de cada campo NÃO se guarda no
 catálogo (a `pesquisa_aplicar` continua a gravar `catalogo-pesquisa`, e as
 páginas entram nas `fontes` do vinho como antes): se um dia se quiser, é um
 `u` no `origens` de cada campo.
+**Numa página comprida, a parte que é deste vinho** (28/09/2026, o "As
+Velhas" da Morais Rocha): de cada página só se lia o princípio (6 000
+caracteres), e o link `moraisrocha.com/vinhos/#MR-As-Velhas-Red` abria a
+página de TODOS os vinhos da casa — o Gemini leu os primeiros e respondeu,
+com razão, que o As Velhas não estava lá. Agora o `#…` do link fica
+(`ancoraDe`: um `id`, ou o texto de um `#:~:text=`; nunca vai no pedido) e,
+numa página maior do que o princípio, vai A MAIS (`extraDaPagina`):
+· a secção para onde o `#…` aponta — marca-se no HTML o elemento com esse
+  `id` e lê-se dali até ao vinho seguinte, quando os `id` o dizem (o mesmo
+  prefixo: "MR-As-Velhas-Red" → "MR-Talha"; `fimDaAncora`);
+· os trechos mais abaixo onde o nome aparece (`trechosDoVinho`: a frase
+  inteira conta mais do que uma palavra, e a que está em todo o lado — o
+  produtor — conta pouco), da linha do nome para baixo e nunca para cima
+  (as linhas de cima, numa lista, são o fim do vinho anterior).
+Só ACRESCENTA: uma página curta vai igual, numa comprida o princípio vai
+igual, e o extra tem uma quota à parte na base de evidência
+(`EVIDENCIA_EXTRA_MAX`), gasta depois de todas as páginas levarem o que já
+levavam. No registo, cada página diz `secao`/`trechos`.
 E a **pesquisa manual (colar a resposta de outro assistente) saiu do ecrã da
 pesquisa para o EDITAR** (`wcEditarManual`): é aí que se procura quem não
 quer gastar IA; entra pela mesma porta e pela mesma revisão.
