@@ -56,6 +56,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             `comentarios_msgs`, o estado `duvida`, a `comentario_do_autor` e os avisos por ler. Na
                             Garrafeira, a seguir: migracao-comentarios.sql (26) e migracao-push.sql (27, os gatilhos
                             do push nestas duas tabelas))
+19. db/garrafeiras-identidade.sql (o nome e o produtor do catálogo chegam aos vinhos das garrafeiras ligados a
+                            cada linha, e desfazer uma fusão religa-os — depois da migracao-catalogo-id.sql (28) do
+                            repo Garrafeira, que guarda a ligação e traz as funções de lá, e da `juntar` do
+                            cor-na-chave.sql com a marca `winecatalog.juntar`, cujas escritas NÃO passam)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

@@ -57,7 +57,9 @@ tudo o que aqui está foi pago com um erro.
   (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor`, só `service_role`) →
   `garrafeiras-rever.sql` (a porta da app para as garrafeiras × o catálogo) →
   `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) →
-  `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) (+ `README.md`
+  `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) →
+  `garrafeiras-identidade.sql` (o nome e o produtor do catálogo chegam aos vinhos das
+  garrafeiras ligados a cada linha — depois da migração 28 da Garrafeira) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
   mudança de casa). O `curadoria.sql` corre DEPOIS do `catalogo.sql` — usa
   a `forca`, a `juntar` e a `achar` que já lá estão.
@@ -1280,6 +1282,10 @@ IGUAIS. Duas peças:
   funde-se nela. Colheitas diferentes continuam a nunca se fundir. O que não
   resolve: mudado o nome, a grafia errada sai do catálogo e, se voltar a ser
   escrita, nasce outra linha (na fusão não — a perdedora guarda a chave).
+  Desde 28/09/2026 os vinhos das garrafeiras LIGADOS a esta linha recebem o
+  nome novo e já não são eles a reescrevê-la (ver "O nome e o produtor do
+  catálogo chegam às garrafeiras"); fica o risco de uma carta ou de uma
+  pesquisa voltarem a escrever a grafia errada.
   **A causa era do repo Garrafeira**, e está corrigida lá (27/09/2026): a
   `vinho-info` escrevia no catálogo antes de o vinho ser gravado, com o nome
   por confirmar. Agora só escreve com um vinho já gravado ou um nome que o
@@ -1658,6 +1664,74 @@ a 27/09 (o #191 no #185, que tinha o produtor).
 **Tirar o produtor do nome não muda a `chave_base`**: ela junta nome e
 produtor no mesmo saco de palavras. Mudam as chaves só-do-nome
 (`chave_nome`/`base_nome`), que a `nomes_rever` recalcula.
+
+### O nome e o produtor do catálogo chegam às garrafeiras (28/09/2026, o dono das apps)
+O dono: "um vinho de uma garrafeira não tem sempre um link para o vinho do
+catálogo? se sim, não conseguíamos facilmente sincronizar o nome e o
+produtor?". Não tinha. A ligação era recalculada de cada vez pela `achar`, a
+partir do nome, do produtor, do ano e da cor — o nome ERA a ligação, e um
+nome corrigido aqui partia-a em vez de chegar lá (a gravação seguinte fazia
+nascer outra linha com o nome antigo). A 28/09/2026 havia 34 vinhos nas
+garrafeiras cuja linha do catálogo dizia outro nome ou outro produtor. A
+decisão de 27/09 ("o nome é o mesmo no catálogo e em todas as garrafeiras")
+não tinha como se cumprir sem uma segunda lista a rever à mão.
+- **A ligação guarda-se**: `garrafeira.vinhos.catalogo_id` (migração 28 da
+  Garrafeira, `db/migracao-catalogo-id.sql` de lá). Preenchida pelo nome à
+  entrada (238 dos 243 a 28/09; os outros não têm linha), guardada pelo
+  trigger de lá (`vinhos_catalogo`) a cada gravação, e escrita SÓ pela
+  `garrafeira.ligar_catalogo` — uma guarda desfaz um valor mandado pela app.
+  Sem FK: o catálogo é uma poupança, não uma dependência. O `alias`
+  resolve-se ao ler.
+- **Ligado, o trigger de lá escreve NA linha ligada** (`catalogar_e_ligar`),
+  enquanto o dono não mexer na identidade (nome, produtor, ano, cor) e a
+  colheita for a mesma: a `juntar` recebe o nome e o produtor DA LINHA. Um
+  nome que divergiu deixa de fazer nascer outra linha, e o nome mais comprido
+  de lá deixa de renomear a de cá. Mudada a identidade, procura-se pelo nome
+  como sempre — pode ser outro vinho ("Cristo" → "Crasto").
+- **O trigger `vinhos_garrafeiras`** (`db/garrafeiras-identidade.sql`): o
+  nome ou o produtor de uma linha mudou → `garrafeira.receber_identidade`,
+  em todos os vinhos ligados a ela (e aos ligados a uma linha fundida nela),
+  em todas as garrafeiras. Uma linha no `garrafeira.sync_log` por vinho
+  (origem `winecatalog`, acao `identidade_do_catalogo`, o `winecatalog.quem`
+  ou o email do admin). Chega tal e qual: não passa pela regra do nome de lá
+  (arrumá-lo outra vez podia dar outro nome), não volta ao catálogo e não
+  carimba `atualizado_em` (não foi o dono — é o sinal das Fichas × catálogo).
+  **Nunca o ano** (a ligação pode ser a outra colheita do mesmo vinho) **nem
+  a cor** (cor diferente é outro vinho); um produtor VAZIO aqui não apaga o de
+  lá. Os erros não se engolem: uma decisão do admin que não chega às
+  garrafeiras tem de se ver.
+- **A exceção é a `juntar`** (a marca `winecatalog.juntar`, posta à volta do
+  UPDATE dela no `cor-na-chave.sql`): o nome mais comprido e o produtor que
+  enche um vazio vêm de quem calhou escrever — uma carta, uma pesquisa com
+  IA, uma garrafeira —, não de uma decisão. Foi assim que "Quinta das
+  Carvalhas" passou a "Quintas das Carvalhas" e "Vallado Douro Superior" a
+  "Quinta do Vallado Douro Superior", pela `catalogo-info`. Passam todas as
+  outras: a `editar` (app e painel), os Nomes (`nomes_rever`), os Produtores
+  (`produtor_definir`/`produtor_renomear`), o "é o mesmo que…", a `fundir`, a
+  `vivino_produtor`. **Uma porta nova que escreva o nome ou o produtor sem ser
+  por decisão de alguém tem de pôr a mesma marca** — senão é a IA a mudar o
+  nome do vinho em casa de toda a gente.
+- **Fundir não renomeia garrafeiras** (a fusão é reversível; um nome levado
+  lá não o era), mas os vinhos ligados à linha que sai passam a receber o
+  nome da que fica da próxima vez que ele mudar. **Separar religa pelo nome**
+  (`alias_garrafeiras` → `garrafeira.religar_catalogo`): um vinho gravado
+  depois da fusão com a grafia da que saiu volta a ela.
+- **Os 34 de 28/09 ficaram como estavam** — só uma mudança nova na linha os
+  alinha. Revê-los é outra decisão: há casos em que a garrafeira está certa
+  (o "Vinha da Má Partilha Merlot" tem lá o produtor Bacalhôa, e cá está sem
+  produtor e com "Bacalhoa" no nome).
+- Invariante 2: a ligação vive do lado da garrafeira, e o catálogo continua
+  sem saber quem tem o quê. Escrever o nome nas garrafeiras não é novo (os
+  Nomes e os Produtores já o faziam); novo é ser a cada decisão, sem uma
+  segunda lista.
+- Testado numa réplica local (os ficheiros SQL dos dois repos, com dados
+  inventados): a ligação à entrada não mexe em mais coluna nenhuma nem no
+  catálogo; a guarda; a `editar` a chegar às duas garrafeiras; o produtor
+  vazio; a `juntar` a renomear sem passar; o nome divergido a escrever na
+  linha ligada; os Produtores e os Nomes; a fusão e a separação; e a app
+  (`authenticated`, com RLS) a gravar sem erros. **Por aplicar no Supabase**
+  a 28/09/2026: a ordem (a `juntar` com a marca, a migração 28, este
+  ficheiro) está no `db/README.md` da Garrafeira, "Migração 28".
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/

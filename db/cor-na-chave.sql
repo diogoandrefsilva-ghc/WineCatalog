@@ -373,6 +373,12 @@ BEGIN
 
   -- O nome mais COMPRIDO fica (já arrumado pela regra do nome); o trigger
   -- volta a calcular as chaves com ele.
+  -- A marca `winecatalog.juntar` diz ao trigger que leva o nome e o produtor
+  -- às garrafeiras (`garrafeiras-identidade.sql`) que esta escrita NÃO é para
+  -- lá: o nome mais comprido e o produtor que enche um vazio vêm de quem
+  -- calhou escrever (uma carta, uma pesquisa com IA, uma garrafeira), não de
+  -- uma decisão — foi assim que o "Quinta das Carvalhas" passou a "Quintas".
+  PERFORM set_config('winecatalog.juntar', 'sim', true);
   UPDATE winecatalog.vinhos SET
     ficha    = v_ficha,
     origens  = v_origens,
@@ -383,6 +389,7 @@ BEGIN
     vezes    = vezes + 1,
     atualizado_em = CASE WHEN v_mexeu THEN now() ELSE atualizado_em END
   WHERE id = v_id;
+  PERFORM set_config('winecatalog.juntar', '', true);
 
   RETURN v_id;
 END;
