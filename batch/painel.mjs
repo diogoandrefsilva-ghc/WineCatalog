@@ -268,12 +268,14 @@ const servidor = http.createServer(async (req, res) => {
       // separadores, e fechar/reabrir com a resposta que a pessoa lê.
       const b = await lerCorpo(req);
       const tipo = b.tipo === "sugestao" ? "sugestao" : "vinho";
-      const ESTADOS = ["aberto", "resolvido", "rejeitado"];
+      const ESTADOS = ["aberto", "duvida", "resolvido", "rejeitado"];
       if (b.acao === "contar") return sbRpc(res, "winecatalog", "contar_comentarios", {});
       if (b.acao === "listar")
         return sbRpc(res, "winecatalog", "listar_comentarios",
           { p_tipo: tipo, p_estado: [...ESTADOS, "todos"].includes(b.estado) ? b.estado : "aberto" });
       if (b.acao === "responder") {
+        // "duvida" é uma pergunta a quem escreveu (a vez passa para ele) —
+        // a função recusa-a sem texto. O push sai do gatilho na base.
         if (!ESTADOS.includes(b.estado)) return json(res, 400, { erro: "estado" });
         return sbRpc(res, "winecatalog", "responder_comentario", { p_id: Number(b.id) || 0, p_estado: b.estado,
           p_resposta: String(b.resposta ?? "").trim().slice(0, 1000) || null, p_quem: "painel do PC (admin)" });
@@ -481,6 +483,8 @@ body.com-modal{overflow:hidden}
 #prod-oficiais input,#mv-mesmo-q{padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit}
 .com-texto{white-space:pre-wrap;word-break:break-word;margin:8px 0 4px}
 .com-resp{flex:1 1 260px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+.com-fio{display:flex;flex-direction:column;gap:5px;margin:8px 0}.com-fala{padding:6px 9px;border-radius:8px;background:#f3eee8;white-space:pre-wrap;word-break:break-word}
+.com-fala.adm{background:#f6ecef}.com-fala b{display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--mu)}.com-fala.adm b{color:var(--bd)}
 .ident{border:1px dashed var(--bo);border-radius:10px;padding:8px 10px}.ident .linha label{flex:1 1 200px;display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--mu)}
 </style></head><body>
 <header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
@@ -602,16 +606,16 @@ body.com-modal{overflow:hidden}
 </section>
 <section class="tab" id="t-comentarios" hidden>
 <div class="card"><h2>Comentários sobre vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">Escritos na Garrafeira, na página de cada vinho: <b>atributos errados</b>, um <b>site de onde atualizar</b> a ficha, ou outro problema. Corrige-se no catálogo — carrega no nome para abrir a ficha e editar, ou em <b>Escolher para enriquecer</b> para o correr na Informação de vinhos — e daí chega às garrafeiras (em "Fichas das garrafeiras × catálogo"). Fecha-se com uma <b>resposta</b>: é o que a pessoa lê na Garrafeira.</p>
-  <div class="linha"><label>Mostrar <select id="com-vinho-estado" onchange="comProcurar('vinho')"><option value="aberto">por tratar</option><option value="todos">todos</option><option value="resolvido">tratados</option><option value="rejeitado">recusados</option></select></label>
+  <p class="nota" style="margin:0 0 10px">Escritos na Garrafeira, na página de cada vinho: <b>atributos errados</b>, um <b>site de onde atualizar</b> a ficha, ou outro problema. Corrige-se no catálogo — carrega no nome para abrir a ficha e editar, ou em <b>Escolher para enriquecer</b> para o correr na Informação de vinhos — e daí chega às garrafeiras (em "Fichas das garrafeiras × catálogo"). Fecha-se com uma <b>resposta</b>, ou devolve-se uma <b>pergunta</b> (❓ — fica à espera da resposta da pessoa): ela lê-as na Garrafeira e recebe um aviso no telemóvel.</p>
+  <div class="linha"><label>Mostrar <select id="com-vinho-estado" onchange="comProcurar('vinho')"><option value="aberto">por tratar</option><option value="duvida">à espera de resposta</option><option value="todos">todos</option><option value="resolvido">tratados</option><option value="rejeitado">recusados</option></select></label>
     <button onclick="comProcurar('vinho')">🔄 Atualizar</button><span id="com-vinho-conta" class="nota"></span></div>
   <div id="com-vinho-lista" style="margin-top:10px"></div>
 </div>
 </section>
 <section class="tab" id="t-sugestoes" hidden>
 <div class="card"><h2>Sugestões de melhoria</h2>
-  <p class="nota" style="margin:0 0 10px">Ideias para a app e coisas que não funcionam, escritas em Definições da Garrafeira. Fecha-se com uma <b>resposta</b>: é o que a pessoa lê lá.</p>
-  <div class="linha"><label>Mostrar <select id="com-sugestao-estado" onchange="comProcurar('sugestao')"><option value="aberto">por tratar</option><option value="todos">todas</option><option value="resolvido">tratadas</option><option value="rejeitado">recusadas</option></select></label>
+  <p class="nota" style="margin:0 0 10px">Ideias para a app e coisas que não funcionam, escritas em Definições da Garrafeira. Fecha-se com uma <b>resposta</b>, ou devolve-se uma <b>pergunta</b> (❓): a pessoa lê-as lá e recebe um aviso.</p>
+  <div class="linha"><label>Mostrar <select id="com-sugestao-estado" onchange="comProcurar('sugestao')"><option value="aberto">por tratar</option><option value="duvida">à espera de resposta</option><option value="todos">todas</option><option value="resolvido">tratadas</option><option value="rejeitado">recusadas</option></select></label>
     <button onclick="comProcurar('sugestao')">🔄 Atualizar</button><span id="com-sugestao-conta" class="nota"></span></div>
   <div id="com-sugestao-lista" style="margin-top:10px"></div>
 </div>
@@ -1550,7 +1554,7 @@ async function dupNao(a,b){
 // como nos Duplicados. A resposta ao fechar é o que a pessoa lê na Garrafeira.
 const COM={vinho:[],sugestao:[]};
 const COM_MOTIVO={atributos:"Atributos errados",atualizar:"Atualizar a partir de um site",outro:"Outro problema",melhoria:"Ideia / melhoria",problema:"Algo não funciona"};
-const COM_ESTADO={aberto:"por tratar",resolvido:"tratado",rejeitado:"recusado"};
+const COM_ESTADO={aberto:"por tratar",duvida:"à espera de resposta",resolvido:"tratado",rejeitado:"recusado"};
 async function comContar(){
   try{const c=await post("/comentarios",{acao:"contar"});
     for(const t of ["vinho","sugestao"]){const n=Number((c&&c[t])||0);document.getElementById("tab-com-"+t).textContent=n?" ("+n+")":"";}}
@@ -1570,14 +1574,14 @@ function comPintar(tipo){
   document.getElementById("com-"+tipo+"-lista").innerHTML=L.length?L.map(comHTML).join(""):'<p class="nota">Nada'+(aberto?" por tratar":"")+'.</p>';
 }
 function comHTML(c){
-  const vinho=c.tipo==="vinho",fechado=c.estado!=="aberto",id=Number(c.id);
+  const vinho=c.tipo==="vinho",fechado=c.estado==="resolvido"||c.estado==="rejeitado",id=Number(c.id);
   const motivo='<span class="tag">'+esc(COM_MOTIVO[c.motivo]||c.motivo)+'</span>';
   let h='<div class="dup-g"><div class="linha" style="justify-content:space-between;align-items:flex-start"><div>';
   h+=vinho?(c.vinhoId?idLink(c.vinhoId)+' <a href="#" class="nm" onclick="abrirVinho('+Number(c.vinhoId)+');return false"><b>'+esc(c.nome)+'</b></a>':'<b>'+esc(c.nome)+'</b>')+
       (c.cor?' <i class="nota">'+esc(String(c.cor).toLowerCase())+'</i>':'')+' · '+(c.ano?esc(c.ano):'sem colheita')+
       '<br><span class="nota">'+esc(c.produtor||"(sem produtor)")+'</span> '+motivo
     :motivo;
-  h+='</div><span class="tag'+(fechado?'':' mudou')+'">'+esc(COM_ESTADO[c.estado]||c.estado)+'</span></div>';
+  h+='</div><span class="tag'+(c.estado==="aberto"?' mudou':'')+'">'+esc(COM_ESTADO[c.estado]||c.estado)+'</span></div>';
   if(c.texto)h+='<p class="com-texto">'+esc(c.texto)+'</p>';
   if(c.link)h+='<p class="nota">🔗 <a href="'+esc(c.link)+'" target="_blank" rel="noopener noreferrer">'+esc(c.link)+'</a></p>';
   // Os campos de que se queixa: o que a pessoa tem, o que o catálogo tinha
@@ -1594,12 +1598,16 @@ function comHTML(c){
   if(vinho&&c.vinhoId&&c.mesmaColheita===false)h+='<p class="nota">A linha do catálogo é da colheita '+(c.anoCatalogo?esc(c.anoCatalogo):'sem ano')+', não da de quem escreveu.</p>';
   if(vinho&&!c.vinhoId)h+='<p class="nota">Este vinho ainda não está no catálogo.</p>';
   h+='<p class="nota">'+esc(c.quem)+' · '+esc(dataHora(c.quando))+' · '+esc(c.app||"")+'</p>';
-  if(fechado)h+='<p class="nota">'+esc(COM_ESTADO[c.estado]||c.estado)+' a '+esc(dataHora(c.fechadoEm))+(c.fechadoPor?' por '+esc(c.fechadoPor):'')+(c.resposta?' — resposta: “'+esc(c.resposta)+'”':'')+'</p>';
+  // A conversa: cada pergunta, fecho ou resposta, pela ordem.
+  const ROT={duvida:"Perguntaste",resolvido:"Tratado",rejeitado:"Recusado"};
+  if((c.mensagens||[]).length)h+='<div class="com-fio">'+c.mensagens.map(m=>'<div class="com-fala'+(m.de==="admin"?' adm':'')+'"><b>'+
+    esc(m.de==="admin"?(ROT[m.estado]||"Admin"):"Quem escreveu")+' · '+esc(dataHora(m.quando))+(m.de==="admin"&&m.quem?' · '+esc(m.quem):'')+'</b>'+esc(m.texto||"")+'</div>').join("")+'</div>';
   h+='<div class="linha" style="margin-top:6px">';
   if(vinho&&c.vinhoId)h+='<button onclick="abrirVinho('+Number(c.vinhoId)+')">Abrir a ficha</button>'+
     '<button onclick="comEscolher('+Number(c.vinhoId)+')" title="Marca-o na Informação de vinhos, para o simular ou enriquecer">Escolher para enriquecer</button>';
   h+=fechado?'<button onclick="comResponder('+id+',\\'aberto\\')">Reabrir</button>'
-    :'<input id="com-resp-'+id+'" class="com-resp" placeholder="resposta para quem escreveu (opcional)">'+
+    :'<input id="com-resp-'+id+'" class="com-resp" placeholder="resposta ou pergunta para quem escreveu">'+
+     '<button onclick="comResponder('+id+',\\'duvida\\')" title="Pergunta a quem escreveu (o texto da caixa) — fica à espera da resposta dele">❓ Perguntar</button>'+
      '<button class="prim" onclick="comResponder('+id+',\\'resolvido\\')">Tratado ✓</button>'+
      '<button onclick="comResponder('+id+',\\'rejeitado\\')">Recusar</button>';
   return h+'</div></div>';
@@ -1607,6 +1615,7 @@ function comHTML(c){
 async function comResponder(id,estado){
   const tipo=COM.vinho.some(x=>x.id===id)?"vinho":"sugestao";
   const el=document.getElementById("com-resp-"+id),resposta=el?el.value.trim():"";
+  if(estado==="duvida"&&!resposta){if(el)el.focus();return alert("Escreve a pergunta na caixa.");}
   if(estado==="rejeitado"&&!resposta&&!confirm("Recusar sem dizer porquê? Quem escreveu vê só que foi recusado."))return;
   try{await post("/comentarios",{acao:"responder",id,estado,resposta});await comProcurar(tipo);}
   catch(e){alert("Não consegui: "+e.message);}

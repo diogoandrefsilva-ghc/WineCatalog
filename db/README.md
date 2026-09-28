@@ -52,8 +52,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 18. db/comentarios.sql     (os comentários sobre vinhos e as sugestões das garrafeiras: a tabela `comentarios`,
                             a `comentar` — só service_role, as apps chegam-lhe pelas portas delas —, a
                             `listar_comentarios`/`contar_comentarios`/`responder_comentario` do admin e do painel
-                            e a `meus_comentarios` de quem escreveu; depois do cor-na-chave.sql. Na Garrafeira, a
-                            seguir: migracao-comentarios.sql, a migração 26)
+                            e a `meus_comentarios` de quem escreveu; depois do cor-na-chave.sql. Com a conversa: a
+                            `comentarios_msgs`, o estado `duvida`, a `comentario_do_autor` e os avisos por ler. Na
+                            Garrafeira, a seguir: migracao-comentarios.sql (26) e migracao-push.sql (27, os gatilhos
+                            do push nestas duas tabelas))
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

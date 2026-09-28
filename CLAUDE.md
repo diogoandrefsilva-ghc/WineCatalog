@@ -613,6 +613,22 @@ errados, o caso mais comum).
   põe o vinho na escolha da Informação de vinhos.
 - **A resposta** que se escreve ao fechar (Tratado ✓ · Recusar) é o que a
   pessoa lê na Garrafeira (`meus_comentarios`). Reabrir apaga-a.
+- **A conversa** (28/09/2026, o dono: "um estado de devolver uma dúvida"):
+  **❓ Pedir mais informação** (no painel, "❓ Perguntar" com o texto da
+  caixa) põe o comentário em `duvida` — a vez de quem escreveu, "à espera de
+  resposta" —, e a resposta dela volta a pô-lo `aberto`. Cada fala (a
+  pergunta, o fecho, a resposta) é uma linha em
+  `winecatalog.comentarios_msgs`, mostrada no cartão pela ordem. "Por
+  tratar" traz também os `duvida` (estão por fechar), mas o número conta só
+  os `aberto` — a vez do admin. `por_ler_autor` é o outro lado: o admin
+  disse alguma coisa que a pessoa ainda não viu.
+- **Os avisos** vivem na Garrafeira (migração 27 de lá, e o `CLAUDE.md` de
+  lá tem o desenho): um gatilho em cada tabela escreve na caixa de saída
+  `garrafeira.push_avisos` e acorda a Edge Function `garrafeira-push`, venha
+  a fala desta app, da Garrafeira ou do painel. O admin recebe-os no
+  telemóvel onde ligou as notificações da GARRAFEIRA (é a que abre todos os
+  dias), e o toque abre este Alertas (`#alertas` no endereço, lido no
+  `restaurarTab`).
 - **Quem escreve**: só a `service_role` executa a `comentar` — as apps
   chegam-lhe por portas SECURITY DEFINER delas, que conferem quem pode falar
   de que vinho e tiram os valores da BD. O `quem` sai do JWT. Guarda o que o

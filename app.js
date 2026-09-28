@@ -181,6 +181,12 @@ function itab(tab){
 function restaurarTab(){
   let tab=null;
   try{tab=localStorage.getItem('wc_tab');}catch(e){}
+  /* "#alertas" no endereço (o toque numa notificação de um comentário, ou o
+     "Abrir no WineCatalog" da Garrafeira) manda sobre o separador guardado. */
+  if(location.hash==='#alertas'){
+    tab='alertas';
+    history.replaceState(null,'',location.pathname+location.search);
+  }
   if(!tab||!document.getElementById('t-'+tab))tab='catalogo';
   /* O painel dos alertas existe no HTML para toda a gente (é o botão que
      está escondido), por isso quem deixou de ser admin voltava a cair nele
@@ -3621,7 +3627,19 @@ const WC_COM_MOTIVO={
   atributos:'Atributos errados',atualizar:'Atualizar a partir de um site',outro:'Outro problema',
   melhoria:'Ideia / melhoria',problema:'Algo não funciona'
 };
-const WC_COM_ESTADO={aberto:'por tratar',resolvido:'tratado',rejeitado:'recusado'};
+const WC_COM_ESTADO={aberto:'por tratar',duvida:'à espera de resposta',resolvido:'tratado',rejeitado:'recusado'};
+/* A conversa: o comentário, e cada fala a seguir — as do admin (perguntar,
+   fechar, recusar) e as de quem escreveu. É a mesma lista que a pessoa vê na
+   Garrafeira, e é de cada fala nova que sai o push (migração 27 de lá). */
+function wcComFalasHTML(c){
+  const ms=c.mensagens||[];
+  if(!ms.length)return '';
+  const rot={duvida:'Perguntaste',resolvido:'Tratado',rejeitado:'Recusado'};
+  return `<div class="com-fio">${ms.map(m=>{
+    const adm=m.de==='admin';
+    return `<div class="com-fala${adm?' adm':''}"><b>${esc(adm?(rot[m.estado]||'Admin'):'Quem escreveu')} · ${esc(dataFmt(m.quando))}${
+      adm&&m.quem?` · ${esc(m.quem)}`:''}</b>${m.texto?esc(m.texto):''}</div>`;}).join('')}</div>`;
+}
 const _wcCom={vinho:{estado:'aberto',lista:[]},sugestao:{estado:'aberto',lista:[]}};
 
 function wcComContagem(tipo,n){
@@ -3645,7 +3663,9 @@ async function wcComentarios(tipo,estado){
   try{
     const l=await catRpc('listar_comentarios',{p_tipo:tipo,p_estado:st.estado});
     st.lista=Array.isArray(l)?l:[];
-    if(st.estado==='aberto')wcComContagem(tipo,st.lista.length);
+    // "Por tratar" traz também os que esperam por quem escreveu (`duvida`);
+    // o número é só a vez do admin.
+    if(st.estado==='aberto')wcComContagem(tipo,st.lista.filter(c=>c.estado==='aberto').length);
     box.innerHTML=st.lista.length?st.lista.map(wcComentarioHTML).join('')
       :`<div class="wc-card"><p class="wc-note">${st.estado==='aberto'?'Nada por tratar.':'Ainda não chegou nada.'} ${
         tipo==='vinho'?'Os comentários chegam da página de cada vinho, na Garrafeira.'
@@ -3680,24 +3700,26 @@ function wcComentarioHTML(c){
         ${mudou||(!cat&&ag)?`<div class="agora"><span>no catálogo, agora</span><b>${val(agV)}</b></div>`:''}
       </div></div>`;
   }).join('');
-  const fechado=c.estado!=='aberto';
+  const fechado=c.estado==='resolvido'||c.estado==='rejeitado';
   return `<div class="wc-card rep">
     <div class="rep-cab"><div>${cab}</div>
       <span class="rep-est ${esc(c.estado)}">${esc(WC_COM_ESTADO[c.estado]||c.estado)}</span></div>
     ${c.texto?`<p class="com-texto">${esc(c.texto)}</p>`:''}
     ${c.link?`<p class="wc-note com-link">🔗 <a href="${esc(c.link)}" target="_blank" rel="noopener noreferrer">${esc(c.link)}</a></p>`:''}
     ${campos}
+    ${wcComFalasHTML(c)}
     ${vinho&&c.vinhoId&&c.mesmaColheita===false?`<p class="wc-note">A linha do catálogo é da colheita
       ${c.anoCatalogo?esc(String(c.anoCatalogo)):'sem ano'}, não da de quem escreveu.</p>`:''}
     <p class="wc-note">${esc(c.quem||'')} · ${esc(dataFmt(c.quando))} · ${esc(c.app||'')}</p>
-    ${fechado?`<p class="wc-note">${esc(WC_COM_ESTADO[c.estado]||c.estado)} · ${esc(dataFmt(c.fechadoEm))}${c.fechadoPor?' · '+esc(c.fechadoPor):''}${
-      c.resposta?`<br>Resposta: ${esc(c.resposta)}`:''}</p>`:''}
     <div class="rep-acoes">
       ${vinho?(c.vinhoId?`<button class="btn-n" onclick="wcVerFicha(${Number(c.vinhoId)})">Abrir a ficha</button>
         ${c.link?`<button class="btn-n" onclick="wcComProcurar(${Number(c.id)})" title="Abre o Procurar informação com este link nos sites de confiança">🔎 Procurar com este site</button>`:''}`
         :'<span class="wc-note">Este vinho ainda não está no catálogo.</span>'):''}
       ${fechado?`<button class="btn-n" onclick="wcComResponder(${Number(c.id)},'aberto')">Reabrir</button>`
-        :`<button class="btn-n" onclick="wcComResponder(${Number(c.id)},'resolvido')">Tratado ✓</button>
+        :`<button class="btn-n" onclick="wcComResponder(${Number(c.id)},'duvida')"
+            title="Pergunta a quem escreveu — o comentário fica à espera da resposta dele, e ele recebe um aviso">❓ ${
+            c.estado==='duvida'?'Perguntar outra vez':'Pedir mais informação'}</button>
+          <button class="btn-n" onclick="wcComResponder(${Number(c.id)},'resolvido')">Tratado ✓</button>
           <button class="btn-n" onclick="wcComResponder(${Number(c.id)},'rejeitado')">Recusar</button>`}
     </div>
   </div>`;
@@ -3705,7 +3727,11 @@ function wcComentarioHTML(c){
 
 async function wcComResponder(id,estado){
   let resposta=null;
-  if(estado!=='aberto'){
+  if(estado==='duvida'){
+    resposta=prompt('Que pergunta queres fazer a quem escreveu? Recebe um aviso e responde-te na Garrafeira.');
+    if(resposta===null)return;
+    if(!resposta.trim()){toast('Escreve a pergunta',1);return;}
+  }else if(estado!=='aberto'){
     resposta=prompt(estado==='rejeitado'
       ?'Porquê? Quem escreveu lê isto na Garrafeira (deixa vazio se não quiseres explicar).'
       :'Uma resposta para quem escreveu? Aparece-lhe na Garrafeira (opcional).');
@@ -3713,7 +3739,7 @@ async function wcComResponder(id,estado){
   }
   try{
     await catRpc('responder_comentario',{p_id:id,p_estado:estado,p_resposta:resposta||null});
-    toast(estado==='aberto'?'Reaberto':'Tratado ✓');
+    toast(estado==='aberto'?'Reaberto':estado==='duvida'?'Pergunta enviada ✓':'Tratado ✓');
     const tipo=['vinho','sugestao'].find(t=>_wcCom[t].lista.some(c=>c.id===id))||'vinho';
     await wcComentarios(tipo,_wcCom[tipo].estado);
     wcContarAlertas();
