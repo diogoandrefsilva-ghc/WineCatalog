@@ -1774,7 +1774,8 @@ BEGIN
     ficha    = v_ficha,
     origens  = v_origens,
     fontes   = v_fontes,
-    -- o nome mais COMPRIDO fica, como na `juntar` — a não ser que quem
+    -- o nome mais COMPRIDO fica (a `juntar` já não o faz, 28/09 — aqui é o
+    -- admin a fundir, e o nome vê-se no ecrã) — a não ser que quem
     -- funde tenha dito que o certo é o da alvo (a `corresponde`: "este
     -- vinho é aquele" — o "Cristo vinhas velhas" não pode dar o nome ao
     -- "Crasto Reserva" só por ser mais comprido).
@@ -1794,6 +1795,13 @@ BEGIN
     SET chave_para = EXCLUDED.chave_para, id_para = EXCLUDED.id_para,
         campos_movidos = EXCLUDED.campos_movidos, quem = EXCLUDED.quem,
         quando = now();
+
+  -- As linhas que já tinham sido fundidas na que agora sai passam à que
+  -- fica (28/09/2026): a `achar` resolve UM passo do alias, e uma cadeia
+  -- (o #53 no #21, o #21 no #230) fazia uma grafia antiga responder por uma
+  -- linha morta. O `separar` não as devolve: ficam na que fica.
+  UPDATE winecatalog.alias SET id_para = para.id, chave_para = para.chave
+   WHERE id_para = de.id;
 
   -- Um par fundido deixa de ser um par por decidir.
   DELETE FROM winecatalog.distintos

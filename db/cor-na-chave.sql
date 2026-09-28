@@ -371,19 +371,22 @@ BEGIN
     ) x;
   END IF;
 
-  -- O nome mais COMPRIDO fica (já arrumado pela regra do nome); o trigger
-  -- volta a calcular as chaves com ele.
+  -- O NOME de uma linha que já existe não se toca (28/09/2026). Ficava o
+  -- mais comprido que alguém escrevesse — e, com as grafias das fusões a
+  -- responder pela alvo, uma pesquisa com IA desfazia o nome que o admin
+  -- tinha escolhido: o "Dona Ermelinda Garrafeira" voltou três vezes a
+  -- "Ermelinda de Freitas Garrafeira", e "Quinta das Carvalhas" passou a
+  -- "Quintas". O nome muda pelo Editar, pelos Nomes, pelos Produtores ou pela
+  -- `fundir` — nunca por quem calhou escrever.
   -- A marca `winecatalog.juntar` diz ao trigger que leva o nome e o produtor
   -- às garrafeiras (`garrafeiras-identidade.sql`) que esta escrita NÃO é para
-  -- lá: o nome mais comprido e o produtor que enche um vazio vêm de quem
-  -- calhou escrever (uma carta, uma pesquisa com IA, uma garrafeira), não de
-  -- uma decisão — foi assim que o "Quinta das Carvalhas" passou a "Quintas".
+  -- lá: o produtor que enche um vazio vem de quem calhou escrever (uma carta,
+  -- uma pesquisa com IA, uma garrafeira), não de uma decisão.
   PERFORM set_config('winecatalog.juntar', 'sim', true);
   UPDATE winecatalog.vinhos SET
     ficha    = v_ficha,
     origens  = v_origens,
     fontes   = v_fontes,
-    nome     = CASE WHEN length(COALESCE(v_idt ->> 'nome','')) > length(nome) THEN v_idt ->> 'nome' ELSE nome END,
     produtor = CASE WHEN produtor = '' THEN COALESCE(p_produtor,'') ELSE produtor END,
     ano      = COALESCE(ano, v_ano),
     vezes    = vezes + 1,

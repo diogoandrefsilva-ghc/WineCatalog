@@ -1739,11 +1739,16 @@ não tinha como se cumprir sem uma segunda lista a rever à mão.
   lá. Os erros não se engolem: uma decisão do admin que não chega às
   garrafeiras tem de se ver.
 - **A exceção é a `juntar`** (a marca `winecatalog.juntar`, posta à volta do
-  UPDATE dela no `cor-na-chave.sql`): o nome mais comprido e o produtor que
-  enche um vazio vêm de quem calhou escrever — uma carta, uma pesquisa com
-  IA, uma garrafeira —, não de uma decisão. Foi assim que "Quinta das
-  Carvalhas" passou a "Quintas das Carvalhas" e "Vallado Douro Superior" a
-  "Quinta do Vallado Douro Superior", pela `catalogo-info`. Passam todas as
+  UPDATE dela no `cor-na-chave.sql`): o produtor que enche um vazio vem de
+  quem calhou escrever — uma carta, uma pesquisa com IA, uma garrafeira —,
+  não de uma decisão. **E desde a noite de 28/09 a `juntar` já não mexe no
+  NOME de uma linha que existe** (ficava o mais comprido que alguém
+  escrevesse): com as grafias das fusões a responder pela alvo, uma pesquisa
+  com IA desfazia o nome que o admin tinha escolhido — o "Dona Ermelinda
+  Garrafeira" voltou três vezes a "Ermelinda de Freitas Garrafeira" (a grafia
+  de OUTRA garrafeira, a chegar pela linha #21 fundida na #230), e "Quinta
+  das Carvalhas" passou a "Quintas das Carvalhas". O nome de uma linha muda
+  pelo Editar, pelos Nomes, pelos Produtores ou pela `fundir`. Passam todas as
   outras: a `editar` (app e painel), os Nomes (`nomes_rever`), os Produtores
   (`produtor_definir`/`produtor_renomear`), o "é o mesmo que…", a `fundir`, a
   `vivino_produtor`. **Uma porta nova que escreva o nome ou o produtor sem ser
@@ -1754,6 +1759,21 @@ não tinha como se cumprir sem uma segunda lista a rever à mão.
   nome da que fica da próxima vez que ele mudar. **Separar religa pelo nome**
   (`alias_garrafeiras` → `garrafeira.religar_catalogo`): um vinho gravado
   depois da fusão com a grafia da que saiu volta a ela.
+- **As fusões em cadeia** (28/09/2026): a `achar` resolve UM passo do
+  `alias`, e o #53 estava fundido no #21, que estava fundido no #230 — uma
+  grafia antiga podia responder por uma linha morta. A `fundir` passa agora
+  as fusões da linha que sai para a que fica (o `separar` não as devolve), e
+  o #53 foi apontado ao #230.
+- **Os 5 sem ligação** (28/09, os que a `achar` não encontrou): o Quinta
+  Nova 2024 (Mestre) → #275 "Quinta Nova Reserva Touriga Nacional" (o admin
+  criou a linha; não era o Unoaked); o Alvarinho Viognier da Jéssica, gravado
+  Tinto (o valor por omissão) com a linha do catálogo corrigida a Branco →
+  a cor corrigida na garrafeira, a pedido do dono (a única vez que a cor de
+  uma garrafeira se mexeu daqui), e ligado à #266; e três que tinham perdido
+  a linha por ela ter mudado de nome — o Quinta dos Carvalhais e o Crasto
+  Vinhas Velhas (wishlist do Barrona) → #214 e #216, e o Dona Ermelinda
+  Garrafeira (Mestre) → #230, com o nome que o admin tinha escolhido reposto.
+  Todos receberam o nome e o produtor da linha (`sync_log`).
 - **Os 34 de 28/09 ficaram como estavam** — só uma mudança nova na linha os
   alinha. Revê-los é outra decisão: há casos em que a garrafeira está certa
   (o "Vinha da Má Partilha Merlot" tem lá o produtor Bacalhôa, e cá está sem

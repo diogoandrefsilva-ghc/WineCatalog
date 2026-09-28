@@ -17,12 +17,11 @@
 --    o "é o mesmo que…", a `fundir`, o produtor da página do Vivino), e a
 --    que se esquecesse era um buraco calado.
 --    A EXCEÇÃO é a `juntar` (marca `winecatalog.juntar`, em
---    `cor-na-chave.sql`): o nome mais comprido e o produtor que enche um
---    vazio vêm de quem calhou escrever — uma carta, uma pesquisa com IA, uma
---    garrafeira —, não de uma decisão. Foi assim que "Quinta das
---    Carvalhas" passou a "Quintas das Carvalhas" e "Vallado Douro Superior"
---    a "Quinta do Vallado Douro Superior"; levado a todas as garrafeiras,
---    era a IA a mudar o nome do vinho em casa de toda a gente.
+--    `cor-na-chave.sql`): o produtor que enche um vazio vem de quem calhou
+--    escrever — uma carta, uma pesquisa com IA, uma garrafeira —, não de uma
+--    decisão. (O nome mais comprido também vinha por aí — foi assim que
+--    "Quinta das Carvalhas" passou a "Quintas das Carvalhas" — até a
+--    `juntar` deixar de renomear linhas, na noite de 28/09.)
 --    Os erros NÃO se engolem: uma mudança que o admin decidiu e que não
 --    chega às garrafeiras tem de se ver (a lição do trigger dos nomes, que
 --    engoliu um erro seu durante horas).
