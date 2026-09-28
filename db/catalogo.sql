@@ -750,6 +750,11 @@ AS $$
       WHEN 'vinho-info-gratis'   THEN 2
       WHEN 'ws-sugestao'         THEN 2
       WHEN 'garrafeira-bruto'    THEN 1
+      -- A WISHLIST de uma garrafeira (28/09/2026, migração 29 de lá): quem a
+      -- escreveu não tem a garrafa na mão — nem o rótulo vale 3 —, e o que
+      -- lá está veio quase sempre de uma procura (o catálogo ou a IA). Vale
+      -- 1 em tudo: enche o que está vazio e perde para qualquer coisa a sério.
+      WHEN 'garrafeira-desejo'   THEN 1
       ELSE 0
     END
   END;

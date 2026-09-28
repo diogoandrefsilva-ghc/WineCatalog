@@ -60,6 +60,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             cada linha, e desfazer uma fusão religa-os — depois da migracao-catalogo-id.sql (28) do
                             repo Garrafeira, que guarda a ligação e traz as funções de lá, e da `juntar` do
                             cor-na-chave.sql com a marca `winecatalog.juntar`, cujas escritas NÃO passam)
+    (28/09/2026: a `forca` do catalogo.sql e a `quem_escreve` do historico.sql ganharam a origem
+     `garrafeira-desejo` — a wishlist, força 1, "uma garrafeira" no histórico. Correm ANTES da
+     migracao-desejos-catalogo.sql (29) do repo Garrafeira; sem elas a força é 0 e a juntar não escreve)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

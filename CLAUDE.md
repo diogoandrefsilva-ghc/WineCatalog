@@ -154,7 +154,7 @@ Cada uma custou um erro.
    e nem o vinho mudou. O que atravessa é o `preco_medio`.
 5. **A força é da ORIGEM e do CAMPO** (3 garrafeira-no-rótulo e
    ws-verificacao · 2 pesquisas e garrafeira-nos-voláteis · 1
-   garrafeira-bruto · 0 o resto). A segunda metade é o que impede o
+   garrafeira-bruto e garrafeira-desejo, a wishlist · 0 o resto). A segunda metade é o que impede o
    catálogo de tomar por facto tudo o que alguém escreveu à mão: durante
    semanas os 3106 campos estavam TODOS a 3, nenhum tinha entrado por uma
    pesquisa, e nenhum podia, porque 3 tapa 2.
@@ -1774,10 +1774,30 @@ não tinha como se cumprir sem uma segunda lista a rever à mão.
   Vinhas Velhas (wishlist do Barrona) → #214 e #216, e o Dona Ermelinda
   Garrafeira (Mestre) → #230, com o nome que o admin tinha escolhido reposto.
   Todos receberam o nome e o produtor da linha (`sync_log`).
-- **Os 34 de 28/09 ficaram como estavam** — só uma mudança nova na linha os
-  alinha. Revê-los é outra decisão: há casos em que a garrafeira está certa
-  (o "Vinha da Má Partilha Merlot" tem lá o produtor Bacalhôa, e cá está sem
-  produtor e com "Bacalhoa" no nome).
+- **Os 34 de 28/09 foram revistos um a um pelo dono** (33, à hora de
+  rever), em três grupos, e aplicados à mão (quem: "revisão catálogo ×
+  garrafeiras (admin)"): (1) a garrafeira sem produtor ou com um nome mais
+  pobre → o do catálogo chegou lá pela `receber_identidade`; (2) o catálogo
+  sem produtor → o da garrafeira, escrito no catálogo; (3) nome a nome, o
+  que ficou — "Cartuxa Reserva", "Leo d'Honor" (a plica direita), "Mouchão",
+  "Ponte Mouchão", "Meandro do Vale Meão", "Quinta de Cidrô Touriga
+  Nacional" (a #233, fundida nela, estacionou a chave), "Quinta de Cidrô
+  Cabernet Sauvignon Touriga Nacional", "Taboadella Reserva Encruzado" e
+  "Vinha da Má Partilha Merlot" com o produtor Bacalhôa (que não está na
+  lista dos `produtores_no_nome`, por isso o produtor não fica no nome). 25
+  vinhos das garrafeiras receberam o nome ou o produtor; ficaram zero
+  diferenças entre as garrafeiras e as linhas a que estão ligadas.
+- **A wishlist passou a alimentar o catálogo** (migração 29 da Garrafeira,
+  28/09/2026, o dono: "wishlist não preenche o Catálogo? tem que
+  preencher!"). Não preenchia: a `catalogar_vinho` saltava os desejos, e a
+  `vinho-info` adia a escrita de um nome novo para o trigger — um desejo
+  procurado com IA nunca cá chegava. Agora escreve com a origem
+  `garrafeira-desejo`, **força 1 em tudo** (sem a garrafa na mão nem o rótulo
+  vale 3), e **nunca faz nascer uma segunda linha de um vinho que cá está**:
+  escreve na linha ligada (ou na que a `achar` der, em qualquer colheita), e
+  com a colheita diferente — ou sem ela — só os factos do vinho (nada da
+  `da_colheita`). A `quem_escreve` di-la "uma garrafeira" (invariante 2). A 1.ª
+  corrida: 25 desejos, 23 campos vazios cheios, nenhuma linha nova.
 - Invariante 2: a ligação vive do lado da garrafeira, e o catálogo continua
   sem saber quem tem o quê. Escrever o nome nas garrafeiras não é novo (os
   Nomes e os Produtores já o faziam); novo é ser a cada decisão, sem uma

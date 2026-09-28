@@ -49,7 +49,7 @@ AS $$
   -- o ano não levam origem, por isso a 1.ª regra não os apanhava: a
   -- 25/09/2026 ficou um email ao lado de um produtor (invariante 2).
   SELECT CASE
-    WHEN COALESCE(p_origem, '') IN ('garrafeira', 'garrafeira-bruto') THEN 'uma garrafeira'
+    WHEN COALESCE(p_origem, '') IN ('garrafeira', 'garrafeira-bruto', 'garrafeira-desejo') THEN 'uma garrafeira'
     WHEN NULLIF(current_setting('winecatalog.quem', true), '') IS NOT NULL THEN current_setting('winecatalog.quem', true)
     WHEN auth.email() IS NOT NULL AND winecatalog.sou_admin() THEN auth.email()
     WHEN auth.email() IS NOT NULL THEN 'uma garrafeira'

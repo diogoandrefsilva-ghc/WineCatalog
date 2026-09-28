@@ -936,7 +936,7 @@ const CAMPOS_ED=[
   ["beber_de","Beber de (ano)","int"],["beber_ate","Beber até (ano)","int"],
   ["notas_prova","Notas de prova","area"],["harmonizacao","Harmonização","area"],["ai_resumo","Resumo","area"]];
 const ORIGEM_TXT={"catalogo-admin":"à mão (admin)","catalogo-pesquisa":"pesquisa (IA)","garrafeira":"uma garrafeira",
-  "garrafeira-bruto":"garrafeira (bruto)","ws-verificacao":"WineSelection (verificação)","ws-sugestao":"WineSelection (sugestão)",
+  "garrafeira-bruto":"garrafeira (bruto)","garrafeira-desejo":"wishlist de uma garrafeira","ws-verificacao":"WineSelection (verificação)","ws-sugestao":"WineSelection (sugestão)",
   "vivino-pagina":"página do Vivino","vivino-serper":"Google (Serper)","loja-garrafeira-nacional":"Garrafeira Nacional",
   "loja-granvine":"Granvine","loja-vinha":"Vinha.pt","lojas-script":"script (lojas)",
   "vinho-info-premium":"Garrafeira (IA)","vinho-info-gratis":"Garrafeira (pesquisa)","reposto":"reposto à mão"};

@@ -239,6 +239,7 @@ function haQuanto(s){
 const WC_ORIGENS={
   'garrafeira':      {txt:'garrafeira (garrafa na mão)', cls:'og-forte'},
   'garrafeira-bruto':{txt:'garrafeira (escrito à pressa)', cls:'og-fraca'},
+  'garrafeira-desejo':{txt:'wishlist de uma garrafeira', cls:'og-fraca'},
   'ws-verificacao':  {txt:'verificação com pesquisa Google', cls:'og-forte'},
   'ws-sugestao':     {txt:'sugestão da carta (com pesquisa)', cls:'og-media'},
   'vinho-info-premium':{txt:'procura da Garrafeira (grounding)', cls:'og-media'},
