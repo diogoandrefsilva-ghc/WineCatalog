@@ -289,6 +289,7 @@ CREATE TABLE IF NOT EXISTS winecatalog.produtor_variantes (
   chave       text PRIMARY KEY,           -- `chave_produtor` da grafia
   produtor_id bigint NOT NULL REFERENCES winecatalog.produtores(id) ON DELETE CASCADE,
   escrito     text NOT NULL,              -- como estava escrita (para o ecrã)
+  escritos    text[] NOT NULL DEFAULT '{}', -- TODAS as grafias confirmadas com esta chave (ver produtores.sql)
   criado_em   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS produtor_variantes_prod_idx ON winecatalog.produtor_variantes (produtor_id);

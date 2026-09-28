@@ -17,6 +17,8 @@
 --     a do vinho. Esperou pela fase 4 (`cor-na-chave.sql`): antes, a cor
 --     estava dentro da chave pelo nome, e o "Papa Figos Tinto" e o "Papa
 --     Figos Branco" sem cor no nome passavam a ser a mesma chave.
+--   · o PRODUTOR de uma casa da lista `produtores_no_nome` (nomes-manter.sql)
+--     fica no nome e, se lá não estiver, ENTRA à frente (28/09/2026).
 -- O que é duvidoso não muda sozinho: a cor a meio do nome ("Tapada do
 -- Chaves Tinto Reserva"), um ano no nome diferente da colheita, uma cor
 -- no nome diferente da do vinho. Aparece como aviso.
@@ -70,6 +72,12 @@ DECLARE
   ok       boolean;
   resto    text[];
   cor_fim  text;
+  no_nome  boolean;
+  -- as palavras de "casa" de um nome de produtor que não dizem QUAL é
+  -- (a `tokens` já tira quinta, herdade, casa, adega, monte…)
+  de_casa  text[] := ARRAY['caves','cave','companhia','company','wines','family','estates','estate',
+                           'cooperativa','vinicola','vitivinicola','produtores','herdeiros','filhos',
+                           'irmaos','sucessores','sa','vineyards','vinhateiros','agricultores'];
   regioes  text[] := ARRAY['douro','duriense','alentejo','alentejano','dao','bairrada','tejo','lisboa',
                            'setubal','peninsula','minho','verde','verdes','madeira','porto','algarve',
                            'beira','beiras','interior','tras','montes','transmontano','tavora','varosa',
@@ -112,12 +120,15 @@ BEGIN
     END IF;
   END IF;
 
-  -- 3. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e as
-  -- variantes da oficial. Fica a mais comprida que case palavra a palavra.
+  -- 3. O PRODUTOR à frente. As grafias possíveis: a escrita, a oficial e
+  -- todas as grafias confirmadas da oficial (`escritos`, produtores.sql —
+  -- "Esporão" e "Herdade do Esporão" são a mesma chave, mas não a mesma
+  -- frente de um nome). Fica a mais comprida que case palavra a palavra.
   cand := ARRAY[COALESCE(p_produtor,''), COALESCE(winecatalog.produtor_oficial(p_produtor),'')];
-  cand := cand || COALESCE((SELECT array_agg(pv.escrito)
+  cand := cand || COALESCE((SELECT array_agg(e)
                               FROM winecatalog.produtor_variantes pv
                               JOIN winecatalog.produtores p ON p.id = pv.produtor_id
+                              CROSS JOIN LATERAL unnest(array_prepend(pv.escrito, pv.escritos)) e
                              WHERE p.nome = winecatalog.produtor_oficial(p_produtor)), ARRAY[]::text[]);
   FOREACH c IN ARRAY cand LOOP
     cw := regexp_split_to_array(btrim(regexp_replace(regexp_replace(c, '\s*\([^)]*\)', ' ', 'g'), '\s+', ' ', 'g')), ' ');
@@ -130,8 +141,30 @@ BEGIN
     IF ok AND array_length(cw, 1) > melhor THEN melhor := array_length(cw, 1); END IF;
   END LOOP;
   -- Um produtor da lista do admin (`produtores_no_nome`, nomes-manter.sql)
-  -- fica à frente: "1836 Grande Reserva" sozinho é vago.
-  IF melhor > 0 AND winecatalog.produtor_no_nome(p_produtor) THEN
+  -- fica no nome: não sai da frente e, se lá não estiver, ENTRA à frente
+  -- ("1836 Grande Reserva" → "Companhia das Lezírias 1836 Grande Reserva";
+  -- 28/09/2026, o dono: "nos vinhos deste produtor, o nome do produtor deve
+  -- aparecer no nome do vinho"). "Estar lá" é o nome ter uma palavra que
+  -- DIGA o produtor, de qualquer grafia dele: "Primavera Reserva" já diz a
+  -- Caves Primavera (o "caves" não diz qual é). Entra o nome oficial, sem o
+  -- parêntesis.
+  no_nome := winecatalog.produtor_no_nome(p_produtor);
+  IF no_nome THEN
+    IF melhor = 0 AND NOT EXISTS (
+         SELECT 1 FROM unnest(cand) x
+          WHERE winecatalog.chave_produtor(x) <> ''
+            AND (string_to_array(winecatalog.chave_produtor(x), '-') <@ winecatalog.tokens(array_to_string(w, ' '))
+                 OR EXISTS (SELECT 1 FROM unnest(string_to_array(winecatalog.chave_produtor(x), '-')) t
+                             WHERE t <> ALL (de_casa) AND NOT winecatalog.generico(t) AND t <> ALL (regioes)
+                               AND t = ANY (winecatalog.tokens(array_to_string(w, ' ')))))) THEN
+      c := btrim(regexp_replace(regexp_replace(
+             COALESCE(NULLIF(btrim(winecatalog.produtor_oficial(p_produtor)), ''), btrim(p_produtor)),
+             '\s*\([^)]*\)', ' ', 'g'), '\s+', ' ', 'g'));
+      IF c <> '' AND winecatalog.palavra_norm(c) <> winecatalog.palavra_norm(array_to_string(w, ' ')) THEN
+        w := regexp_split_to_array(c, ' ') || w;
+        mud := array_append(mud, 'produtor_entra');
+      END IF;
+    END IF;
     melhor := 0;
   END IF;
   IF melhor > 0 THEN
@@ -166,12 +199,18 @@ GRANT EXECUTE ON FUNCTION winecatalog.nome_normal(text, text, text, integer) TO 
 -- regra mudaria (ou só avisa), no catálogo e nas garrafeiras. Com ele:
 -- aplica os itens escolhidos ([{fonte:'catalogo'|'garrafeira', id}]) —
 -- recalculando a regra no momento (o que mudou entretanto conta).
+-- `p_produtor` (28/09/2026): só os vinhos desse produtor (qualquer grafia
+-- dele) — é o que o painel mostra ao pôr um produtor no nome dos vinhos.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION winecatalog.nomes_rever(p_itens jsonb DEFAULT NULL, p_aplicar boolean DEFAULT false)
+DROP FUNCTION IF EXISTS winecatalog.nomes_rever(jsonb, boolean);
+CREATE OR REPLACE FUNCTION winecatalog.nomes_rever(p_itens jsonb DEFAULT NULL, p_aplicar boolean DEFAULT false,
+                                                   p_produtor text DEFAULT NULL)
   RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
   SET search_path TO 'winecatalog', 'garrafeira', 'public'
 AS $$
 DECLARE
+  v_k      text := CASE WHEN p_produtor IS NOT NULL
+                        THEN winecatalog.chave_produtor(winecatalog.produtor_oficial(btrim(p_produtor))) END;
   linhas   jsonb := '[]'::jsonb;
   r        record;
   nn       jsonb;
@@ -187,6 +226,9 @@ BEGIN
   IF NOT winecatalog.produtores_autorizado() THEN
     RAISE EXCEPTION 'Só o admin do catálogo.';
   END IF;
+  IF v_k = '' THEN
+    RAISE EXCEPTION 'Produtor inválido.';
+  END IF;
 
   -- O CATÁLOGO (sem os fundidos).
   PERFORM set_config('winecatalog.quem', 'nomes: normalização', true);
@@ -194,6 +236,7 @@ BEGIN
     SELECT v.id, v.nome, v.produtor, v.ano, v.ficha ->> 'tipo' AS tipo, v.chave
       FROM winecatalog.vinhos v
      WHERE NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id)
+       AND (v_k IS NULL OR winecatalog.chave_produtor(winecatalog.produtor_oficial(v.produtor)) = v_k)
      ORDER BY lower(v.nome), v.ano
   LOOP
     nn := winecatalog.nome_normal(r.nome, r.produtor, r.tipo, r.ano);
@@ -228,6 +271,7 @@ BEGIN
     FOR r IN
       SELECT gv.id, gv.nome, gv.produtor, gv.ano, gv.tipo, gv.garrafeira_id, g.nome AS garrafeira, g.dono
         FROM garrafeira.vinhos gv JOIN garrafeira.garrafeiras g ON g.id = gv.garrafeira_id
+       WHERE v_k IS NULL OR winecatalog.chave_produtor(winecatalog.produtor_oficial(gv.produtor)) = v_k
        ORDER BY lower(gv.nome), gv.ano
     LOOP
       nn := winecatalog.nome_normal(r.nome, r.produtor, r.tipo, r.ano);
@@ -261,5 +305,5 @@ BEGIN
   RETURN jsonb_build_object('linhas', linhas);
 END;
 $$;
-REVOKE ALL ON FUNCTION winecatalog.nomes_rever(jsonb, boolean) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION winecatalog.nomes_rever(jsonb, boolean) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION winecatalog.nomes_rever(jsonb, boolean, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.nomes_rever(jsonb, boolean, text) TO authenticated, service_role;

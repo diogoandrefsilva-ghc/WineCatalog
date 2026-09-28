@@ -222,12 +222,23 @@ const servidor = http.createServer(async (req, res) => {
       const b = await lerCorpo(req);
       const txt = (x, n = 200) => String(x ?? "").trim().slice(0, n);
       if (b.acao === "listar") {
-        return json(res, 200, {
-          sugestoes: await sbDados("winecatalog", "produtores_sugestoes", {}),
-          oficiais: await sbDados("winecatalog", "produtores_listar", {}),
+        const [sugestoes, oficiais, grafias, noNome] = await Promise.all([
+          sbDados("winecatalog", "produtores_sugestoes", {}),
+          sbDados("winecatalog", "produtores_listar", {}),
           // as grafias que existem, para escolher as que se acrescentam a um oficial
-          grafias: await sbDados("winecatalog", "produtores_grafias_lista", {}),
-        });
+          sbDados("winecatalog", "produtores_grafias_lista", {}),
+          // os produtores que ficam (e entram) no nome dos vinhos (db/nomes-manter.sql)
+          sbDados("winecatalog", "produtores_no_nome_listar", {}),
+        ]);
+        return json(res, 200, { sugestoes, oficiais, grafias, noNome });
+      }
+      // o produtor no nome dos vinhos: ligar (pelo nome) ou desligar (pela chave)
+      if (b.acao === "no_nome") {
+        if (b.ligar === true) {
+          if (!txt(b.produtor)) return json(res, 400, { erro: "Falta o produtor." });
+          return sbRpc(res, "winecatalog", "produtores_no_nome_marcar", { p_itens: [{ produtor: txt(b.produtor) }] });
+        }
+        return sbRpc(res, "winecatalog", "produtores_no_nome_tirar", { p_chave: txt(b.chave, 300) });
       }
       // mudar o nome oficial (o antigo fica como grafia; db/produtores.sql)
       if (b.acao === "renomear") {
@@ -300,7 +311,10 @@ const servidor = http.createServer(async (req, res) => {
         .map(x => ({ fonte: x.fonte === "garrafeira" ? "garrafeira" : "catalogo", id: Number(x.id) }))
         .filter(x => Number.isInteger(x.id) && x.id > 0);
       if (aplicar && !itens.length) return json(res, 400, { erro: "Marca pelo menos um vinho." });
-      return sbRpc(res, "winecatalog", "nomes_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar });
+      // `produtor`: só os vinhos desse produtor (o separador Produtores, ao
+      // pôr ou tirar um produtor do nome dos vinhos).
+      const produtor = String(b.produtor ?? "").trim().slice(0, 200) || null;
+      return sbRpc(res, "winecatalog", "nomes_rever", { p_itens: aplicar ? itens : null, p_aplicar: aplicar, p_produtor: produtor });
     }
     if (req.method === "POST" && url.pathname === "/vinho") {
       // O back-office (db/painel.sql): a ficha de um vinho, e corrigi-la à
@@ -480,7 +494,43 @@ body.com-modal{overflow:hidden}
 .hist td{font-size:12.5px}
 .aviso{background:#fff7e6;border:1px solid #f0d9a8;border-radius:10px;padding:8px 10px;font-size:12.5px;margin:12px 0}
 .dup-g{border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px}.dup-g table td{border:0;padding:4px 6px}
-#prod-oficiais input,#mv-mesmo-q{padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit}
+#mv-mesmo-q{padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit}
+.seg{display:inline-flex;flex-wrap:wrap;gap:2px;background:#efe7dd;border-radius:10px;padding:3px;max-width:100%}
+.seg button{border:0;background:none;border-radius:8px;padding:7px 12px;color:var(--mu)}
+.seg button.on{background:#fff;color:var(--bd);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.seg .n{display:inline-block;min-width:18px;padding:0 6px;margin-left:4px;border-radius:99px;background:rgba(0,0,0,.07);font-size:11.5px;text-align:center}
+.seg button.on .n{background:#f6ecef}
+.prod-v[hidden]{display:none}
+.msg{display:flex;gap:10px;align-items:flex-start;border-radius:10px;padding:9px 12px;margin:10px 0;font-size:13px;background:#eef6f0;border:1px solid #cfe5d6}
+.msg.er{background:#fbeeee;border-color:#f0cccc}.msg.av{background:#fff7e6;border-color:#f0d9a8}
+.msg>div{flex:1;min-width:0}.msg ul{margin:4px 0 0;padding-left:18px}.msg a.fecha{color:var(--mu);text-decoration:none;font-size:15px;line-height:1}
+.pg{border:1px solid var(--bo);border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#fff}
+.pg-tit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-weight:600;color:var(--bd);margin-bottom:4px}
+.pg table td,.pg table th{border:0;padding:4px 8px;vertical-align:middle}.pg table tr+tr td{border-top:1px solid #f1ebe4}
+.pg .c{text-align:center;width:84px}.pg input[type=text]{width:100%;padding:5px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
+.pg .rod{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--bo)}
+.po{border:1px solid var(--bo);border-radius:12px;background:#fff;margin-bottom:8px;overflow:hidden}
+.po-cab{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:10px 12px 6px}
+.po-nome{flex:1 1 220px;min-width:0}.po-nome b{font:600 15.5px Georgia,serif}.po-nome i{display:block;color:var(--mu);font-size:12.5px}
+.po-n{color:var(--mu);font-size:12.5px;white-space:nowrap}
+.nn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bo);border-radius:99px;padding:4px 10px;font-size:12.5px;color:var(--mu);cursor:pointer;user-select:none}
+.nn.on{border-color:var(--bd);background:#f6ecef;color:var(--bd);font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:4px 12px 10px}
+.chip{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px;max-width:100%;border:1px solid var(--bo);border-radius:14px;padding:2px 10px;font-size:12.5px;background:#faf7f4}
+.chip.x{padding-right:3px}.chip.of{border-color:var(--ou);background:#fbf4e4}.chip.of:before{content:"★";color:var(--ou);margin-right:4px;font-size:11px}
+.eq{color:var(--mu);font-size:11px;margin:0 5px}
+.chip a{display:inline-flex;width:18px;height:18px;margin-left:4px;align-items:center;justify-content:center;border-radius:50%;text-decoration:none;color:var(--mu);font-size:11px}
+.chip a:hover{background:#f6dcdc;color:var(--er)}
+button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12.5px;font-weight:600;color:var(--bd);background:none}
+.chips input[type=text]{padding:4px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;flex:0 1 240px;min-width:0}
+.po-edit{border-top:1px solid var(--bo);padding:10px 12px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px 10px;align-items:center;background:#faf5ef}
+.po-edit input{padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit;width:100%}.po-edit .rot{color:var(--mu);font-size:12.5px}
+.po-edit .nota{grid-column:1/-1;margin:0}
+.po-res{border-top:1px solid var(--bo);padding:0 12px}.po-res .msg{margin:10px 0}
+.prev{max-height:360px;overflow:auto;border:1px solid var(--bo);border-radius:10px;margin:8px 0;background:#fff}
+.prev td{border-bottom:1px solid #f1ebe4;padding:5px 8px;vertical-align:middle}
+.nn-l{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;border:1px solid var(--bo);border-radius:10px;padding:8px 12px;margin-bottom:6px;background:#fff}
+.nn-l b{flex:1 1 200px;min-width:0}
 .com-texto{white-space:pre-wrap;word-break:break-word;margin:8px 0 4px}
 .com-resp{flex:1 1 260px;padding:6px 8px;border:1px solid var(--bo);border-radius:8px;font:inherit}
 .com-fio{display:flex;flex-direction:column;gap:5px;margin:8px 0}.com-fala{padding:6px 9px;border-radius:8px;background:#f3eee8;white-space:pre-wrap;word-break:break-word}
@@ -569,10 +619,10 @@ body.com-modal{overflow:hidden}
 </section>
 <section class="tab" id="t-nomes" hidden>
 <div class="card"><h2>Nomes dos vinhos</h2>
-  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. Quando o nome que sobra fica vago ("1836 Grande Reserva"), desmarca-o e carrega em <b>Manter o produtor no nome</b>: o PRODUTOR desse vinho fica numa lista, e nos vinhos dele o produtor nunca mais sai da frente do nome — nos que já cá estão, nas garrafeiras e nos que vierem. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
+  <p class="nota" style="margin:0 0 10px">O nome é o que distingue o vinho: o <b>produtor</b>, a <b>cor</b> e a <b>colheita</b> são campos à parte. A regra tira do nome a <b>colheita</b> (quando é a do vinho) e o <b>produtor</b> da frente (só se o que sobra se aguentar sozinho — "Cartuxa Colheita" e "Herdade do Sobroso Reserva" ficam, esses vinhos chamam-se pelo produtor), no catálogo e em todas as garrafeiras. Quando o nome que sobra fica vago ("1836 Grande Reserva"), desmarca-o e carrega em <b>Manter o produtor no nome</b>: o PRODUTOR desse vinho fica numa lista, e nos vinhos dele o produtor nunca mais sai da frente do nome — e entra, se lá não estiver —, nos que já cá estão, nas garrafeiras e nos que vierem. A lista também se gere no separador <a href="#produtores">Produtores</a>. A <b>cor</b> no fim do nome também sai (é um campo da chave desde a fase 4). Os vinhos novos e os nomes mudados já passam pela regra sozinhos; esta lista é a dos que já cá estavam. Os avisos são para decidires à mão, no Editar.</p>
   <div class="filtros"><input type="search" id="nomes-q" placeholder="procurar por nome, produtor, garrafeira, dono…" oninput="nomesPintar()">
     <label>Onde <select id="nomes-onde" onchange="nomesPintar()"><option value="">catálogo e garrafeiras</option><option value="catalogo">só o catálogo</option><option value="garrafeira">só as garrafeiras</option></select></label>
-    <label>O que sai do nome <select id="nomes-mud" onchange="nomesPintar()"><option value="">qualquer coisa</option><option value="ano">a colheita</option><option value="produtor">o produtor</option><option value="cor">a cor</option><option value="avisos">só os com avisos</option></select></label>
+    <label>O que muda no nome <select id="nomes-mud" onchange="nomesPintar()"><option value="">qualquer coisa</option><option value="ano">sai a colheita</option><option value="produtor">sai o produtor</option><option value="produtor_entra">entra o produtor</option><option value="cor">sai a cor</option><option value="avisos">só os com avisos</option></select></label>
     <label><input type="checkbox" id="nomes-so" onchange="nomesPintar()" checked> só os que mudam agora</label></div>
   <div class="linha" style="margin-top:10px"><span id="nomes-n" class="nota"></span></div>
   <div class="linha" style="margin-top:8px"><button onclick="nomesMarcar(true)">Marcar os que se veem</button><button onclick="nomesMarcar(false)">Desmarcar os que se veem</button>
@@ -580,18 +630,35 @@ body.com-modal{overflow:hidden}
     <button id="btn-nomes-manter" onclick="nomesManter()" disabled title="Os produtores dos desmarcados que se veem e a quem a regra tirava o produtor da frente: nos vinhos deles, o produtor fica no nome">Manter o produtor no nome</button>
     <button onclick="nomesProcurar()" title="Volta a correr a regra sobre o catálogo e as garrafeiras de agora">🔄 Simular de novo</button></div>
   <div id="nomes-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
-  <details style="margin-top:10px" ontoggle="if(this.open)nomesManterListar()"><summary class="nota">Produtores que ficam no nome</summary><div id="nomes-manter" style="margin-top:6px"></div></details>
+  <details style="margin-top:10px" ontoggle="if(this.open)nomesManterListar()"><summary class="nota">Produtores no nome dos vinhos (também em Produtores)</summary><div id="nomes-manter" style="margin-top:6px"></div></details>
 </div>
 </section>
 <section class="tab" id="t-produtores" hidden>
 <div class="card"><h2>Produtores</h2>
-  <p class="nota" style="margin:0 0 10px">O mesmo produtor escrito de várias maneiras ("Ramos Pinto" e "Adriano Ramos Pinto"). Escolhe o <b>nome oficial</b> e as grafias que são ele: passam a ser esse nome <b>no catálogo e em todas as garrafeiras</b>, agora e em qualquer escrita futura. As sugestões são grafias em que as palavras de uma estão todas na outra — parecido não quer dizer igual ("Quinta Nova" não é "Herdade da Malhadinha Nova"): o que não for, marca <b>são diferentes</b> e não volta. Um vinho que fique com a chave de outro que já existe não se mexe: aparece para juntares nos Duplicados. Nos oficiais, <b>Mudar</b> troca o nome oficial (o antigo fica como grafia) e <b>+ Acrescentar</b> junta-lhe outra maneira de o escrever.</p>
-  <div class="filtros"><input type="search" id="prod-q" placeholder="procurar um produtor…" oninput="prodPintar()">
-    <button onclick="prodProcurar()">🔄 Atualizar</button><span id="prod-n" class="nota"></span></div>
-  <div class="passo">Sugestões por decidir</div>
-  <div id="prod-lista" style="max-height:640px;overflow:auto"></div>
-  <div class="passo">Produtores oficiais já definidos <span class="nota" id="prod-on"></span></div>
-  <div id="prod-oficiais"></div>
+  <p class="nota" style="margin:0 0 10px">Cada produtor tem um <b>nome oficial</b> e as <b>grafias</b> que são ele. O que estiver escrito numa grafia passa ao nome oficial <b>no catálogo e em todas as garrafeiras</b> — agora e em qualquer escrita futura.</p>
+  <div class="filtros"><input type="search" id="prod-q" placeholder="procurar um produtor ou uma grafia…" oninput="prodPintar()">
+    <button onclick="prodProcurar()">🔄 Atualizar</button></div>
+  <div class="seg" role="tablist" id="prod-seg" style="margin-top:12px">
+    <button data-v="sug" onclick="prodVista('sug')">Por decidir <span class="n" id="prod-n-sug"></span></button>
+    <button data-v="of" onclick="prodVista('of')">Produtores oficiais <span class="n" id="prod-n-of"></span></button>
+    <button data-v="nn" onclick="prodVista('nn')">Produtor no nome dos vinhos <span class="n" id="prod-n-nn"></span></button>
+  </div>
+  <div id="prod-msg"></div>
+  <div class="prod-v" id="prod-v-sug">
+    <p class="nota" style="margin:10px 0">Grafias que <b>podem</b> ser o mesmo produtor (as palavras de uma estão todas na outra). Parecido não quer dizer igual — "Quinta Nova" não é "Herdade da Malhadinha Nova". Marca as que são o produtor, escolhe o nome oficial e carrega em <b>Juntar</b>; se não forem, <b>Não são o mesmo</b> e o par não volta. Um vinho que fique igual a outro que já existe não se mexe: aparece nos Duplicados.</p>
+    <div id="prod-lista"></div>
+  </div>
+  <div class="prod-v" id="prod-v-of" hidden>
+    <p class="nota" style="margin:10px 0"><b>+ grafia</b> junta outra maneira de escrever o produtor. <b>✏️</b> muda o nome oficial (o antigo fica como grafia) ou o nome completo (só para se ler na ficha). Grafias juntas por <span class="eq">=</span> dão a mesma chave — para o catálogo já eram o mesmo produtor (palavras como "Herdade", "Quinta", "Casa", "do", "Vinhos" não contam).</p>
+    <div id="prod-oficiais"></div>
+  </div>
+  <div class="prod-v" id="prod-v-nn" hidden>
+    <p class="nota" style="margin:10px 0">Nos vinhos destes produtores, <b>o nome do produtor aparece sempre no nome do vinho</b>: não sai da frente e, se lá não estiver, entra ("1836 Grande Reserva" → "Companhia das Lezírias 1836 Grande Reserva"). Vale no catálogo, nas garrafeiras e nas escritas futuras; a colheita e a cor no fim continuam a sair. Ao ligar, vês logo os nomes que mudam antes de os aplicar.</p>
+    <div class="linha"><input type="text" id="prod-nn-novo" list="prod-grafias" placeholder="produtor…" style="flex:1 1 240px;min-width:0;padding:7px 10px;border:1px solid var(--bo);border-radius:8px;font:inherit">
+      <button class="prim" onclick="prodNoNomeAcrescentar()">+ Acrescentar</button></div>
+    <div id="prod-nn" style="margin-top:10px"></div>
+  </div>
+  <datalist id="prod-grafias"></datalist>
 </div>
 </section>
 <section class="tab" id="t-duplicados" hidden>
@@ -1306,7 +1373,7 @@ async function procurarNovos(){
 
 // ── Nomes de vinhos ──
 let NOMES=null;const NOMES_OFF=new Set();   // os desmarcados à mão (sobrevivem aos filtros)
-const NOMES_MUD={ano:"colheita",produtor:"produtor",cor:"cor"};
+const NOMES_MUD={ano:"sai a colheita",produtor:"sai o produtor",produtor_entra:"entra o produtor",cor:"sai a cor"};
 const nomesChave=x=>x.fonte+":"+x.id;
 async function nomesProcurar(){
   document.getElementById("nomes-lista").innerHTML='<p class="nota">A simular…</p>';
@@ -1359,8 +1426,8 @@ async function nomesManter(){
   const itens=nomesAManter().map(x=>({fonte:x.fonte,id:x.id}));
   if(!itens.length)return alert("Desmarca os vinhos cujo produtor deve ficar no nome (os que o perdiam da frente).");
   const prods=[...new Set(nomesAManter().map(x=>x.produtor||""))].filter(Boolean);
-  if(!confirm("Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\\n\\n"+prods.join("\\n")))return;
-  try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" produtor(es) acrescentado(s) à lista.");await nomesProcurar();
+  if(!confirm("Nos vinhos destes produtores, o produtor fica no nome — e entra à frente, se lá não estiver (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\\n\\n"+prods.join("\\n")))return;
+  try{const r=await post("/nomes",{acao:"manter",itens});alert(r.marcados+" produtor(es) acrescentado(s) à lista.");await nomesProcurar();if(PROD)prodProcurar();
     const d=document.getElementById("nomes-manter").closest("details");if(d.open)nomesManterListar();}
   catch(e){alert(e.message);}
 }
@@ -1372,14 +1439,20 @@ async function nomesManterListar(){
 }
 async function nomesManterTirar(k){
   if(!confirm("Tirar da lista? O nome volta a aparecer na simulação."))return;
-  try{await post("/nomes",{acao:"tirar",chave:k});await nomesManterListar();await nomesProcurar();}catch(e){alert(e.message);}
+  try{await post("/nomes",{acao:"tirar",chave:k});await nomesManterListar();await nomesProcurar();if(PROD)prodProcurar();}catch(e){alert(e.message);}
 }
 
 // ── Produtores ──
-let PROD=null;
+// Três vistas (28/09/2026, o dono: "grafismo esquisito/confuso"): as
+// sugestões por decidir, os produtores oficiais (um cartão cada, as grafias
+// em pastilhas, "+ grafia" e ✏️ para o nome) e o produtor no nome dos vinhos.
+// O resultado de cada ação fica no cartão onde se carregou (PROD_RES) e diz o
+// que aconteceu a cada grafia — o "0 vinhos" num alert fazia parecer que nada
+// tinha acontecido quando a grafia já era do produtor (a mesma chave).
+let PROD=null,PROD_VISTA=null;const PROD_RES={},PROD_ED=new Set(),PROD_GR=new Set();
 // As sugestões vêm aos pares; juntam-se em grupos (os três Carlos Alonso
 // num só) para se escolher o oficial uma vez. Os pares ficam guardados para
-// o "são diferentes", que só faz sentido entre dois.
+// o "não são o mesmo", que só faz sentido entre dois.
 function prodGrupos(pares){
   const pai={},ref=x=>pai[x]===undefined?(pai[x]=x):(pai[x]===x?x:(pai[x]=ref(pai[x])));
   const info={};
@@ -1389,66 +1462,157 @@ function prodGrupos(pares){
     .map(l=>({grafias:l,pares:pares.filter(p=>l.some(s=>s.produtor===p.a.produtor))}))
     .sort((a,b)=>a.grafias[0].produtor.localeCompare(b.grafias[0].produtor,"pt"));
 }
-async function prodProcurar(){
-  document.getElementById("prod-lista").innerHTML='<p class="nota">A procurar…</p>';
-  try{PROD=await post("/produtores",{acao:"listar"});PROD._grupos=prodGrupos(PROD.sugestoes||[]);prodPintar();}
-  catch(e){document.getElementById("prod-lista").innerHTML='<p class="nota">Não consegui: '+esc(e.message)+'</p>';}
+function prodVista(v){
+  PROD_VISTA=v;try{localStorage.setItem("prod_vista",v);}catch(e){}
+  document.querySelectorAll("#prod-seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===v));
+  for(const x of ["sug","of","nn"])document.getElementById("prod-v-"+x).hidden=x!==v;
 }
+async function prodProcurar(){
+  if(!PROD)document.getElementById("prod-lista").innerHTML='<p class="nota">A procurar…</p>';
+  try{
+    PROD=await post("/produtores",{acao:"listar"});PROD._grupos=prodGrupos(PROD.sugestoes||[]);
+    if(!PROD_VISTA){let v=null;try{v=localStorage.getItem("prod_vista");}catch(e){}
+      prodVista(["sug","of","nn"].includes(v)?v:(PROD._grupos.length?"sug":"of"));}
+    prodPintar();
+  }catch(e){PROD_RES.topo={tipo:"er",html:"Não consegui ler os produtores: "+esc(e.message)};
+    document.getElementById("prod-msg").innerHTML=prodResHTML("topo");}
+}
+const prodN=p=>(+p.catalogo||0)+' no catálogo · '+(+p.garrafeiras||0)+' nas garrafeiras';
 function prodPintar(){
   if(!PROD)return;
-  // A procura filtra os grupos e os oficiais; o índice de cada grupo fica o
-  // do grupo inteiro (é por ele que o Juntar e o "são diferentes" o acham).
-  const q=palavras("prod-q"),bate=t=>q.every(p=>semAc(t).includes(p));
-  const G=PROD._grupos.map((g,i)=>({g,i})).filter(({g})=>!q.length||bate(g.grafias.map(s=>s.produtor+" "+(s.oficial||"")).join(" ")));
-  document.getElementById("prod-n").textContent=PROD._grupos.length+" grupo"+(PROD._grupos.length===1?"":"s")+" por decidir"+(q.length?" · "+G.length+" à vista":"");
-  document.getElementById("prod-lista").innerHTML=G.length?G.map(({g,i})=>{
-    const oficial=g.grafias.find(s=>s.oficial)?.oficial||"";
-    return '<div class="prod-g" data-i="'+i+'" style="border:1px solid var(--bo);border-radius:10px;padding:8px 10px;margin-bottom:8px">'+
-      g.grafias.map((s,j)=>'<div class="linha" style="gap:8px;margin:2px 0">'+
-        '<label title="Esta grafia é este produtor"><input type="checkbox" class="prod-inc" data-p="'+esc(s.produtor)+'" checked></label>'+
-        '<label><input type="radio" name="prod-of-'+i+'" value="'+esc(s.produtor)+'"'+((oficial?s.produtor===oficial:j===0)?" checked":"")+'> <b>'+esc(s.produtor)+'</b></label>'+
-        '<span class="nota">'+s.catalogo+' no catálogo · '+s.garrafeiras+' nas garrafeiras'+(s.oficial?' · já é de <b>'+esc(s.oficial)+'</b>':'')+'</span></div>').join("")+
-      '<div class="linha" style="gap:8px;margin-top:6px"><label><input type="radio" name="prod-of-'+i+'" value="__outro"> outro nome:</label>'+
-        '<input class="prod-outro" placeholder="nome oficial" style="padding:4px 8px;border:1px solid var(--bo);border-radius:6px;font:inherit">'+
-        '<button class="prim" onclick="prodJuntar('+i+')">Juntar</button>'+
-        (g.pares.length===1&&!g.pares[0].mesmaChave?'<button onclick="prodDiferentes('+i+',0)">São diferentes</button>':'')+
-        '</div>'+(g.pares.length>1?'<div class="nota" style="margin-top:6px">Se algum par não for o mesmo produtor: '+g.pares.map((p,k)=>p.mesmaChave?'':
-          '<a href="#" onclick="prodDiferentes('+i+','+k+');return false">'+esc(p.a.produtor)+' ≠ '+esc(p.b.produtor)+'</a>').filter(Boolean).join(" · ")+'</div>':'')+'</div>';
-  }).join(""):'<p class="nota">'+(PROD._grupos.length?"Nenhum com esta procura.":"Nada por decidir.")+'</p>';
-  const O=(PROD.oficiais||[]).filter(p=>!q.length||bate([p.nome,p.nome_completo,...(p.variantes||[]).map(v=>v.escrito)].join(" ")));
-  document.getElementById("prod-on").textContent="— "+(PROD.oficiais||[]).length+(q.length?" · "+O.length+" à vista":"");
-  // As grafias que existem (catálogo e garrafeiras), para o "+ Acrescentar" sugerir.
-  const dl='<datalist id="prod-grafias">'+(PROD.grafias||[]).map(g=>'<option value="'+esc(g.produtor)+'">'+esc(g.catalogo+' no catálogo · '+g.garrafeiras+' nas garrafeiras'+(g.oficial?' · já é de '+g.oficial:''))+'</option>').join("")+'</datalist>';
-  document.getElementById("prod-oficiais").innerHTML=O.length?dl+'<table><tr><th>Nome oficial</th><th>Nome completo</th><th>Grafias</th></tr>'+O.map(p=>'<tr><td>'+
-    '<input id="prod-nome-'+p.id+'" value="'+esc(p.nome)+'" style="width:190px;font-weight:600"> <button onclick="prodRenomear('+p.id+')" title="Muda o nome oficial em todos os vinhos deste produtor, no catálogo e nas garrafeiras. O nome antigo fica como grafia.">Mudar</button></td><td>'+
-    '<input id="prod-compl-'+p.id+'" value="'+esc(p.nome_completo||"")+'" placeholder="opcional" style="width:220px"> <button onclick="prodCompleto('+p.id+')">Guardar</button></td><td>'+
-    (p.variantes||[]).map(v=>esc(v.escrito)+' <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="prodTirar(\\''+esc(v.chave)+'\\');return false">✕</a>').join(" · ")+
-    '<div class="linha" style="gap:6px;margin-top:6px"><input id="prod-graf-'+p.id+'" list="prod-grafias" placeholder="outra grafia deste produtor" style="width:220px"> <button onclick="prodAcrescentar('+p.id+')">+ Acrescentar</button></div></td></tr>').join("")+'</table>'
-    :'<p class="nota">'+((PROD.oficiais||[]).length?"Nenhum com esta procura.":"Ainda nenhum.")+'</p>';
+  const q=palavras("prod-q"),bate=t=>!q.length||q.every(p=>semAc(t).includes(p));
+  document.getElementById("prod-n-sug").textContent=PROD._grupos.length;
+  document.getElementById("prod-n-of").textContent=(PROD.oficiais||[]).length;
+  document.getElementById("prod-n-nn").textContent=(PROD.noNome||[]).length;
+  document.getElementById("prod-msg").innerHTML=prodResHTML("topo");
+  // As grafias que existem (catálogo e garrafeiras), para o "+ grafia" e a lista do nome sugerirem.
+  document.getElementById("prod-grafias").innerHTML=(PROD.grafias||[]).map(g=>'<option value="'+esc(g.produtor)+'">'+
+    esc(g.catalogo+' no catálogo · '+g.garrafeiras+' nas garrafeiras'+(g.oficial?' · é de '+g.oficial:''))+'</option>').join("");
+  prodPintarSug(bate);prodPintarOf(bate);prodPintarNN(bate);
 }
-async function prodCompleto(id){
-  const v=document.getElementById("prod-compl-"+id).value.trim();
-  try{await post("/produtores",{acao:"completo",id,completo:v});alert(v?"Nome completo guardado.":"Nome completo retirado.");}
-  catch(e){alert("Não consegui: "+e.message);}
+// O resultado de uma ação, no sítio onde se carregou ("topo", "nn" ou "po-<id>").
+function prodResHTML(a){
+  const r=PROD_RES[a];if(!r)return "";
+  if(r.prev)return prodPrevHTML(a,r.prev);
+  return '<div class="msg'+(r.tipo==="ok"?'':' '+r.tipo)+'"><div>'+r.html+'</div>'+prodFechaHTML(a)+'</div>';
+}
+const prodFechaHTML=a=>'<a href="#" class="fecha" title="Fechar" data-a="'+esc(a)+'" onclick="prodFechar(this.dataset.a);return false">✕</a>';
+function prodFechar(a){delete PROD_RES[a];prodPintar();}
+
+// ─ Por decidir ─
+function prodPintarSug(bate){
+  const G=PROD._grupos.map((g,i)=>({g,i})).filter(({g})=>bate(g.grafias.map(s=>s.produtor+" "+(s.oficial||"")).join(" ")));
+  document.getElementById("prod-lista").innerHTML=G.length?G.map(({g,i})=>{
+    const oficial=(g.grafias.find(s=>s.oficial)||{}).oficial||"";
+    const dif=g.pares.map((p,k)=>({p,k})).filter(({p})=>!p.mesmaChave);
+    return '<div class="pg" data-i="'+i+'"><div class="pg-tit">'+(dif.length?'Serão o mesmo produtor?'
+        :'O mesmo produtor, escrito de maneiras diferentes <span class="tag" title="Dão a mesma chave: para o catálogo já são o mesmo produtor. Só falta escolher como se escreve.">mesma chave</span>')+'</div>'+
+      '<table><tr><th class="c">É ele</th><th>Grafia</th><th>Vinhos</th><th class="c">Nome oficial</th></tr>'+
+      g.grafias.map((s,j)=>'<tr><td class="c"><input type="checkbox" class="prod-inc" data-p="'+esc(s.produtor)+'" checked onchange="prodGrupoBotao('+i+')"></td>'+
+        '<td><b>'+esc(s.produtor)+'</b>'+(s.oficial?'<br><span class="nota">já é do produtor <b>'+esc(s.oficial)+'</b></span>':'')+'</td>'+
+        '<td class="nota">'+s.catalogo+' no catálogo · '+s.garrafeiras+' nas garrafeiras</td>'+
+        '<td class="c"><input type="radio" name="prod-of-'+i+'" value="'+esc(s.produtor)+'"'+((oficial?s.produtor===oficial:j===0)?' checked':'')+' onchange="prodGrupoBotao('+i+')"></td></tr>').join("")+
+      '<tr><td></td><td colspan="2"><input type="text" class="prod-outro" placeholder="…ou escreve outro nome oficial" oninput="prodGrupoOutro('+i+')"></td>'+
+        '<td class="c"><input type="radio" name="prod-of-'+i+'" value="__outro" onchange="prodGrupoBotao('+i+')"></td></tr></table>'+
+      '<div class="rod"><button class="prim" id="prod-b-'+i+'" onclick="prodJuntar('+i+')">Juntar</button>'+
+        dif.map(({p,k})=>'<button onclick="prodDiferentes('+i+','+k+')">'+(dif.length>1?esc(p.a.produtor)+' ≠ '+esc(p.b.produtor):'Não são o mesmo')+'</button>').join("")+'</div></div>';
+  }).join(""):'<p class="nota">'+(PROD._grupos.length?"Nenhuma com esta procura.":"Nada por decidir.")+'</p>';
+  for(const {i} of G)prodGrupoBotao(i);
+}
+function prodGrupoEscolha(i){
+  const el=document.querySelector('.pg[data-i="'+i+'"]'),r=el.querySelector('input[name="prod-of-'+i+'"]:checked');
+  let oficial=r?r.value:"";if(oficial==="__outro")oficial=el.querySelector(".prod-outro").value.trim();
+  return {oficial,grafias:[...el.querySelectorAll(".prod-inc:checked")].map(c=>c.dataset.p)};
+}
+function prodGrupoOutro(i){
+  const r=document.querySelector('.pg[data-i="'+i+'"] input[name="prod-of-'+i+'"][value="__outro"]');if(r)r.checked=true;prodGrupoBotao(i);
+}
+// O botão diz o que vai fazer: "Juntar 2 grafias em «Duorum»".
+function prodGrupoBotao(i){
+  const b=document.getElementById("prod-b-"+i);if(!b)return;
+  const {oficial,grafias}=prodGrupoEscolha(i),n=grafias.filter(x=>x!==oficial).length;
+  b.disabled=!oficial||!n;
+  b.textContent=!oficial?"Escolhe o nome oficial":!n?"Marca as grafias que são ele":"Juntar "+n+" grafia"+(n===1?"":"s")+" em «"+oficial+"»";
 }
 async function prodJuntar(i){
-  const el=document.querySelector('.prod-g[data-i="'+i+'"]'),g=PROD._grupos[i];
-  const esc_=el.querySelector('input[name="prod-of-'+i+'"]:checked');
-  let oficial=esc_?esc_.value:"";if(oficial==="__outro")oficial=el.querySelector(".prod-outro").value.trim();
-  const grafias=[...el.querySelectorAll(".prod-inc:checked")].map(c=>c.dataset.p);
-  if(!oficial)return alert("Escolhe o nome oficial.");
-  if(grafias.filter(x=>x!==oficial).length<1&&grafias.length<2&&oficial===grafias[0])return alert("Marca pelo menos duas grafias.");
-  const tot=g.grafias.filter(s=>grafias.includes(s.produtor)).reduce((a,s)=>a+s.catalogo+s.garrafeiras,0);
-  if(!confirm('Passar a "'+oficial+'" as grafias: '+grafias.join(" · ")+'?\\n\\n'+tot+' vinho(s) no catálogo e nas garrafeiras ficam com este nome.'))return;
-  try{prodResultado(await post("/produtores",{acao:"definir",oficial,grafias}));await prodProcurar();}
-  catch(e){alert(e.message);}
+  const g=PROD._grupos[i],{oficial,grafias}=prodGrupoEscolha(i);
+  if(!oficial||!grafias.filter(x=>x!==oficial).length)return;
+  const tot=g.grafias.filter(s=>grafias.includes(s.produtor)&&s.produtor!==oficial).reduce((a,s)=>a+s.catalogo+s.garrafeiras,0);
+  if(!confirm('Passar a "'+oficial+'" as grafias: '+grafias.filter(x=>x!==oficial).join(" · ")+'?\\n\\n'+tot+' vinho(s) no catálogo e nas garrafeiras ficam com este nome, agora e em qualquer escrita futura.'))return;
+  try{await prodResultado(await post("/produtores",{acao:"definir",oficial,grafias}),"topo");}
+  catch(e){PROD_RES.topo={tipo:"er",html:esc(e.message)};prodPintar();}
 }
-function prodResultado(r){
+async function prodDiferentes(i,k){
+  const p=PROD._grupos[i].pares[k];
+  if(!confirm('"'+p.a.produtor+'" e "'+p.b.produtor+'" são produtores diferentes? O par não volta a ser sugerido.'))return;
+  try{await post("/produtores",{acao:"diferentes",a:p.a.produtor,b:p.b.produtor});
+    PROD_RES.topo={tipo:"ok",html:'«'+esc(p.a.produtor)+'» e «'+esc(p.b.produtor)+'» ficam como produtores diferentes.'};await prodProcurar();}
+  catch(e){PROD_RES.topo={tipo:"er",html:esc(e.message)};prodPintar();}
+}
+// O que a produtor_definir fez, grafia a grafia (db/produtores.sql).
+function prodResumo(r){
+  const of='«'+esc(r.oficial)+'»',L=[];
+  for(const g of r.grafias||[]){
+    if(String(g.escrito).toLowerCase()===String(r.oficial).toLowerCase())continue;
+    const e='«'+esc(g.escrito)+'»';
+    if(g.estado==="nova")L.push(e+' passa a ser '+of+'.');
+    else if(g.estado==="de_outro")L.push(e+' era do produtor «'+esc(g.de)+'» e passou para '+of+'.');
+    else if(g.estado==="ja_estava")L.push(e+' já estava nas grafias de '+of+'.');
+    else L.push(e+' já era tratado como '+of+' — dá a mesma chave'+(g.como&&g.como!==r.oficial?' que «'+esc(g.como)+'»':'')+' (palavras como "Herdade", "Quinta", "Casa", "do", "Vinhos" não contam). Fica agora à vista, nas grafias.');
+  }
   const d=r.duplicados||[];
-  alert('"'+r.oficial+'": '+r.catalogo+' vinho(s) no catálogo e '+r.garrafeiras+' nas garrafeiras.'+
-    (d.length?'\\n\\nFicaram por mexer '+d.length+', porque já existe o mesmo vinho e colheita com o nome oficial — junta-os no separador Duplicados:\\n'+d.map(x=>'#'+x.id+' '+x.nome+(x.ano?' '+x.ano:'')+' → #'+x.com).join("\\n"):''));
+  let h='<b>'+esc(r.oficial)+'</b> ✓'+(L.length?'<ul>'+L.map(x=>'<li>'+x+'</li>').join("")+'</ul>':'')+
+    '<div style="margin-top:4px">'+(r.catalogo||r.garrafeiras?'Vinhos corrigidos: <b>'+r.catalogo+'</b> no catálogo e <b>'+r.garrafeiras+'</b> nas garrafeiras.'
+      :'Nenhum vinho estava escrito de outra maneira — vale para os que vierem.')+'</div>';
+  if(d.length)h+='<div style="margin-top:6px">Ficaram por mexer '+d.length+', porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos <a href="#duplicados">Duplicados</a>:<ul>'+
+    d.map(x=>'<li><a href="#" onclick="abrirVinho('+Number(x.id)+');return false">#'+esc(x.id)+' '+esc(x.nome)+(x.ano?' '+esc(x.ano):'')+'</a> → <a href="#" onclick="abrirVinho('+Number(x.com)+');return false">#'+esc(x.com)+'</a></li>').join("")+'</ul></div>';
+  return {tipo:d.length?"av":"ok",html:h};
+}
+function prodResultado(r,alvo){
+  PROD_RES[alvo]=prodResumo(r);
   // os nomes dos vinhos mudaram: a lista e os Duplicados voltam a ler
   carregarCatalogo();dupProcurar();
+  return prodProcurar();
+}
+
+// ─ Produtores oficiais ─
+function prodChips(p){
+  let h=(p.variantes||[]).map(v=>{
+    const es=v.escritos&&v.escritos.length?v.escritos:[v.escrito];
+    return '<span class="chip'+(v.oficial?' of':' x')+'" title="'+(v.oficial?'A grafia do nome oficial':'Uma grafia deste produtor')+(es.length>1?' — estas dão a mesma chave':'')+'">'+
+      es.map(esc).join('<span class="eq">=</span>')+
+      (v.oficial?'':'<a href="#" title="Deixar de trocar esta grafia pelo nome oficial (o que já foi corrigido fica)" data-k="'+esc(v.chave)+'" data-id="'+p.id+'" onclick="prodTirar(this.dataset.k,+this.dataset.id);return false">✕</a>')+'</span>';
+  }).join("");
+  if(PROD_GR.has(p.id))h+='<input type="text" id="prod-graf-'+p.id+'" list="prod-grafias" placeholder="outra grafia de '+esc(p.nome)+'" onkeydown="if(event.key===\\'Enter\\')prodAcrescentar('+p.id+')">'+
+    '<button class="prim" onclick="prodAcrescentar('+p.id+')">Acrescentar</button><button onclick="prodGrafia('+p.id+',false)">Cancelar</button>';
+  else h+='<button class="mais" onclick="prodGrafia('+p.id+',true)" title="Outra maneira de escrever este produtor">+ grafia</button>';
+  return h;
+}
+function prodPintarOf(bate){
+  const O=(PROD.oficiais||[]).filter(p=>bate([p.nome,p.nome_completo,...(p.variantes||[]).flatMap(v=>v.escritos||[v.escrito])].join(" ")));
+  document.getElementById("prod-oficiais").innerHTML=O.length?O.map(p=>{
+    const ed=PROD_ED.has(p.id);
+    return '<div class="po" id="po-'+p.id+'"><div class="po-cab">'+
+      '<div class="po-nome"><b>'+esc(p.nome)+'</b>'+(p.nome_completo&&p.nome_completo!==p.nome?'<i>'+esc(p.nome_completo)+'</i>':'')+'</div>'+
+      '<span class="po-n">'+prodN(p)+'</span>'+
+      '<label class="nn'+(p.no_nome?' on':'')+'" title="Nos vinhos deste produtor, o nome do produtor aparece sempre no nome do vinho (entra à frente, se faltar)">'+
+        '<input type="checkbox"'+(p.no_nome?' checked':'')+' onchange="prodNoNome('+p.id+',this.checked)"> no nome dos vinhos</label>'+
+      '<button'+(ed?' class="prim"':'')+' onclick="prodEditar('+p.id+')" title="Mudar o nome oficial ou o nome completo">✏️</button></div>'+
+      '<div class="chips">'+prodChips(p)+'</div>'+
+      (ed?'<div class="po-edit">'+
+        '<span class="rot">Nome oficial</span><input id="prod-nome-'+p.id+'" value="'+esc(p.nome)+'"><button onclick="prodRenomear('+p.id+')">Mudar</button>'+
+        '<span class="rot">Nome completo</span><input id="prod-compl-'+p.id+'" value="'+esc(p.nome_completo||"")+'" placeholder="opcional"><button onclick="prodCompleto('+p.id+')">Guardar</button>'+
+        '<p class="nota">Mudar o nome oficial muda-o em todos os vinhos deste produtor, no catálogo e nas garrafeiras (o nome antigo fica como grafia). O nome completo ("Quinta Nova de Nossa Senhora do Carmo") só se lê na ficha do vinho: não mexe em vinho nenhum.</p></div>':'')+
+      (PROD_RES["po-"+p.id]?'<div class="po-res">'+prodResHTML("po-"+p.id)+'</div>':'')+'</div>';
+  }).join(""):'<p class="nota">'+((PROD.oficiais||[]).length?"Nenhum com esta procura.":"Ainda nenhum — junta grafias em «Por decidir».")+'</p>';
+}
+function prodEditar(id){if(PROD_ED.has(id))PROD_ED.delete(id);else PROD_ED.add(id);prodPintar();const el=document.getElementById("prod-nome-"+id);if(el)el.focus();}
+function prodGrafia(id,on){if(on)PROD_GR.add(id);else PROD_GR.delete(id);prodPintar();const el=document.getElementById("prod-graf-"+id);if(el)el.focus();}
+async function prodCompleto(id){
+  const v=document.getElementById("prod-compl-"+id).value.trim();
+  try{await post("/produtores",{acao:"completo",id,completo:v});
+    PROD_RES["po-"+id]={tipo:"ok",html:v?"Nome completo guardado.":"Nome completo retirado."};PROD_ED.delete(id);await prodProcurar();}
+  catch(e){PROD_RES["po-"+id]={tipo:"er",html:esc(e.message)};prodPintar();}
 }
 // Mudar o nome oficial (27/09/2026): o antigo fica como grafia, e os vinhos
 // dele passam ao novo no catálogo e nas garrafeiras (produtor_renomear).
@@ -1458,30 +1622,105 @@ async function prodRenomear(id){
   if(!nome)return alert("Escreve o nome oficial.");
   if(nome===p.nome)return alert("O nome não mudou.");
   if(!confirm('Mudar o nome oficial "'+p.nome+'" para "'+nome+'"?\\n\\nOs vinhos deste produtor, no catálogo e em todas as garrafeiras, passam a "'+nome+'". "'+p.nome+'" fica como grafia: quem o escrever continua a cair aqui.'))return;
-  try{prodResultado(await post("/produtores",{acao:"renomear",id,nome}));await prodProcurar();}
-  catch(e){alert(e.message);}
+  try{const r=await post("/produtores",{acao:"renomear",id,nome});PROD_ED.delete(id);await prodResultado(r,"po-"+id);}
+  catch(e){PROD_RES["po-"+id]={tipo:"er",html:esc(e.message)};prodPintar();}
 }
-// Acrescentar uma grafia a um oficial que já existe: é a mesma "definir".
+// Acrescentar uma grafia a um oficial que já existe: é a mesma "definir". Só
+// se pergunta quando mexe em vinhos ou tira a grafia a outro produtor.
 async function prodAcrescentar(id){
-  const p=(PROD.oficiais||[]).find(x=>x.id===id),g=document.getElementById("prod-graf-"+id).value.trim();
+  const p=(PROD.oficiais||[]).find(x=>x.id===id),el=document.getElementById("prod-graf-"+id),g=el?el.value.trim():"";
   if(!p)return;
   if(!g)return alert("Escreve (ou escolhe da lista) a outra grafia.");
   const info=(PROD.grafias||[]).find(x=>x.produtor.toLowerCase()===g.toLowerCase());
-  if(info&&info.oficial===p.nome)return alert('"'+g+'" já é de "'+p.nome+'".');
-  const onde=info?info.catalogo+' vinho(s) no catálogo e '+info.garrafeiras+' nas garrafeiras'+(info.oficial?' — hoje é de "'+info.oficial+'" e passa para este':'')
-    :'ainda não há vinhos escritos assim — fica para os que vierem';
-  if(!confirm('"'+g+'" é o produtor "'+p.nome+'"? ('+onde+')\\n\\nO que estiver escrito assim passa a "'+p.nome+'", no catálogo e nas garrafeiras, agora e em qualquer escrita futura.'))return;
-  try{prodResultado(await post("/produtores",{acao:"definir",oficial:p.nome,grafias:[g]}));await prodProcurar();}
-  catch(e){alert(e.message);}
+  if(info&&info.oficial&&info.oficial!==p.nome){
+    if(!confirm('"'+g+'" é hoje do produtor "'+info.oficial+'". Passa para "'+p.nome+'"?\\n\\n'+info.catalogo+' vinho(s) no catálogo e '+info.garrafeiras+' nas garrafeiras escritos assim passam a "'+p.nome+'".'))return;
+  }else if(info&&!info.oficial&&info.catalogo+info.garrafeiras>0){
+    if(!confirm('"'+g+'" é o produtor "'+p.nome+'"?\\n\\n'+info.catalogo+' vinho(s) no catálogo e '+info.garrafeiras+' nas garrafeiras escritos assim passam a "'+p.nome+'", agora e em qualquer escrita futura.'))return;
+  }
+  try{const r=await post("/produtores",{acao:"definir",oficial:p.nome,grafias:[g]});PROD_GR.delete(id);await prodResultado(r,"po-"+id);}
+  catch(e){PROD_RES["po-"+id]={tipo:"er",html:esc(e.message)};prodPintar();}
 }
-async function prodDiferentes(i,k){
-  const p=PROD._grupos[i].pares[k];
-  if(!confirm('"'+p.a.produtor+'" e "'+p.b.produtor+'" são produtores diferentes? O par não volta a ser sugerido.'))return;
-  try{await post("/produtores",{acao:"diferentes",a:p.a.produtor,b:p.b.produtor});await prodProcurar();}catch(e){alert(e.message);}
-}
-async function prodTirar(chave){
+async function prodTirar(chave,id){
   if(!confirm("Deixar de trocar esta grafia pelo nome oficial? O que já foi corrigido fica como está."))return;
-  try{await post("/produtores",{acao:"tirar",chave});await prodProcurar();}catch(e){alert(e.message);}
+  try{await post("/produtores",{acao:"tirar",chave});PROD_RES["po-"+id]={tipo:"ok",html:"Grafia retirada: deixa de ser trocada pelo nome oficial daqui para a frente."};await prodProcurar();}
+  catch(e){PROD_RES["po-"+id]={tipo:"er",html:esc(e.message)};prodPintar();}
+}
+
+// ─ O produtor no nome dos vinhos ─ (db/nomes-manter.sql + a nome_normal)
+// Ligar ou desligar é só a lista: vale logo para os vinhos que vierem. Os
+// que já cá estão mudam de nome depois de se ver quais — a simulação só
+// desse produtor, com um visto por vinho (a mesma nomes_rever dos Nomes).
+function prodPintarNN(bate){
+  const L=(PROD.noNome||[]).filter(m=>bate(m.produtor)),of=k=>(PROD.oficiais||[]).find(p=>p.chave===k);
+  document.getElementById("prod-nn").innerHTML=prodResHTML("nn")+(L.length?L.map(m=>{const p=of(m.chave);
+    // sem nome oficial, os vinhos escritos com a mesma chave
+    const n=p||(PROD.grafias||[]).filter(g=>g.chave===m.chave).reduce((a,g)=>({catalogo:a.catalogo+g.catalogo,garrafeiras:a.garrafeiras+g.garrafeiras}),{catalogo:0,garrafeiras:0});
+    return '<div class="nn-l"><b>'+esc(m.produtor)+'</b><span class="po-n">'+prodN(n)+'</span>'+
+      '<button data-p="'+esc(m.produtor)+'" onclick="prodNoNomeVer(this.dataset.p)">Ver os nomes</button>'+
+      '<button data-p="'+esc(m.produtor)+'" data-k="'+esc(m.chave)+'" onclick="prodNoNomeMudar(this.dataset.p,this.dataset.k,false,\\'nn\\')">Tirar</button></div>';}).join("")
+    :'<p class="nota">'+((PROD.noNome||[]).length?"Nenhum com esta procura.":"Nenhum ainda.")+'</p>');
+}
+function prodNoNome(id,ligar){
+  const p=(PROD.oficiais||[]).find(x=>x.id===id);if(!p)return;
+  return prodNoNomeMudar(p.nome,p.chave,ligar,"po-"+id);
+}
+async function prodNoNomeAcrescentar(){
+  const el=document.getElementById("prod-nn-novo"),nome=el.value.trim();
+  if(!nome)return alert("Escreve (ou escolhe da lista) o produtor.");
+  el.value="";return prodNoNomeMudar(nome,"",true,"nn");
+}
+async function prodNoNomeMudar(nome,chave,ligar,alvo){
+  if(!ligar&&!confirm('Tirar "'+nome+'" da lista? Nos vinhos dele, a regra volta a tirar o produtor da frente do nome quando o que sobra se aguenta sozinho.'))return prodPintar();
+  try{await post("/produtores",ligar?{acao:"no_nome",ligar:true,produtor:nome}:{acao:"no_nome",ligar:false,chave});}
+  catch(e){PROD_RES[alvo]={tipo:"er",html:esc(e.message)};return prodPintar();}
+  PROD_RES[alvo]={prev:{produtor:nome,ligar,estado:"carregar"}};
+  await prodProcurar();
+  return prodPrever(alvo);
+}
+function prodNoNomeVer(nome){PROD_RES.nn={prev:{produtor:nome,so_ver:true,estado:"carregar"}};return prodPrever("nn");}
+async function prodPrever(alvo){
+  const pv=PROD_RES[alvo]&&PROD_RES[alvo].prev;if(!pv)return;
+  pv.estado="carregar";prodPintar();
+  try{const r=await post("/nomes",{produtor:pv.produtor});pv.linhas=(r.linhas||[]).filter(nomesMuda);pv.off=new Set();pv.estado="ok";}
+  catch(e){pv.estado="erro";pv.erro=e.message;}
+  prodPintar();
+}
+function prodPrevHTML(a,pv){
+  const tit=pv.so_ver?'Os vinhos de «'+esc(pv.produtor)+'».':pv.ligar?'«'+esc(pv.produtor)+'» passa a aparecer no nome dos vinhos.':'«'+esc(pv.produtor)+'» saiu da lista.';
+  const caixa=(cls,h)=>'<div class="msg'+cls+'"><div>'+tit+' '+h+'</div>'+prodFechaHTML(a)+'</div>';
+  if(pv.estado==="carregar")return caixa("",'A ver os nomes dos vinhos dele…');
+  if(pv.estado==="erro")return caixa(" er",'Não consegui ver os nomes: '+esc(pv.erro));
+  if(pv.feito)return caixa("",pv.feito);
+  const L=pv.linhas||[];
+  if(!L.length)return caixa("",'Nenhum nome muda'+(pv.ligar||pv.so_ver?' — os vinhos dele já estão como a regra diz.':'.')+(pv.so_ver?'':' Os que vierem já seguem a regra.'));
+  const m=L.filter(x=>!pv.off.has(nomesChave(x))).length;
+  return caixa(" av",(pv.so_ver?'':'Os vinhos que vierem já seguem a regra; ')+'<b>'+L.length+'</b> que já cá estão mudam de nome — desmarca os que não queres:'+
+    '<div class="prev"><table>'+L.map(x=>{const on=!pv.off.has(nomesChave(x));
+      return '<tr'+(on?'':' class="off"')+'><td style="width:28px"><input type="checkbox"'+(on?' checked':'')+' data-a="'+esc(a)+'" data-k="'+esc(nomesChave(x))+'" onchange="prodPrevMarca(this)"></td>'+
+        '<td class="nota" style="white-space:nowrap">'+(x.fonte==="catalogo"?'<a href="#" onclick="abrirVinho('+Number(x.id)+');return false">catálogo #'+esc(x.id)+'</a>'
+          :esc(x.garrafeira||"garrafeira")+(x.dono?' · '+esc(x.dono):''))+'</td>'+
+        '<td><span class="antes">'+esc(x.nome)+'</span><span class="seta">→</span><b>'+esc(x.novo_nome)+'</b>'+
+          (String(x.novo_ano??"")!==String(x.ano??"")?' · '+esc(x.novo_ano):'')+'</td></tr>';}).join("")+'</table></div>'+
+    '<div class="linha"><button class="prim" data-a="'+esc(a)+'" onclick="prodPrevAplicar(this.dataset.a)"'+(m?'':' disabled')+'>Aplicar a '+m+' vinho'+(m===1?'':'s')+'</button>'+
+      '<button data-a="'+esc(a)+'" onclick="prodFechar(this.dataset.a)">Agora não</button></div>'+
+    '<p class="nota">«Agora não» deixa-os como estão: continuam na simulação dos Nomes de vinhos.</p>');
+}
+function prodPrevMarca(el){
+  const pv=PROD_RES[el.dataset.a].prev;if(el.checked)pv.off.delete(el.dataset.k);else pv.off.add(el.dataset.k);
+  el.closest("tr").classList.toggle("off",!el.checked);
+  const m=(pv.linhas||[]).filter(x=>!pv.off.has(nomesChave(x))).length,b=el.closest(".msg").querySelector("button.prim");
+  b.disabled=!m;b.textContent="Aplicar a "+m+" vinho"+(m===1?"":"s");
+}
+async function prodPrevAplicar(a){
+  const pv=PROD_RES[a]&&PROD_RES[a].prev;if(!pv)return;
+  const itens=(pv.linhas||[]).filter(x=>!pv.off.has(nomesChave(x))).map(x=>({fonte:x.fonte,id:x.id}));
+  if(!itens.length)return;
+  try{const r=await post("/nomes",{itens,aplicar:true,produtor:pv.produtor}),d=r.duplicados||[];
+    pv.feito='Nomes mudados: <b>'+r.catalogo+'</b> no catálogo e <b>'+r.garrafeiras+'</b> nas garrafeiras (fica no histórico).'+
+      (d.length?' Ficaram por mexer '+d.length+', porque passavam a ser o mesmo vinho e colheita que outro — junta-os nos <a href="#duplicados">Duplicados</a>: '+d.map(x=>'#'+esc(x.id)+' → #'+esc(x.com)).join(", ")+'.':'');
+    carregarCatalogo();if(d.length)dupProcurar();if(NOMES)nomesProcurar();}
+  catch(e){pv.feito='<span style="color:var(--er)">Não consegui: '+esc(e.message)+'</span>';}
+  prodPintar();
 }
 
 // ── Duplicados (27/09/2026) ──

@@ -3259,7 +3259,7 @@ function wcProdPintar(){
     ${O.map(p=>`<div class="prod-ofi"><strong>${esc(p.nome)}</strong>
       <span class="prod-compl"><input type="text" id="prod-compl-${p.id}" value="${esc(p.nome_completo||'')}" placeholder="nome completo (opcional)">
         <button class="btn-n" onclick="wcProdCompleto(${p.id})">Guardar</button></span>
-      <span class="wc-note">${(p.variantes||[]).map(v=>`${esc(v.escrito)} <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="wcProdTirar('${escJs(v.chave)}');return false">✕</a>`).join(' · ')}</span></div>`).join('')}
+      <span class="wc-note">${(p.variantes||[]).map(v=>`${((v.escritos&&v.escritos.length)?v.escritos:[v.escrito]).map(esc).join(' = ')}${v.oficial?'':` <a href="#" title="Deixar de trocar esta grafia (o que já foi corrigido fica)" onclick="wcProdTirar('${escJs(v.chave)}');return false">✕</a>`}`).join(' · ')}</span></div>`).join('')}
   </details>`:'';
   document.getElementById('prod-lista').innerHTML=grupos+ofi;
 }
@@ -3314,7 +3314,7 @@ async function wcProdTirar(chave){
    que se veem e a quem a regra tirava o produtor da frente. */
 let _wcNomes=null;
 const _wcNomesOff=new Set();
-const WC_NOMES_MUD={ano:'colheita',produtor:'produtor',cor:'cor'};
+const WC_NOMES_MUD={ano:'sai a colheita',produtor:'sai o produtor',produtor_entra:'entra o produtor',cor:'sai a cor'};
 const wcSemAc=t=>String(t==null?'':t).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
 const wcPalavras=id=>wcSemAc((document.getElementById(id)||{}).value).split(/\s+/).filter(Boolean);
 const wcNomesChave=x=>x.fonte+':'+x.id;
@@ -3357,7 +3357,7 @@ function wcNomesPintar(){
     const onde=x.fonte==='catalogo'
       ?`<a href="#" onclick="event.preventDefault();wcVerFicha(${Number(x.id)})">catálogo #${esc(String(x.id))}</a>`
       :`${esc(x.garrafeira||'garrafeira')} · ${esc(x.dono||'')}`;
-    const tags=(x.mudancas||[]).map(k=>`<span class="arr-tag">sai ${esc(WC_NOMES_MUD[k]||k)}</span>`).join('');
+    const tags=(x.mudancas||[]).map(k=>`<span class="arr-tag">${esc(WC_NOMES_MUD[k]||k)}</span>`).join('');
     const av=(x.avisos||[]).map(a=>`<span class="arr-tag aviso">${esc(a)}</span>`).join('');
     const ano=a=>a?` · ${esc(String(a))}`:'';
     return `<label class="rv-linha${m&&!on?' off':''}">
@@ -3402,7 +3402,7 @@ async function wcNomesManter(){
   const itens=lista.map(x=>({fonte:x.fonte,id:x.id}));
   if(!itens.length)return toast('Desmarca os vinhos cujo produtor deve ficar no nome (os que o perdiam da frente).',1);
   const prods=[...new Set(lista.map(x=>x.produtor||''))].filter(Boolean);
-  if(!confirm(`Nos vinhos destes produtores, o produtor fica no nome (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\n\n${prods.join('\n')}`))return;
+  if(!confirm(`Nos vinhos destes produtores, o produtor fica no nome — e entra à frente, se lá não estiver (agora e nos que vierem; a colheita e a cor no fim continuam a sair):\n\n${prods.join('\n')}`))return;
   try{
     const r=await catRpc('produtores_no_nome_marcar',{p_itens:itens});
     toast(`${r.marcados} produtor(es) acrescentado(s) à lista ✓`);
