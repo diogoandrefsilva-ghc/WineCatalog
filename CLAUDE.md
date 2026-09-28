@@ -1729,9 +1729,10 @@ não tinha como se cumprir sem uma segunda lista a rever à mão.
   catálogo; a guarda; a `editar` a chegar às duas garrafeiras; o produtor
   vazio; a `juntar` a renomear sem passar; o nome divergido a escrever na
   linha ligada; os Produtores e os Nomes; a fusão e a separação; e a app
-  (`authenticated`, com RLS) a gravar sem erros. **Por aplicar no Supabase**
-  a 28/09/2026: a ordem (a `juntar` com a marca, a migração 28, este
-  ficheiro) está no `db/README.md` da Garrafeira, "Migração 28".
+  (`authenticated`, com RLS) a gravar sem erros. **Aplicado a 28/09/2026**
+  (a `juntar` com a marca, a migração 28, este ficheiro — a ordem está no
+  `db/README.md` da Garrafeira, "Migração 28"): 238 dos 243 ligados, 2 a
+  outra colheita do mesmo vinho, 23 da wishlist; nada mais mexido.
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
