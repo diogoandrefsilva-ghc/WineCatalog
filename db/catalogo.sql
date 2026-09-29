@@ -755,6 +755,12 @@ AS $$
       -- lá está veio quase sempre de uma procura (o catálogo ou a IA). Vale
       -- 1 em tudo: enche o que está vazio e perde para qualquer coisa a sério.
       WHEN 'garrafeira-desejo'   THEN 1
+      -- As PRENDAS DE ANOS (29/09/2026, a AnniversaryGifts — o trigger
+      -- `eventos_catalogo` de lá): a garrafa foi comprada, mas a ficha que a
+      -- acompanha veio quase toda do catálogo ou de uma pesquisa com IA de
+      -- memória. Vale 1 em tudo, como a wishlist: enche o que está vazio e
+      -- perde para qualquer coisa a sério.
+      WHEN 'prenda'              THEN 1
       ELSE 0
     END
   END;

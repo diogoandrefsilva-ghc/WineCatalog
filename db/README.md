@@ -63,6 +63,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
     (28/09/2026: a `forca` do catalogo.sql e a `quem_escreve` do historico.sql ganharam a origem
      `garrafeira-desejo` — a wishlist, força 1, "uma garrafeira" no histórico. Correm ANTES da
      migracao-desejos-catalogo.sql (29) do repo Garrafeira; sem elas a força é 0 e a juntar não escreve)
+    (29/09/2026: e a origem `prenda` — as prendas de anos da AnniversaryGifts, força 1, "uma prenda
+     de anos" no histórico. Correm ANTES da secção "O VINHO VAI PARA O CATÁLOGO" do db/schema.sql do
+     repo AnniversaryGifts; sem elas a força é 0 e a juntar não escreve)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

@@ -154,7 +154,8 @@ Cada uma custou um erro.
    e nem o vinho mudou. O que atravessa é o `preco_medio`.
 5. **A força é da ORIGEM e do CAMPO** (3 garrafeira-no-rótulo e
    ws-verificacao · 2 pesquisas e garrafeira-nos-voláteis · 1
-   garrafeira-bruto e garrafeira-desejo, a wishlist · 0 o resto). A segunda metade é o que impede o
+   garrafeira-bruto, garrafeira-desejo (a wishlist) e prenda (as prendas de
+   anos) · 0 o resto). A segunda metade é o que impede o
    catálogo de tomar por facto tudo o que alguém escreveu à mão: durante
    semanas os 3106 campos estavam TODOS a 3, nenhum tinha entrado por uma
    pesquisa, e nenhum podia, porque 3 tapa 2.
@@ -1839,6 +1840,45 @@ não tinha como se cumprir sem uma segunda lista a rever à mão.
   (a `juntar` com a marca, a migração 28, este ficheiro — a ordem está no
   `db/README.md` da Garrafeira, "Migração 28"): 238 dos 243 ligados, 2 a
   outra colheita do mesmo vinho, 23 da wishlist; nada mais mexido.
+
+### As prendas de anos alimentam o catálogo (29/09/2026, o dono das apps)
+"Os vinhos pesquisados/gravados na AnniversaryGifts não estão a ficar no
+Catálogo — quero que fiquem." Não ficavam: a app das prendas só LIA o
+catálogo (a `colheitas`/`comparar` do Procurar), e a pesquisa com IA de uma
+prenda morria na prenda. Agora um trigger lá (`anniversarygifts.eventos_catalogo`
+→ `catalogar_vinho`, no `db/schema.sql` do repo AnniversaryGifts) passa a
+ficha de cada prenda GRAVADA pela `juntar`, como a Garrafeira:
+- **origem `prenda`, força 1 em tudo** (a `forca()` daqui; "uma prenda de
+  anos" na `quem_escreve`, nunca quem gravou) — a ficha de uma prenda veio
+  quase sempre do próprio catálogo ou de uma pesquisa de memória: enche o que
+  falta e perde para qualquer coisa a sério. `og-fraca` na ficha;
+- **só depois da surpresa** — o admin do catálogo também faz anos, e um vinho
+  novo aqui dias antes era a prenda à vista: uma prenda por entregar cujo dia
+  não passou fica pendente, e vai quando é entregue ou, pelo `pg_cron`
+  (`anniversarygifts-catalogo`, diário), no dia a seguir aos anos;
+- **só o que é do vinho** (invariante 1): nem a loja, nem o preço pago, nem
+  as notas. O link do Vivino só `/<nome>/w/<nº>` (a regra da `vivinoLink`,
+  aqui em SQL), castas sem "Vinhas Velhas", o produtor sem o parêntesis, e a
+  `vivino_nota` da prenda entra como `vivino_nota_global` (a `prendas-vinho`
+  pede a da página do vinho, sem ano);
+- **a ligação manda** (`vinho.catalogo_id`, o candidato escolhido no
+  Procurar): escreve-se na linha ligada com o nome dela; noutra colheita é a
+  mesma casa com a colheita da prenda, sem nada da `da_colheita`; mudada a
+  identidade com a mesma ligação, ela sai. O id fica na prenda (é também o que
+  as marcas 🎁 da WineSelection usam);
+- só uma prenda GRAVADA vai, nunca uma pesquisa solta (o "Cristo Vinhas
+  Velhas"), e um erro nunca deita a gravação abaixo (WARNING, e o cron tenta
+  no dia seguinte).
+As 8 prendas que já existiam foram registadas por esta porta a 29/09/2026
+(quem: "registo das prendas de anos (admin)"): 3 ligadas a linhas que já cá
+estavam (#111 Pacto do Diabo, #12 Crasto Reserva, #277 Inevitável — sem mudar
+um campo, o que lá estava tinha mais força) e 5 linhas novas: #304 "Tapada de
+Coelheiros" 2020 (a #279 é a mesma casa sem ano), #305 "Chocapalha Vinha Mãe"
+2019, #306 "Marquês de Marialva Grande Reserva" 2013 (a prenda estava ligada
+à #158, de 2017: foram só os factos do vinho), #307 "Tricot" 2022
+(Esteban & Tavares) e #308 "Vinha do Jeremias Syrah" 2022. Nenhuma tem ainda
+link do Vivino (os das prendas eram de memória e não abriam): é trabalho
+para o painel do PC.
 
 ## Login e permissões
 - `SB_URL`/`SB_KEY` são os do projeto partilhado. **`Accept-Profile`/
