@@ -411,15 +411,18 @@ ecrã a dizer-lhe que fica pública. Só o admin escreve (policies em
 (✏️), e a foto lida em "📷 Ler o rótulo" fica também como imagem se ainda
 não houver nenhuma.
 
-**A imagem vê-se INTEIRA em todas as molduras** (a linha, a grelha, a capa
-da ficha, a pré-visualização do Editar): `object-fit:contain`, com
-`mix-blend-mode:multiply` para o fundo branco de um JPG se fundir com o
-papel. Foi `cover` até 29/09/2026 e cortava: as garrafas do Vivino e de
-muitas lojas vêm recortadas rente ao vidro, muito mais altas do que a
-moldura, e sobrava o meio delas (o ombro e meio rótulo), ao lado de outras
-com margem que apareciam inteiras — parecia imagem mal carregada. A mesma
-correção da Garrafeira; lá só a fotografia PRIVADA de quem tem a garrafa
-continua a encher a moldura, e aqui não há nenhuma.
+**Como a imagem cabe na moldura depende da FORMA dela** (a linha, a grelha,
+a capa da ficha), e decide-o o `wcFotoCarregou(img)` quando ela chega — a
+mesma regra do `fotoCarregou` da Garrafeira, e mexer numa é mexer na outra:
+mais **larga** do que a moldura (a foto quadrada da loja com a garrafa ao
+meio, a de um rótulo) enche a altura e perde só os lados (`cover`, como
+sempre foi); mais **alta** (`.alta`: mais estreita do que 3:5 ou do que a
+moldura) — a garrafa recortada rente ao vidro do Vivino e de muitas lojas —
+vê-se inteira (`contain`, com `multiply` para o fundo branco se fundir com o
+papel). Foram duas voltas (29/09/2026): `cover` para todas cortava as
+garrafas altas (ficava o ombro e meio rótulo — parecia imagem mal
+carregada); `contain` para todas encolhia as quadradas. A pré-visualização
+do Editar é a exceção: mostra sempre a imagem inteira.
 
 **Procurar informação** (`winecatalog.pesquisa_criar` + a Edge Function
 `catalogo-info.ts`) manda uma pesquisa Google a sério para a linha aberta,

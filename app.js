@@ -757,13 +757,25 @@ function wcPintarLista(){
     : _wcLinhas.map(wcLinhaHTML).join('');
 }
 
+// A foto de uma moldura carregou: a garrafa desenhada sai de trás, e decide-se
+// como a foto cabe lá dentro pela FORMA dela — ver o `.alta` no style.css.
+// Mais estreita do que 3:5, ou do que a moldura, é a garrafa recortada rente
+// ao vidro → inteira (cortar-lhe os lados era cortar o vidro). Mais larga — a
+// foto quadrada da loja, a de um rótulo — enche a altura. A mesma regra do
+// `fotoCarregou` da Garrafeira: mexer numa é mexer na outra.
+function wcFotoCarregou(img){
+  const p=img.parentNode;if(!p)return;
+  p.classList.add('com-foto');
+  const w=img.naturalWidth,h=img.naturalHeight,bw=img.clientWidth,bh=img.clientHeight;
+  if(w&&h)img.classList.toggle('alta',w/h<Math.max(bw&&bh?bw/bh:0,.6));
+}
 /* A garrafa da linha: a FOTOGRAFIA quando o catálogo já a tem, e a mesma
    garrafa desenhada da ficha quando não tem — nunca um quadrado vazio. A
    cor do desenho sai do `tipo`, que é o que o `resumo_linha` já devolve. */
 function wcMiniGarrafa(v,cls){
   const img=String(v.imagem||'').trim();
   return `<div class="${cls}">${wcGarrafaSVG(v.tipo,v.ano)}${
-    img?`<img src="${esc(img)}" alt="" loading="lazy" onload="this.parentNode.classList.add('com-foto')" onerror="this.remove()">`:''}</div>`;
+    img?`<img src="${esc(img)}" alt="" loading="lazy" onload="wcFotoCarregou(this)" onerror="this.remove()">`:''}</div>`;
 }
 function wcPrecoTxt(p){
   const n=Number(p);
@@ -1008,7 +1020,7 @@ function wcFichaHTML(v){
     <button class="mx" onclick="wcFecharFicha()" aria-label="Fechar">✕</button>
     <div class="mhero-in">
       <div class="mhero-g${isAdmin()?' mhero-edit':''}"${isAdmin()?` onclick="wcAbrirEditar()" title="Mudar a imagem"`:''}>
-        ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onload="this.parentNode.classList.add('com-foto')" onerror="this.remove()">`:''}
+        ${wcGarrafaSVG(tipo,v.ano)}${img?`<img src="${esc(img)}" alt="" onload="wcFotoCarregou(this)" onerror="this.remove()">`:''}
         ${isAdmin()?'<i class="mhero-lapis">✏️</i>':''}
       </div>
       <div class="mhero-tx">
