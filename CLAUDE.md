@@ -2186,6 +2186,26 @@ de cada app antes de assumir que a que está calada está bem.**
   melhor modelo**, é uma constatação sobre qual responde; se o flash voltar
   a escrever, isto volta atrás, e o `finishReason` no log é o que o dirá.
 
+- **As aspas curvas que partiam o JSON (29/09/2026).** O Piano Reserva
+  Touriga Nacional, pesquisado só na página do produtor: a página abriu e
+  leu-se bem (castas, notas de prova, harmonização), o modelo escreveu 499
+  tokens — e a pesquisa fechou "não trouxe nada de novo". A página diz
+  "própria do nosso “terroir”", o modelo copiou a frase, e o `extrairJson`
+  trocava TODAS as aspas curvas por retas antes de ler: dentro de uma string
+  uma aspa reta fecha-a, e o JSON (válido) partia. O comentário por cima
+  dizia o contrário ("fica dentro da MESMA string"). A troca existia para a
+  resposta COLADA com as aspas da estrutura todas curvas; agora lê-se primeiro
+  o texto tal como veio, e só se não se ler é que se trocam (`lerJson`).
+  Estava igual na `vinho-info` e no `app.js` da Garrafeira (lá dava "resposta
+  ilegível"), e o lote daqui também passava por ela. E o segundo defeito,
+  que a tornou invisível: um texto que não se lê como JSON fechava como
+  `concluido` com 0 campos — a mesma confusão do 200 vazio. Agora é erro
+  (`json_ilegivel`, com o princípio do texto no `sync_log`). A
+  `catalogo-foto` e a `importar-vinhos` não trocam aspas nenhumas; as da
+  WineSelection e da AnniversaryGifts ficaram por ver. **Uma função que
+  "limpe" o texto do modelo antes do `JSON.parse` tenta primeiro o texto tal
+  como veio.**
+
 - **A primeira pesquisa a correr até ao fim veio com ZERO fontes.** Depois
   da correção acima, a pesquisa do Meandro deu um campo (o `vivino_url`) —
   e `groundingChunks` vazio. Se o modelo respondeu de memória, aquilo entrou

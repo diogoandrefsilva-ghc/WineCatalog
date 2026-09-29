@@ -158,19 +158,23 @@ function daLista(v: unknown, lista: string[]): string {
   const achado = lista.find((x) => x && x.toLowerCase() === t.toLowerCase());
   return achado ?? "";
 }
-/* Aspas tipográficas (“ ” ‘ ’) não são JSON válido, e um chat-UI troca-as
-   por conta própria ao mostrar texto normal (não costuma acontecer dentro
-   de blocos de código) — apanhado com uma resposta manual colada com
-   TODAS as aspas assim, que o JSON.parse recusava logo na primeira
-   chave. Trocar aqui por retas resolve o caso automático e o manual de
-   uma vez, sem arriscar strings verdadeiras: uma aspa tipográfica dentro
-   de uma frase vira reta na mesma, mas fica dentro da MESMA string — só
-   muda um caracter, nunca a estrutura. */
-function normalizarAspas(s: string): string {
-  return s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-}
-function extrairJson(txt: string): any | null {
-  const s = normalizarAspas(String(txt || "").trim());
+/* Aspas tipográficas (“ ” ‘ ’) não são JSON válido A FAZER DE ESTRUTURA, e
+   um chat-UI troca-as por conta própria ao mostrar texto normal (não costuma
+   acontecer dentro de blocos de código) — apanhado com uma resposta manual
+   colada com TODAS as aspas assim, que o JSON.parse recusava logo na
+   primeira chave.
+   MAS DENTRO DE UMA STRING SÃO TEXTO VÁLIDO, e trocá-las aí PARTE o JSON:
+   uma aspa reta a meio de uma frase fecha a string. Este comentário dizia o
+   contrário ("fica dentro da MESMA string"), e desde 26/09/2026 todas as
+   respostas com “…” no texto se perderam — o Piano Reserva Touriga Nacional
+   (29/09/2026): a página do produtor diz "própria do nosso “terroir”", o
+   modelo copiou a frase para as notas de prova, e a pesquisa fechou como
+   "não trouxe nada de novo" com a resposta inteira deitada fora.
+   Por isso o texto lê-se primeiro TAL COMO VEIO, e só se não se ler é que
+   se trocam as aspas duplas (o caso da resposta colada). As simples (‘ ’)
+   trocam-se sempre: nunca são estrutura em JSON, e "d’Honor" fica
+   "d'Honor" como sempre ficou. */
+function lerJson(s: string): any | null {
   if (!s) return null;
   try { return JSON.parse(s); } catch (_) { /* segue */ }
   const semFences = s.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -193,6 +197,10 @@ function extrairJson(txt: string): any | null {
     }
   }
   return null;
+}
+function extrairJson(txt: string): any | null {
+  const s = String(txt || "").trim().replace(/[‘’]/g, "'");
+  return lerJson(s) ?? lerJson(s.replace(/[“”]/g, '"'));
 }
 
 /* Tudo o que o modelo devolve passa por aqui antes de chegar perto da
@@ -1354,6 +1362,10 @@ async function processarPesquisa(
     let paginasRes: PaginaRes[] = [];
     let paginasLidas = 0;       // quantas páginas se abriram e leram
     let leuEvidencia = false;   // houve a fase em que o Gemini só lê
+    // O modelo ESCREVEU e o texto não se leu como JSON (o princípio dele, para
+    // o registo), e se alguma resposta se leu — ver o fim do `else` abaixo.
+    let ilegivel = "";
+    let leuAlguma = false;
 
     if (respostaManual !== null) {
       parsed = extrairJson(respostaManual);
@@ -1525,7 +1537,10 @@ async function processarPesquisa(
       if (evidencia) {
         leuEvidencia = true;
         r = await perguntar(textoDe(camposSemJanela(campos, antes.ano), evidencia), false);
-        if ("gd" in r) { parsed = extrairJson(r.bruto); pesquisaWeb = true; }
+        if ("gd" in r) {
+          parsed = extrairJson(r.bruto); pesquisaWeb = true;
+          if (parsed) leuAlguma = true; else ilegivel = r.bruto;
+        }
       }
       // O grounding: pelo que o Serper não trouxe, ou por tudo sem Serper.
       // Nunca com o "só estes sites": o que eles não disserem fica vazio.
@@ -1536,6 +1551,7 @@ async function processarPesquisa(
         const r2 = await perguntar(textoDe(parsed ? faltam : camposSemJanela(campos, antes.ano), ""), true);
         if ("gd" in r2) {
           const p2 = extrairJson(r2.bruto);
+          if (p2) leuAlguma = true; else ilegivel = ilegivel || r2.bruto;
           const fg = fontesGrounding(r2.gd);
           grounding = resumoGrounding(r2.gd);
           console.log("CATALOGO-INFO grounding:", JSON.stringify(grounding));
@@ -1578,6 +1594,22 @@ async function processarPesquisa(
           erro: vazioMotivo
             ? `o modelo respondeu sem escrever nada (${vazioMotivo}) — gastou o orçamento a pensar. Tenta outra vez, ou usa a pesquisa manual.`
             : "não consegui falar com o Gemini — tenta outra vez",
+        });
+        return;
+      }
+      /* O modelo ESCREVEU e nada do que escreveu se leu como JSON. Não é "não
+         trouxe nada de novo" — é a mesma confusão do 200 vazio (ver o
+         CLAUDE.md, "O 200 vazio"): não se ter lido a resposta e não haver
+         nada a dizer sobre o vinho são coisas diferentes. O princípio do
+         texto fica no registo, que é o que diz porquê. */
+      if (!leuAlguma && ilegivel) {
+        await registar("erro", {
+          passo: "json_ilegivel", modelo: model, vinho_id: vinhoId,
+          resposta: ilegivel.slice(0, 1500), ...(usage ? { usageMetadata: usage } : {}),
+        }, quem);
+        await fechar(pesquisaId, {
+          estado: "erro",
+          erro: "o modelo respondeu, mas não consegui ler a resposta — tenta outra vez (o que ele escreveu ficou no registo).",
         });
         return;
       }
@@ -1631,6 +1663,8 @@ async function processarPesquisa(
       ...(sites.length ? { sites, ...(confianca ? { confianca } : {}) } : {}),
       ...(paginasRes.length ? { paginas: paginasRes } : {}),
       ...(soSites ? { so_sites: true, ...(semFonte.length ? { sem_fonte: semFonte } : {}) } : {}),
+      // Uma das duas fases (páginas/Serper ou grounding) não se leu e a outra sim.
+      ...(ilegivel ? { resposta_ilegivel: ilegivel.slice(0, 600) } : {}),
     };
     const sitesRes = sites.length
       ? { sites, confianca, ...(paginasRes.length ? { paginas: paginasRes } : {}),
