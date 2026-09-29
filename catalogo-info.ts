@@ -1841,11 +1841,30 @@ async function fetchCurto(url: string, init: RequestInit, signal: AbortSignal): 
   }
 }
 
+/* O `role` de dentro de um JWT (a parte do meio, base64url). A assinatura já
+   foi conferida à porta (verify_jwt), por isso ler o papel chega — a mesma
+   função do `garrafeira-push` da Garrafeira. */
+function papelDoToken(tok: string): string | null {
+  try {
+    const p = tok.split(".")[1] || "";
+    const b = atob(p.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - (p.length % 4)) % 4));
+    return (JSON.parse(b) as { role?: string }).role ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /* Quem é, e se manda aqui. O `sou_admin()` corre com o JWT DA PESSOA (não
    com a service role): quem decide quem é o admin é a base, e é a mesma
-   resposta que o ecrã usa para mostrar o botão. */
-async function admin(auth: string, signal: AbortSignal): Promise<{ ok: boolean; email: string | null }> {
+   resposta que o ecrã usa para mostrar o botão.
+   A EXCEÇÃO é o painel do PC (a "Pesquisa com IA", 29/09/2026): é o admin,
+   no computador dele, com a chave do batch — a service_role. Pelo PAPEL do
+   token e não pela chave letra a letra (a do ambiente das funções e a do
+   batch não têm de ser a mesma cadeia — a lição do `garrafeira-push`). */
+async function admin(auth: string, signal: AbortSignal): Promise<{ ok: boolean; email: string | null; painel?: boolean }> {
   if (!auth) return { ok: false, email: null };
+  const tok = auth.replace(/^Bearer\s+/i, "");
+  if (tok === SB_SRV || papelDoToken(tok) === "service_role") return { ok: true, email: null, painel: true };
   const u = await fetchCurto(`${SB_URL}/auth/v1/user`, {
     headers: { apikey: SB_SRV, Authorization: auth },
   }, signal);
@@ -1889,7 +1908,7 @@ Deno.serve(async (req) => {
     if (Number.isFinite(pid)) pidAberto = pid;
 
     const a = await admin(authHeader, ctrl.signal);
-    quem = a.email;
+    quem = a.painel ? "painel do PC (admin)" : a.email;
     if (!a.ok) {
       await registar("erro", { passo: "autorizacao" }, quem);
       return json({ error: "só o admin do catálogo pode mandar pesquisar" }, 403);
@@ -1961,7 +1980,9 @@ Deno.serve(async (req) => {
     if (row.estado !== "pendente") {
       return json({ estado: row.estado }, 200);
     }
-    if (String(row.quem ?? "").toLowerCase() !== quem) {
+    // O painel (service_role) pesquisa em nome do admin: a linha fica com o
+    // email dele (`pesquisa_criar`), e não há outro a quem pertencer.
+    if (!a.painel && String(row.quem ?? "").toLowerCase() !== quem) {
       await registar("erro", { passo: "pesquisa_de_outro", pesquisaId: pid }, quem);
       return json({ error: "essa pesquisa não é tua" }, 403);
     }

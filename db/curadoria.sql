@@ -429,7 +429,11 @@ DECLARE
   v_id  bigint;
   v_ja  bigint;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  -- O painel do PC (service_role) também manda pesquisar — a "Pesquisa com
+  -- IA" da escolha dos vinhos (29/09/2026). É o admin, no computador dele,
+  -- com a chave do batch; a pesquisa fica em nome do admin (abaixo), e por
+  -- isso também aparece "por rever" na ficha da app.
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode mandar pesquisar.';
   END IF;
   SELECT * INTO r FROM winecatalog.vinhos WHERE id = p_vinho_id;
@@ -446,7 +450,9 @@ BEGIN
   END IF;
 
   INSERT INTO winecatalog.pesquisas (vinho_id, quem)
-  VALUES (r.id, COALESCE(auth.email(), ''))
+  VALUES (r.id, COALESCE(NULLIF(auth.email(), ''),
+                         CASE WHEN COALESCE(auth.role(), '') = 'service_role' THEN winecatalog.admin_email() END,
+                         ''))
   RETURNING id INTO v_id;
 
   RETURN jsonb_build_object('id', v_id, 'estado', 'pendente',
@@ -525,7 +531,9 @@ DECLARE
   v_prod_ok  boolean := false;
   v_prod_err text;
 BEGIN
-  IF NOT winecatalog.sou_admin() THEN
+  -- O painel do PC (service_role) também guarda — pela `painel_pesquisa_aplicar`
+  -- (db/painel.sql), que põe o "quem" do histórico.
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
     RAISE EXCEPTION 'Só o admin do catálogo pode guardar uma pesquisa.';
   END IF;
   SELECT * INTO p FROM winecatalog.pesquisas WHERE id = p_id FOR UPDATE;
@@ -613,7 +621,8 @@ BEGIN
 
   IF jsonb_array_length(v_entrou) > 0 OR v_prod_ok THEN
     INSERT INTO winecatalog.sync_log (origem, acao, estado, quem, detalhe)
-    VALUES ('app', 'pesquisa_aplicar', 'ok', auth.email(), jsonb_build_object(
+    VALUES ('app', 'pesquisa_aplicar', 'ok',
+      COALESCE(auth.email(), NULLIF(current_setting('winecatalog.quem', true), '')), jsonb_build_object(
       'vinho_id', r.id, 'pesquisa_id', p.id, 'entrou', v_entrou,
       'produtor', v_prod_ok, 'mudaram', v_mudaram));
   END IF;
@@ -1018,6 +1027,8 @@ REVOKE ALL ON FUNCTION winecatalog.resolver_reporte(bigint, text, text) FROM PUB
 GRANT EXECUTE ON FUNCTION winecatalog.editar(bigint, jsonb, text, text, integer, boolean) TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.criar(text, text, integer, jsonb)   TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_criar(bigint)          TO authenticated;
+-- O painel do PC chama-a diretamente (a "Pesquisa com IA", 29/09/2026).
+GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_criar(bigint)          TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_ver(bigint)            TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_aplicar(bigint, text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION winecatalog.pesquisa_por_rever(bigint)      TO authenticated;

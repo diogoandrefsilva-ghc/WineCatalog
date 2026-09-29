@@ -182,6 +182,66 @@ BEGIN
 END;
 $$;
 
+-- ---------------------------------------------------------------------
+-- A PESQUISA COM IA NO PAINEL (29/09/2026, o dono das apps: "manter o que
+-- existe e chamar-lhe «Pesquisa sem IA às lojas principais e Vivino», e um
+-- segundo tipo, «Pesquisa com IA», com até 5 sites por vinho, só nesses
+-- sites ou a completar com a pesquisa do Gemini"). Não é um caminho novo: o
+-- painel cria a pesquisa (`pesquisa_criar`), chama a MESMA Edge Function
+-- `catalogo-info` da app (que o aceita pelo papel do token) e grava pela
+-- MESMA `pesquisa_aplicar` — os valores vêm da linha da pesquisa, nunca do
+-- browser, e o que o admin não marcar não entra. Duas portas pequenas:
+--   · `painel_pesquisas_por_rever` — as pesquisas por rever, a última de
+--     cada vinho (a regra da `pesquisa_por_rever` da ficha: concluída, com
+--     propostas, por guardar, até 7 dias), com o vinho de agora ao lado;
+--   · `painel_pesquisa_aplicar` — a `pesquisa_aplicar` com o "quem" do
+--     histórico posto. `p_campos` vazio descarta, como na app.
+-- Uma pesquisa feita no painel também aparece "por rever" na ficha da app
+-- (fica em nome do admin), e vice-versa: é a mesma linha.
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.painel_pesquisas_por_rever()
+  RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o painel do PC (service_role) chama isto.';
+  END IF;
+  RETURN COALESCE((
+    SELECT jsonb_agg(jsonb_build_object(
+             'id', u.id, 'vinhoId', u.vinho_id, 'fechadoEm', u.fechado_em,
+             'nome', v.nome, 'produtor', v.produtor, 'ano', v.ano, 'cor', v.cor,
+             'resultado', u.resultado)
+           ORDER BY u.fechado_em DESC)
+      FROM (SELECT DISTINCT ON (p.vinho_id) p.*
+              FROM winecatalog.pesquisas p
+             ORDER BY p.vinho_id, p.criado_em DESC) u
+      JOIN winecatalog.vinhos v ON v.id = u.vinho_id
+     WHERE u.estado = 'concluido'
+       AND u.resultado ->> 'rever' = 'true'
+       AND NOT u.resultado ? 'aplicadoEm'
+       AND jsonb_array_length(COALESCE(u.resultado -> 'propostas', '[]'::jsonb)) > 0
+       AND u.fechado_em > now() - interval '7 days'
+       AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = u.vinho_id)
+  ), '[]'::jsonb);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION winecatalog.painel_pesquisa_aplicar(
+  p_id bigint, p_campos text[], p_quem text DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+BEGIN
+  IF COALESCE(auth.role(), '') <> 'service_role' THEN
+    RAISE EXCEPTION 'Só o painel do PC (service_role) chama isto.';
+  END IF;
+  PERFORM set_config('winecatalog.quem',
+    COALESCE(NULLIF(btrim(COALESCE(p_quem, '')), ''), 'painel do PC (admin)'), true);
+  RETURN winecatalog.pesquisa_aplicar(p_id, COALESCE(p_campos, '{}'::text[]));
+END;
+$$;
+
 -- Cada função nova nasce com EXECUTE para PUBLIC; tira-se sempre.
 REVOKE ALL ON FUNCTION winecatalog.painel_autor(text, text, timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION winecatalog.painel_vinho(bigint) FROM PUBLIC, anon, authenticated;
@@ -189,6 +249,10 @@ REVOKE ALL ON FUNCTION winecatalog.painel_editar(bigint, jsonb, text, text, inte
 GRANT EXECUTE ON FUNCTION winecatalog.painel_autor(text, text, timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.painel_vinho(bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION winecatalog.painel_editar(bigint, jsonb, text, text, integer, boolean, text) TO service_role;
+REVOKE ALL ON FUNCTION winecatalog.painel_pesquisas_por_rever() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION winecatalog.painel_pesquisa_aplicar(bigint, text[], text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION winecatalog.painel_pesquisas_por_rever() TO service_role;
+GRANT EXECUTE ON FUNCTION winecatalog.painel_pesquisa_aplicar(bigint, text[], text) TO service_role;
 
 -- Confirmar (deve dar só postgres e service_role):
 -- SELECT p.proname, r.rolname FROM pg_proc p

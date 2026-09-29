@@ -103,6 +103,30 @@ página não o perde).
        `batch/simulacoes/` (fica só no teu computador);
      - **Enriquecer** — grava logo no catálogo.
 
+     Isto é a **Pesquisa sem IA — lojas principais e Vivino** (o primeiro
+     botão do passo 3). O segundo é a **Pesquisa com IA — nos sites que
+     indicares**:
+     - para cada vinho escolhido, **até 5 sites**, separados por vírgula ou
+       espaço: o **link da página do vinho** (lê-se essa página) ou só o
+       **site** (ex.: `garrafeiranacional.com` — procura-se o vinho lá
+       dentro). Os sites de cada vinho ficam guardados no browser;
+     - **Só nos sites que indiquei** — a IA só usa o que esses sites dizem
+       (um vinho sem sites é saltado); ou **Nos sites, e completar com a IA
+       (pesquisa Google)** — além dos sites, uma pesquisa Google geral e uma
+       ao Vivino, e no fim a pesquisa do Gemini pelo que ainda faltar (um
+       vinho sem sites faz só isto);
+     - **🔎 Pesquisar com IA** corre um vinho de cada vez (10–40 s cada,
+       cêntimos por vinho — é a mesma pesquisa do "Procurar informação" da
+       app). **Nada é gravado**: as propostas ficam no cartão **Pesquisas
+       com IA por rever**, campo a campo (o que está → o que se encontrou, e
+       de que página veio). Vêm marcados só os campos vazios; **Guardar os
+       marcados** grava esses (ou **Guardar os marcados de todos**), e
+       **Descartar** põe a pesquisa de lado. As mesmas pesquisas aparecem na
+       ficha do vinho na app, e as que se fizeram na app aparecem aqui.
+     - A `SUPABASE_SERVICE_ROLE_KEY` do `batch/.env` tem de ser a chave
+       **service_role em JWT** (começa por `eyJ`) — é a que a função da
+       pesquisa aceita.
+
   A lista mostra a **miniatura da imagem** de cada vinho (e de onde veio:
   Vivino, loja, vossa, outro site; "✕" se já não abre) e **os preços de
   cada sítio** (GN, Granvine, Vinha.pt, Vivino — o que é o preço de

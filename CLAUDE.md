@@ -54,7 +54,7 @@ tudo o que aqui está foi pago com um erro.
   chave e a `identidade`: a versão que vale da chave, da `achar`, da
   `juntar`, da `procurar`… — as de `catalogo.sql`/`curadoria.sql` estão
   marcadas como substituídas) → `nomes-manter.sql` (os produtores que ficam no nome) → `painel.sql`
-  (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor`, só `service_role`) →
+  (o back-office do painel do PC: `painel_vinho`/`painel_editar`/`painel_autor` e as pesquisas com IA, `painel_pesquisas_por_rever`/`painel_pesquisa_aplicar`, só `service_role`) →
   `garrafeiras-rever.sql` (a porta da app para as garrafeiras × o catálogo) →
   `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) →
   `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) →
@@ -1228,7 +1228,8 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
   mostram só os escolhidos, para se ver o que vai correr — ou "Marcar todos
   os que passam") e **3 Correr** (onde procurar — um visto por sítio —, o
   que ler, o "trocar a imagem" e UM Simular/Enriquecer; corre pela ordem da
-  lista). "Alterado" é o mais
+  lista — é a **Pesquisa sem IA**; a **Pesquisa com IA** é a outra metade do
+  passo 3, ver a seguir). "Alterado" é o mais
   recente do `atualizado_em` e do histórico (`alteracoes`): nenhum dos dois
   apanha tudo — há escritas que não mexem no `atualizado_em`, e o histórico
   só começa a 25/09/2026. A `vivino_catalogo` leva-o (`alterado`) com o
@@ -1259,6 +1260,36 @@ Os Nomes e os Produtores só leem a BD e carregam sozinhos da primeira vez
 que se abrem; os Duplicados carregam ao abrir o painel (o número no
 separador é o alerta). Enquanto o script corre, só os botões que o põem a correr
 (`button.corre`) ficam desligados, e o separador mostra ⏳.
+
+**Pesquisa sem IA e Pesquisa com IA** (29/09/2026, o dono das apps). O passo
+3 da Informação de vinhos tem dois tipos, lado a lado:
+- **"Pesquisa sem IA — lojas principais e Vivino"** — o que já existia (o
+  script, regras de nome, sem Gemini nenhum), com o Simular/Enriquecer;
+- **"Pesquisa com IA — nos sites que indicares"** — para cada vinho
+  escolhido, **até 5 sites** (o link da página do vinho, que se abre e lê, ou
+  só o domínio, onde se procura), e UMA escolha para todos: **"Só nos sites
+  que indiquei"** (`soSites` — um vinho sem sites é saltado) ou **"Nos sites,
+  e completar com a IA (pesquisa Google) o que lá não estiver"** (o pacote
+  completo da `catalogo-info`: além dos sites, a consulta geral e a do Vivino
+  pelo Serper e, no fim, o grounding pelo que faltar; um vinho sem sites faz
+  só isto). Não é pesquisa nova: é a MESMA `catalogo-info` do "Procurar
+  informação" da app, com `rever:true`, um vinho de cada vez
+  (`correrIA`/`iaUmVinho`: `pesquisa_criar` → a função → espera pela linha de
+  `pesquisas`), com a barra e o ⏹ Parar de sempre. **Nada é gravado**: cada
+  pesquisa fica por rever no cartão **"Pesquisas com IA por rever"**
+  (`painel_pesquisas_por_rever` — as mesmas que a ficha da app mostra como
+  "Há uma pesquisa por rever", as de lá também), campo a campo, *o que está →
+  o que se encontrou*, com a página de onde veio; vêm marcados só os campos
+  vazios, e **Guardar os marcados** passa pela `painel_pesquisa_aplicar` →
+  a MESMA `pesquisa_aplicar` da app (os valores vêm da linha da pesquisa,
+  "painel do PC (admin)" no histórico). Os sites de cada vinho ficam guardados
+  no browser. Para isto, três portas aceitam a `service_role` além do admin:
+  a `pesquisa_criar` (a linha fica com o email do admin), a `pesquisa_aplicar`
+  e a própria `catalogo-info`, que confere o PAPEL do token (`papelDoToken`,
+  a lição do `garrafeira-push`) — e por isso a `SUPABASE_SERVICE_ROLE_KEY`
+  do `batch/.env` tem de ser a chave em JWT (as `sb_secret_…` não passam no
+  `verify_jwt`; o painel di-lo se a função responder 401). Custa o que custa
+  uma pesquisa na app: cêntimos por vinho, 10–40 s cada.
 
 **A ficha de um vinho no painel — o back-office** (27/09/2026, pedido do
 dono: "estamos a tentar fazer disto o nosso back-office"). O nome de um vinho
