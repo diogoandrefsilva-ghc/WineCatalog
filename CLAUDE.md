@@ -411,6 +411,16 @@ ecrã a dizer-lhe que fica pública. Só o admin escreve (policies em
 (✏️), e a foto lida em "📷 Ler o rótulo" fica também como imagem se ainda
 não houver nenhuma.
 
+**A imagem vê-se INTEIRA em todas as molduras** (a linha, a grelha, a capa
+da ficha, a pré-visualização do Editar): `object-fit:contain`, com
+`mix-blend-mode:multiply` para o fundo branco de um JPG se fundir com o
+papel. Foi `cover` até 29/09/2026 e cortava: as garrafas do Vivino e de
+muitas lojas vêm recortadas rente ao vidro, muito mais altas do que a
+moldura, e sobrava o meio delas (o ombro e meio rótulo), ao lado de outras
+com margem que apareciam inteiras — parecia imagem mal carregada. A mesma
+correção da Garrafeira; lá só a fotografia PRIVADA de quem tem a garrafa
+continua a encher a moldura, e aqui não há nenhuma.
+
 **Procurar informação** (`winecatalog.pesquisa_criar` + a Edge Function
 `catalogo-info.ts`) manda uma pesquisa Google a sério para a linha aberta,
 com o mesmo desenho assíncrono da `sugerir-vinho`/`verificar-vinhos`

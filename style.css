@@ -313,9 +313,11 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   justify-content:center;overflow:hidden;border-radius:8px;
   background:linear-gradient(160deg,#fff,var(--bg));border:1px solid var(--bo)}
 .cat-g svg{width:100%;height:auto;max-height:54px;padding:3px 2px}
-.cat-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.cat-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:3px 2px;
+  mix-blend-mode:multiply;display:block}
 .cat-g.gr{width:60px;height:92px;border-radius:10px}
 .cat-g.gr svg{max-height:84px}
+.cat-g.gr img{padding:4px 3px}
 .cat-castas{font-size:11px;color:#a2908f;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cat-preco{font-size:12px;font-weight:600;color:var(--tx);white-space:nowrap}
 .cat-sub .cf-ponto{margin-right:6px;vertical-align:middle;width:7px;height:7px}
@@ -468,17 +470,18 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
   display:flex;align-items:center;justify-content:center;transition:background .15s}
 .mhero .mx:hover{background:rgba(255,255,255,.3)}
 .mhero-in{display:flex;gap:14px;align-items:center;padding-right:34px}
-/* A moldura da garrafa: fundo de papel, cantos redondos, `overflow:hidden`
-   e a fotografia em `cover`. Sem o overflow a foto ficava um quadrado
-   branco no meio do bordô com a garrafa desenhada a espreitar por baixo —
-   é uma lição que a Garrafeira já pagou. */
+/* A moldura da garrafa: fundo de papel, cantos redondos e `overflow:hidden`.
+   Sem o overflow a foto ficava um quadrado branco no meio do bordô com a
+   garrafa desenhada a espreitar por baixo — é uma lição que a Garrafeira
+   já pagou. A fotografia vê-se INTEIRA: ver ao pé do `.com-foto`. */
 .mhero-g{width:64px;height:104px;flex-shrink:0;position:relative;display:flex;align-items:center;
   justify-content:center;overflow:hidden;border-radius:11px;
   background:linear-gradient(160deg,#fff,var(--bg));border:1px solid rgba(255,255,255,.5);
   box-shadow:0 8px 20px -8px rgba(0,0,0,.6)}
 .mhero-g svg{width:100%;height:auto;max-height:94px;padding:5px 3px;
   filter:drop-shadow(0 2px 4px rgba(43,10,22,.22))}
-.mhero-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.mhero-g img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:5px 3px;
+  mix-blend-mode:multiply;display:block}
 .mhero-tx{min-width:0;flex:1}
 .mhero-k{font-size:10px;font-weight:600;letter-spacing:1.1px;text-transform:uppercase;color:rgba(255,255,255,.7)}
 .mhero h3{font-family:'Playfair Display',serif;font-weight:600;font-size:21px;line-height:1.2;margin-top:4px;
@@ -530,7 +533,7 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .ed-img-l{display:flex;gap:12px;align-items:center;margin-bottom:8px}
 .ed-img-v{width:72px;height:104px;flex-shrink:0;border:1px solid var(--bo);border-radius:10px;
   background:#fdfbfa;overflow:hidden;display:flex;align-items:center;justify-content:center}
-.ed-img-v img{width:100%;height:100%;object-fit:cover;display:block}
+.ed-img-v img{width:100%;height:100%;object-fit:contain;padding:4px 3px;mix-blend-mode:multiply;display:block}
 .ed-img-v span{font-size:10.5px;color:var(--mu);text-align:center;padding:4px}
 .ed-img-b{display:flex;flex-direction:column;gap:6px;min-width:0}
 /* `.ed-campo label` é para o RÓTULO do campo (maiúsculas, 10px) — este
@@ -817,6 +820,18 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 /* A foto carregou: a garrafa desenhada sai de trás. As fotos das lojas são
    PNG com fundo transparente e o desenho via-se pelos buracos. */
 .com-foto>svg{visibility:hidden}
+/* E vê-se INTEIRA (`contain`) em todas as molduras — a linha, a grelha, a
+   capa da ficha e a pré-visualização do Editar —, com `multiply` para o
+   fundo branco de um JPG se fundir com o papel em vez de ficar um
+   retângulo mais claro lá dentro. Era `cover`, e cortava: as garrafas do
+   Vivino (`…_pb_x600.png`) e de muitas lojas vêm recortadas rente ao vidro,
+   bem mais altas do que a moldura, e sobrava o meio delas — o ombro e meio
+   rótulo, sem gargalo nem base —, ao lado de outras (a Granvine, com
+   margem à volta) que apareciam inteiras. Parecia imagem mal carregada.
+   A mesma correção da Garrafeira (29/09/2026); lá, a fotografia PRIVADA de
+   quem tem a garrafa continua a encher a moldura, mas aqui não há
+   nenhuma: a do bucket é o rótulo enquadrado pelo admin, e as outras apps
+   mostram-na inteira. */
 
 /* ── ARRUMAR: Duplicados › Nomes; Alertas › as garrafeiras × o catálogo ──
    O que o painel do PC fazia sem abrir sites. As linhas são as da revisão
