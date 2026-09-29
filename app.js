@@ -1861,59 +1861,79 @@ let _wcRev=null;
    mesmos campos e o mesmo contexto, só que a exigir a pesquisa Google. */
 let _wcProcUltimo=null;
 
-/* CONTEXTO LIVRE: duas caixas de texto em vez de campos fechados — mais
-   flexível para o que ajuda a desambiguar ("grande reserva", "edição
-   limitada", um produtor parecido com outro) do que um conjunto fixo de
-   checkboxes alguma vez cobre. Nenhuma das duas é pedida de volta à IA —
-   servem só de contexto (`processarPesquisa` em `catalogo-info.ts` lê-as
-   do lado do servidor; `wcManualPrompt` espelha isto do lado do browser). */
-function wcContextoHTML(){
-  return `<div class="ed-campo">
-      <label>Notas para ajudar a identificar o vinho (opcional)</label>
-      <textarea id="pr-notas" rows="2" maxlength="300"
-        placeholder="ex.: vinho tinto, grande reserva, da casa Ferreirinha, edição limitada"></textarea>
-      <p class="wc-note" style="margin-top:5px">Não é pedido à IA — é só contexto para não
-        confundir este vinho com um homónimo.</p>
-    </div>
-    <div class="ed-campo">
-      <label>Sites de confiança (opcional)</label>
-      <textarea id="pr-sites" rows="2" placeholder="ex.: garrafeiranacional.com, ou o link da página do vinho numa loja"></textarea>
-      <p class="wc-note" style="margin-top:5px">Domínios ou links, separados por vírgula. De um
-        domínio (ex.: garrafeiranacional.com), a pesquisa procura o vinho só nesse site e lê a
-        página que encontrar; um link é lido tal e qual — o do Vivino é usado como o link dele.
-        No fim diz de que site veio cada campo.</p>
-      <label class="ed-check"><input type="checkbox" id="pr-so-sites"> Usar só a informação destes sites</label>
-      <p class="wc-note">Sem a pesquisa geral nem a da IA: o que as páginas destes sites não disserem
-        fica vazio.</p>
-    </div>`;
-}
+/* COMO SE PROCURA, E DEPOIS O QUÊ (29/09/2026, o dono das apps). O ecrã era
+   uma parede de texto — as notas, os sites, o "só estes sites", a colheita e
+   os campos, tudo de uma vez e cada um com a sua explicação. Ficou em dois
+   passos:
+     1. COMO: nos sites que se indicam (e SÓ neles — é o que dá informação
+        fidedigna, e cada campo diz de que página veio), ou a IA, sem sites.
+        Sites de referência "misturados" com a pesquisa geral deixaram de ser
+        uma opção: não se sabia de onde vinha o quê.
+     2. O QUÊ: os campos (os vazios já marcados), e os sites se for o caso.
+        As notas e a colheita exata ficam em "Mais opções", fechadas.
+   `_wcProcTipo` é o passo 1; `_wcProcPre` é o que outro ecrã já sabe (um
+   comentário traz o link e os campos apontados). As notas nunca são pedidas
+   de volta à IA — são contexto (`processarPesquisa` em `catalogo-info.ts`;
+   `wcManualPrompt` espelha isto do lado do browser). */
+let _wcProcTipo=null;   // 'sites' | 'ia'
+let _wcProcPre=null;    // {vinhoId, sites:[], campos:[]}
+
 function wcContextoLer(){
   const notas=(document.getElementById('pr-notas')?.value||'').trim().slice(0,300);
-  const sites=(document.getElementById('pr-sites')?.value||'')
-    .split(/[,\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
   // Inteiros, e não só o domínio: um link colado aqui é uma PÁGINA a ler (e
   // o do Vivino é a resposta — a `catalogo-info` usa-o como vivino_url). O
   // corte ao domínio, para o prompt, faz-se lá.
-  const soSites=!!document.getElementById('pr-so-sites')?.checked;
-  return {notas,sites,soSites};
+  const sites=_wcProcTipo!=='sites'?[]:(document.getElementById('pr-sites')?.value||'')
+    .split(/[,\n]/).map(s=>s.trim()).filter(Boolean).slice(0,5);
+  return {notas,sites,soSites:_wcProcTipo==='sites'};
 }
 
-function wcAbrirProcurar(){
+/* `tipo` salta o passo 1 (o "Procurar com este site" de um comentário, a
+   pesquisa manual do Editar); `pre` traz os sites e os campos já escolhidos. */
+function wcAbrirProcurar(tipo,pre){
   if(!_wcFicha||!isAdmin())return;
+  _wcProcPre=pre?Object.assign({vinhoId:_wcFicha.id},pre):null;
+  if(tipo)wcProcTipo(tipo);
+  else wcProcEcraTipo();
+}
+function wcProcEcraTipo(){
+  const box=document.getElementById('procurar-corpo');
+  if(!box||!_wcFicha)return;
+  box.innerHTML=`<p class="pr-q">Como queres procurar?</p>
+  <div class="pr-tipos">
+    <button class="pr-tipo" onclick="wcProcTipo('sites')">
+      <b>🔗 Nos sites que eu indicar</b>
+      <span>Colas o link da página do vinho (ou só o site). A informação vem só dali, e cada
+        campo diz de que página veio.</span></button>
+    <button class="pr-tipo" onclick="wcProcTipo('ia')">
+      <b>✨ Perguntar à IA</b>
+      <span>Pesquisa no Google e a IA lê o que encontrar.</span></button>
+  </div>
+  <div class="macoes fim"><button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button></div>`;
+  wcProcTitulo('Procurar informação');
+  abrirModal('modal-procurar');
+  wcProcTopo();
+}
+function wcProcTipo(tipo){
+  if(!_wcFicha||!isAdmin())return;
+  _wcProcTipo=tipo==='sites'?'sites':'ia';
   const ficha=_wcFicha.ficha||{}, origens=_wcFicha.origens||{};
   const box=document.getElementById('procurar-corpo');
   if(!box)return;
-  let h=`<p class="wc-note"><strong>Nada fica gravado sem confirmares.</strong> No fim vês, campo a
-    campo, o que está no catálogo e o que a pesquisa encontrou — e escolhes o que guardar.</p>
-  <p class="wc-note">Escolhe <strong>poucos campos</strong>. Pedir os vinte de uma vez põe o
-    modelo a andar atrás de tudo e a voltar com meia dúzia de coisas mornas.</p>
-  ${wcContextoHTML()}
-  <label class="ed-check"><input type="checkbox" id="pr-colheita-esp">
-    Tem de ser exatamente a colheita ${esc(String(_wcFicha.ano||''))}</label>
-  <p class="wc-note">Por omissão a pesquisa é sobre o vinho em geral — o preço, o teor ou as notas
-    de prova podem vir de outra colheita. Liga só se precisares mesmo dos factos desta colheita.
-    A nota do Vivino vem sempre às duas: a da colheita e a de todas as colheitas (pedir a da
-    colheita traz também a de todas).</p>
+  // O que se escreveu da última vez neste vinho (voltar de um erro não
+  // obriga a colar tudo outra vez), ou o que outro ecrã já sabe.
+  const u=_wcProcUltimo&&_wcProcUltimo.vinhoId===_wcFicha.id?_wcProcUltimo:null;
+  const pre=_wcProcPre&&_wcProcPre.vinhoId===_wcFicha.id?_wcProcPre:null;
+  const sitesAntes=(pre&&pre.sites&&pre.sites.length)?pre.sites:(u&&u.soSites?u.sites:[]);
+  const marcar=k=>pre&&pre.campos&&pre.campos.length?pre.campos.includes(k):null;
+  let h='';
+  if(_wcProcTipo==='sites')h+=`<div class="ed-campo">
+      <label>Os sites</label>
+      <textarea id="pr-sites" rows="2" placeholder="o link da página do vinho, ou o site (ex.: garrafeiranacional.com)">${esc(sitesAntes.join(', '))}</textarea>
+      <p class="wc-note" style="margin-top:5px">Até cinco, separados por vírgula. De um site sem link,
+        procura-se o vinho lá dentro.</p>
+    </div>`;
+  h+=`<p class="pr-q">O que procurar?</p>
   <div class="pr-acoes">
     <button class="btn-n" onclick="wcProcTodos(true)">Todos</button>
     <button class="btn-n" onclick="wcProcTodos(false)">Nenhum</button>
@@ -1927,8 +1947,9 @@ function wcAbrirProcurar(){
      a pena confirmar. Nunca escreve sozinho: na revisão é uma linha como as
      outras, e marcada vai pela `editar` com o interruptor de identidade. */
   const temProdutor=!!_wcFicha.produtor;
+  const mp=marcar('produtor');
   h+=`<label class="pr-campo">
-    <input type="checkbox" value="produtor"${temProdutor?'':' checked'} onchange="wcProcContar()">
+    <input type="checkbox" value="produtor"${(mp==null?!temProdutor:mp)?' checked':''} onchange="wcProcContar()">
     <span class="pr-nome">Produtor</span>
     ${temProdutor?`<span class="pr-falta">atual: ${esc(_wcFicha.produtor)}</span>`:'<span class="pr-falta">vazio</span>'}
   </label>`;
@@ -1938,24 +1959,37 @@ function wcAbrirProcurar(){
     if(_wcFicha.ano==null&&(k==='vivino_nota'||k==='vivino_avaliacoes'))continue;
     const tem=k in ficha;
     const o=origens[k]||{}, f=Number(o.f||0);
+    const m=marcar(k);
     h+=`<label class="pr-campo">
-      <input type="checkbox" value="${esc(k)}"${tem?'':' checked'} onchange="wcProcContar()">
+      <input type="checkbox" value="${esc(k)}"${(m==null?!tem:m)?' checked':''} onchange="wcProcContar()">
       <span class="pr-nome">${esc(lbl)}</span>
       ${tem?`<span class="og-tag ${wcOrigemCls(o.o,f)}">${esc(wcOrigemTxt(o.o,f))}</span><span class="forca f${esc(String(f))}">${esc(String(f))}</span>`
            :'<span class="pr-falta">vazio</span>'}
     </label>`;
   }
   h+=`</div>
+  <details class="pr-mais"><summary>Mais opções</summary>
+    <div class="ed-campo">
+      <label>Notas para identificar o vinho</label>
+      <textarea id="pr-notas" rows="2" maxlength="300"
+        placeholder="ex.: grande reserva, edição limitada, da casa Ferreirinha">${esc(u?u.notas||'':'')}</textarea>
+    </div>
+    <label class="ed-check"><input type="checkbox" id="pr-colheita-esp"${u&&u.colheitaEspecifica?' checked':''}>
+      Tem de ser exatamente a colheita ${esc(String(_wcFicha.ano||''))}</label>
+    <p class="wc-note">Sem isto, o preço, o teor ou as notas de prova podem vir de outra colheita. A nota
+      do Vivino vem sempre às duas: a da colheita e a de todas.</p>
+  </details>
   <div class="macoes fim">
-    <button class="btn-n" onclick="fecharModal('modal-procurar')">Cancelar</button>
+    <button class="btn-n" onclick="wcProcEcraTipo()">‹ Voltar</button>
     <button class="btn-prim auto" id="pr-ir" onclick="wcProcurarArrancar()">🔎 Pesquisar</button>
   </div>
 `;
   box.innerHTML=h;
-  wcProcTitulo('Procurar informação');
+  wcProcTitulo(_wcProcTipo==='sites'?'Nos sites que indicares':'Perguntar à IA');
   wcProcContar();
   abrirModal('modal-procurar');
   wcProcTopo();
+  if(_wcProcTipo==='sites'&&!sitesAntes.length)document.getElementById('pr-sites')?.focus();
 }
 /* O título do modal é sempre o vinho; o subtítulo diz em que passo se está. */
 function wcProcTitulo(sub){
@@ -1992,7 +2026,7 @@ async function wcProcurarArrancar(){
   const colheitaEspecifica=!!document.getElementById('pr-colheita-esp')?.checked;
   const ctx=wcContextoLer();
   if(ctx.soSites&&!ctx.sites.length){
-    toast('Escreve pelo menos um site (ou o link da página do vinho) para usar só esses',1);
+    toast('Escreve pelo menos um site, ou o link da página do vinho',1);
     if(b){b.disabled=false;b.textContent='🔎 Pesquisar';}
     document.getElementById('pr-sites')?.focus();
     return;
@@ -2085,7 +2119,7 @@ function wcProcErro(msg){
   const m=document.getElementById('modal-procurar'), box=document.getElementById('procurar-corpo');
   if(m&&m.classList.contains('on')&&box){
     box.innerHTML=html+`<div class="macoes fim">
-      <button class="btn-n" onclick="wcAbrirProcurar()">‹ Voltar</button>
+      <button class="btn-n" onclick="${_wcProcTipo?`wcProcTipo('${_wcProcTipo}')`:'wcAbrirProcurar()'}">‹ Voltar</button>
       <button class="btn-prim auto" onclick="fecharModal('modal-procurar')">Fechar</button></div>`;
     wcProcTitulo('Procurar informação');
   }
@@ -2526,7 +2560,7 @@ let _wcManualColado=null;   // {vinhoId, texto} — um JSON que falhou não obri
 function wcEditarManual(){
   if(!_wcFicha||!isAdmin())return;
   fecharModal('modal-editar');
-  wcAbrirProcurar();
+  wcAbrirProcurar('ia');
   const cx=wcProcCaixas();
   if(!cx.some(c=>c.checked))cx.forEach(c=>c.checked=true);
   wcProcurarManual();
@@ -2557,7 +2591,7 @@ function wcProcurarManual(){
       <p class="wc-note erro" id="pr-manual-erro"></p>
     </div>
     <div class="macoes fim">
-      <button class="btn-n" onclick="wcAbrirProcurar()">‹ Voltar</button>
+      <button class="btn-n" onclick="wcProcTipo('ia')">‹ Voltar</button>
       <button class="btn-prim auto" id="pr-manual-ir" onclick="wcProcurarManualEnviar()">Ver o que muda ›</button>
     </div>`;
   wcProcTitulo('Pesquisa manual');
@@ -3761,18 +3795,17 @@ async function wcComResponder(id,estado){
 }
 
 /* "Atualizem a partir deste site": abre a ficha e o Procurar informação
-   por cima, já com o link nos sites de confiança e, se o comentário disse
+   por cima, já na pesquisa nos sites com o link e, se o comentário disse
    que campos, só esses marcados. Nada grava sem a revisão de sempre. */
 async function wcComProcurar(id){
   const c=_wcCom.vinho.lista.find(x=>x.id===id);
   if(!c||!c.vinhoId)return;
   await wcVerFicha(c.vinhoId);
   if(!_wcFicha||_wcFicha.id!==c.vinhoId)return;
-  wcAbrirProcurar();
-  const s=document.getElementById('pr-sites');
-  if(s&&c.link)s.value=c.link;
-  const ks=new Set(c.campos||[]), cx=wcProcCaixas();
-  if(cx.some(x=>ks.has(x.value))){cx.forEach(x=>x.checked=ks.has(x.value));wcProcContar();}
+  // Com link, é a pesquisa nos sites; sem ele, escolhe-se o tipo. Os campos
+  // apontados vêm marcados — os que o ecrã conhece (senão, os vazios).
+  const campos=(c.campos||[]).filter(k=>k==='produtor'||WC_EDIT.some(([x])=>x===k));
+  wcAbrirProcurar(c.link?'sites':null,{sites:c.link?[c.link]:[],campos});
 }
 
 /* ══════════════════════════════════════════════

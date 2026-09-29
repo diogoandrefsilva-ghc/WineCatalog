@@ -434,6 +434,22 @@ põe o modelo a andar atrás de tudo e a voltar com meia dúzia de coisas
 mornas — e **nada fica gravado sem o admin confirmar** (ver "Rever antes de
 gravar", logo a seguir).
 
+**Dois passos antes de pesquisar: COMO, e depois O QUÊ** (29/09/2026, o dono
+das apps: o ecrã "tem bué texto que só atrapalha"). Era tudo de uma vez — as
+notas, os sites, o "só estes sites", a colheita e os campos, cada um com a
+sua explicação. Agora (`wcProcEcraTipo` → `wcProcTipo`): **1.** dois botões,
+**"Nos sites que eu indicar"** (colam-se links ou domínios, e a pesquisa é
+SÓ neles — `soSites`, sempre) ou **"Perguntar à IA"** (sem sites nenhuns);
+**2.** os campos, e a caixa dos sites no primeiro caso. As notas e a colheita
+exata ficam em "Mais opções", fechadas. Os sites de referência "misturados"
+com a pesquisa geral deixaram de ser uma opção no ecrã (a Edge Function
+continua a aceitá-los): não se sabia de onde vinha o quê, e a pesquisa nos
+sites é a que dá informação fidedigna. `wcAbrirProcurar(tipo, pre)` salta o
+passo 1 — o "Procurar com este site" de um comentário entra direto nos
+sites, com o link e os campos apontados (`pre`), e a pesquisa manual do
+Editar entra no "Perguntar à IA". O "‹ Voltar" de um erro volta aos campos
+do mesmo tipo, com o que se tinha escrito (`_wcProcUltimo`).
+
 **O Produtor é sempre uma das opções a pedir, mesmo já preenchido** — só uma
 leitura errada o faz vir diferente, e é exatamente isso que vale a pena
 confirmar (foi o que faltava quando "+ Vinho novo" começou a criar linhas

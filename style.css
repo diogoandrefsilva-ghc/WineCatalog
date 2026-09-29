@@ -558,6 +558,20 @@ header{position:sticky;top:0;z-index:50;background:var(--wine);color:#fff;box-sh
 .pr-espera{display:flex;align-items:center;gap:12px;background:var(--bg);border:1px solid var(--bo);
   border-radius:12px;padding:14px;margin-top:14px}
 .pr-espera.erro{background:#fdf2f1;border-color:#f2cdcb}
+/* Os dois passos antes de pesquisar (`wcProcEcraTipo`/`wcProcTipo`): COMO
+   (dois botões grandes, o texto de cada um diz o que acontece) e O QUÊ. */
+.pr-q{font-size:14px;font-weight:600;color:var(--tx);margin:4px 0 8px}
+.pr-campos+.pr-mais,.ed-campo+.pr-q{margin-top:14px}
+.pr-tipos{display:grid;gap:8px}
+.pr-tipo{display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:13px 14px;
+  border:1px solid var(--bo);border-radius:12px;background:#fff;font:inherit;color:var(--tx);cursor:pointer}
+.pr-tipo:hover,.pr-tipo:focus-visible{border-color:var(--wine);outline:none}
+.pr-tipo:active{background:var(--bg)}
+.pr-tipo b{font-size:14.5px;font-weight:600}
+.pr-tipo span{font-size:12.5px;color:var(--mu);line-height:1.5}
+.pr-mais{margin-top:14px;border:1px solid var(--bo);border-radius:11px;padding:9px 12px;background:#fff}
+.pr-mais summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--tx)}
+.pr-mais[open] summary{margin-bottom:10px}
 .wc-spin.escuro{border-color:rgba(107,18,48,.2);border-top-color:var(--wine);flex-shrink:0}
 .pr-res{background:var(--bg);border:1px solid var(--bo);border-radius:12px;padding:14px;margin-top:14px}
 .pr-res-cab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:14px}
