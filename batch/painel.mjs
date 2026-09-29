@@ -6,8 +6,9 @@
 //   · lista as simulações guardadas numa tabela com caixas, e grava só o
 //     que ficou marcado (a opção APLICAR do script — sem voltar a abrir
 //     página nenhuma);
-//   · e, em separadores à parte, os Nomes de vinhos, os Produtores, os
-//     Duplicados e o que as garrafeiras escrevem (Comentários · Sugestões).
+//   · e, em separadores à parte, os Vinhos novos, os Nomes de vinhos, os
+//     Produtores, os Duplicados e o que as garrafeiras escrevem
+//     (Comentários · Sugestões).
 //
 // Porque um servidor e não só uma página: uma página aberta do disco não
 // pode correr o node nem o git. Só escuta em 127.0.0.1, e cada pedido que
@@ -113,6 +114,7 @@ function correr(modo, opcoes) {
 // entra, pela `pesquisa_aplicar`. Um vinho de cada vez, com o registo, a
 // barra e o "Parar" de sempre.
 const FN_INFO = `${SB_URL}/functions/v1/catalogo-info`;
+const CORES_NOVO = ["Tinto", "Branco", "Rosé", "Espumante", "Licoroso", "Frisante"];
 const IA_ESPERA_MS = 150_000;   // a função corta aos 90 s; isto é a folga
 async function sbTabela(caminho, init = {}) {
   const chave = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -166,22 +168,47 @@ async function iaUmVinho(it, soSites, c) {
   }
   throw new Error("a pesquisa não acabou a tempo — vê daqui a pouco em «Pesquisas com IA por rever»");
 }
-function correrIA(itens, soSites) {
+/* Um VINHO NOVO (o separador "Vinhos novos") não tem linha no catálogo, e a
+   pesquisa é sempre de uma linha: procura-se primeiro (`vivino_achar`, a
+   mesma `achar` da `criar`) e, não havendo, cria-se já pela `vivino_novo` —
+   nome, produtor, colheita e cor, mais nada; o resto é o que a IA propuser e
+   o admin aceitar. É o que o "Vinho novo" da app também faz antes de
+   pesquisar. A `achar` sem cor casa com qualquer cor: um vinho que já
+   existe com OUTRA cor não se usa — pode ser outro vinho, e decide-se à mão. */
+async function iaLinhaDoNovo(it, c) {
+  const n = it.novo;
+  const ja = await sbDados("winecatalog", "vivino_achar", { p_nome: n.nome, p_produtor: n.produtor, p_ano: n.ano });
+  if (ja) {
+    if (ja.tipo && n.tipo && String(ja.tipo).toLowerCase() !== n.tipo.toLowerCase())
+      throw new Error(`já existe «${ja.nome}» (#${ja.id}) mas ${ja.tipo} — se for este vinho, corrige a cor na app; se não, dá-lhe outro nome`);
+    c.linhas.push(`   já existe no catálogo: #${ja.id} «${ja.nome}» — pesquisa-se esse`);
+    return Number(ja.id);
+  }
+  const r = await sbDados("winecatalog", "vivino_novo", { p_nome: n.nome, p_produtor: n.produtor, p_ano: n.ano,
+    p_tipo: n.tipo, p_quem: "painel do PC (admin)" });
+  c.linhas.push(r.existia ? `   já existia: #${r.id} — pesquisa-se esse` : `   criado no catálogo: #${r.id} (só nome, produtor, colheita e cor)`);
+  return Number(r.id);
+}
+function correrIA(itens, soSites, modo = "ia") {
   if (corrida && corrida.fim == null) throw new Error("Já está a correr — espera que acabe.");
   rmSync(PARAR, { force: true });
-  corrida = { modo: "ia", inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null,
+  corrida = { modo, inicio: new Date().toISOString(), linhas: [], fim: null, codigo: null,
               progresso: null, aParar: false, parado: false, podeParar: true };
   const c = corrida;
-  c.linhas.push(`Pesquisa com IA — ${itens.length} vinho(s), ${soSites ? "só nos sites indicados" : "nos sites e a completar com a IA (pesquisa Google)"}.`);
+  c.linhas.push(`${modo === "novo-ia" ? "Vinhos novos — pesquisa" : "Pesquisa"} com IA — ${itens.length} vinho(s), ${soSites ? "só nos sites indicados" : "nos sites e a completar com a IA (pesquisa Google)"}.`);
   (async () => {
     let erros = 0, propostas = 0;
     for (const [i, it] of itens.entries()) {
       if (c.aParar) { c.parado = true; c.linhas.push("Parado a pedido."); break; }
-      c.linhas.push(`[${i + 1}/${itens.length}] #${it.id} ${it.nome}`);
-      c.progresso = { i: i + 1, n: itens.length, nome: `#${it.id} ${it.nome}`, em: new Date().toISOString() };
+      const rot = it.id ? `#${it.id} ${it.nome}` : `${it.nome}${it.novo.ano ? " " + it.novo.ano : ""} (novo)`;
+      c.linhas.push(`[${i + 1}/${itens.length}] ${rot}`);
+      c.progresso = { i: i + 1, n: itens.length, nome: rot, em: new Date().toISOString() };
+      // Antes de criar o que quer que seja: um vinho novo sem sites, com
+      // «só nos sites», não chega a nascer.
       if (soSites && !it.sites.length) { c.linhas.push("   sem sites — saltado (escolheste «só nos sites»)"); continue; }
       c.linhas.push(it.sites.length ? "   sites: " + it.sites.join(", ") : "   sem sites — só a pesquisa Google e o Vivino");
       try {
+        if (!it.id) it.id = await iaLinhaDoNovo(it, c);
         const res = await iaUmVinho(it, soSites, c);
         if (res.propostas?.length) propostas++;
         c.linhas.push("   ✓ " + iaResumo(res));
@@ -459,6 +486,24 @@ const servidor = http.createServer(async (req, res) => {
       correrIA(itens, soSites);
       return json(res, 200, { ok: true });
     }
+    if (req.method === "POST" && url.pathname === "/novo-ia") {
+      // Vinhos novos: nome, produtor, ano e cor (obrigatória), e até 5 sites
+      // cada. A linha no catálogo só nasce quando chega a vez de cada um.
+      const b = await lerCorpo(req);
+      const itens = (Array.isArray(b.vinhos) ? b.vinhos : []).slice(0, 50).map(x => {
+        const ano = parseInt(x && x.ano, 10);
+        const nome = String((x && x.nome) || "").replace(/\s+/g, " ").trim().slice(0, 150);
+        return { id: 0, nome, sites: [...new Set((Array.isArray(x && x.sites) ? x.sites : []).map(s => String(s).trim().slice(0, 400)).filter(Boolean))].slice(0, 5),
+          novo: { nome, produtor: String((x && x.produtor) || "").replace(/\s+/g, " ").trim().slice(0, 150),
+            ano: ano >= 1900 && ano <= 2100 ? ano : null, tipo: CORES_NOVO.includes(x && x.tipo) ? x.tipo : "" } };
+      }).filter(x => x.nome);
+      if (!itens.length) return json(res, 400, { erro: "Escreve pelo menos um nome." });
+      if (itens.some(x => !x.novo.tipo)) return json(res, 400, { erro: "Escolhe a cor de cada vinho." });
+      const soSites = b.soSites !== false;
+      if (soSites && !itens.some(x => x.sites.length)) return json(res, 400, { erro: "Com «só nos sites», cada vinho precisa de pelo menos um site." });
+      correrIA(itens, soSites, "novo-ia");
+      return json(res, 200, { ok: true });
+    }
     if (req.method === "GET" && url.pathname === "/ia-rever") {
       if (req.headers["x-painel"] !== TOKEN) return json(res, 403, { erro: "código do painel inválido — recarrega a página" });
       return sbRpc(res, "winecatalog", "painel_pesquisas_por_rever", {});
@@ -665,6 +710,7 @@ button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12
 <header><h1>🍷 Vinhos — painel</h1><p>O script corre neste computador. Esta página só funciona enquanto a janela do vinhos.bat estiver aberta.</p></header>
 <nav class="tabs" role="tablist">
   <button role="tab" data-tab="info" onclick="abrirTab('info')">Informação de vinhos<span id="tab-corre"></span></button>
+  <button role="tab" data-tab="novos" onclick="abrirTab('novos')" title="Vinhos que ainda não estão no catálogo">Vinhos novos</button>
   <button role="tab" data-tab="nomes" onclick="abrirTab('nomes')">Nomes de vinhos</button>
   <button role="tab" data-tab="produtores" onclick="abrirTab('produtores')">Produtores</button>
   <button role="tab" data-tab="duplicados" onclick="abrirTab('duplicados')" title="Vinhos que parecem o mesmo">Duplicados<span id="tab-dup"></span></button>
@@ -721,6 +767,7 @@ button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12
   <p class="nota"><b>Simular</b> lê tudo e guarda uma simulação para reveres em baixo — não grava nada. <b>Enriquecer</b> grava logo no catálogo (tudo fica no histórico da app, com "Repor").</p>
   </div>
 </div>
+<div id="comum">
 <div class="card" id="c-registo"><h2>Registo</h2><div class="estado" id="estado">Nada a correr.</div>
   <div class="prog" id="prog" hidden><div class="prog-barra"><div id="prog-b"></div></div>
     <div class="linha"><span class="nota" id="prog-t"></span>
@@ -739,17 +786,6 @@ button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12
   <p class="nota">As pesquisas com IA (daqui ou da app) que ainda não foram guardadas — a última de cada vinho, até 7 dias. Vêm marcados só os campos que estão <b>vazios</b> no catálogo; trocar um que já lá está é um clique teu. Um campo que mudou desde a pesquisa não se toca. Entra como «pesquisa» (força 3), no histórico com "painel do PC (admin)".</p>
   <div id="ia-lista"></div>
 </div>
-<div class="card"><h2>Vinho novo</h2>
-  <p class="nota" style="margin:0 0 10px">Um vinho que ainda não está no catálogo. O script procura-o no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em Simulações. Se já existir, enriquece o que lá está.</p>
-  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th title="Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar.">Links (opcional)</th><th></th></tr></table>
-  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button></div>
-  <div class="correr" style="margin-top:10px">
-    <div class="linha sitios" id="novo-sitios"></div>
-    <div class="linha" style="margin-top:8px"><label>Ler: <select id="novo-pesquisa" onchange="sitiosSincronizar('novo')">
-      <option value="completo">Tudo — a ficha toda</option>
-      <option value="precos">Só preços (e imagem)</option>
-    </select></label>
-    <button class="prim corre" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div></div>
 </div>
 <p class="seccao">As garrafeiras × o catálogo</p>
 <div class="card"><h2>Links do Vivino nas garrafeiras</h2>
@@ -765,6 +801,38 @@ button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12
     <span id="fich-n" class="nota"></span>
     <button id="btn-fich" onclick="fichCorrigir()" disabled>Corrigir os marcados</button></div>
   <div id="fich-lista" style="margin-top:10px;max-height:640px;overflow:auto"></div>
+</div>
+</section>
+<section class="tab" id="t-novos" hidden>
+<div class="card" id="c-novo"><h2>Vinhos novos</h2>
+  <p class="nota" style="margin:0 0 10px">Vinhos que ainda não estão no catálogo. Se algum já lá estiver (o mesmo nome, produtor e colheita), usa-se o que existe.</p>
+  <table id="novos"><tr><th>Nome *</th><th>Produtor</th><th>Ano</th><th>Cor *</th><th id="novos-links-t">Links (opcional)</th><th></th></tr></table>
+  <div class="linha" style="margin-top:10px"><button onclick="novaLinha()">+ outro vinho</button></div>
+  <div class="seg" id="tipo-novo" style="margin:14px 0 8px">
+    <button data-t="sem" onclick="tipoNovo('sem')" title="O script abre o Vivino e as lojas neste computador e lê-os por regras — sem IA, sem custo">Pesquisa sem IA — lojas principais e Vivino</button>
+    <button data-t="ia" onclick="tipoNovo('ia')" title="A IA lê os sites que indicares para cada vinho (a mesma pesquisa do «Procurar informação» da app)">Pesquisa com IA — nos sites que indicares</button>
+  </div>
+  <div id="novo-sem">
+  <div class="correr">
+    <p class="nota" style="margin:0 0 8px">O script procura cada vinho no Vivino e nas lojas (nota, preço, castas, região, teor, harmonização…) e faz uma <b>simulação</b>: o vinho só é criado quando a gravares, em Simulações, mais abaixo. Na coluna dos links podes colar o do Vivino e o das lojas (Garrafeira Nacional, Granvine, Vinha.pt): o script abre-os diretamente em vez de procurar.</p>
+    <div class="linha sitios" id="novo-sitios"></div>
+    <div class="linha" style="margin-top:8px"><label>Ler: <select id="novo-pesquisa" onchange="sitiosSincronizar('novo')">
+      <option value="completo">Tudo — a ficha toda</option>
+      <option value="precos">Só preços (e imagem)</option>
+    </select></label>
+    <button class="prim corre" id="btn-novo" onclick="procurarNovos()">Procurar (simular)</button></div></div>
+  </div>
+  <div id="novo-ia" hidden>
+  <div class="correr">
+    <p class="nota" style="margin:0 0 8px">Na coluna dos sites, <b>até 5</b> por vinho, separados por vírgula ou espaço: o <b>link da página do vinho</b> (lê-se essa página) ou só o <b>site</b> (ex.: garrafeiranacional.com — procura-se o vinho lá dentro). Quando chega a vez de cada vinho, ele é <b>criado no catálogo</b> só com o nome, o produtor, a colheita e a cor (como no «Vinho novo» da app); o que a IA encontrar fica em <b>«Pesquisas com IA por rever»</b>, mais abaixo, para escolheres o que entra.</p>
+    <div class="linha">
+      <label><input type="radio" name="novo-ia-modo" value="so" checked onchange="novoIaGuardarModo()"> Só nos sites que indiquei</label>
+      <label title="Além das páginas dos teus sites: uma pesquisa Google geral e uma ao Vivino (lidas pela IA), e no fim a pesquisa do Gemini pelo que ainda faltar. Um vinho sem sites faz só isto."><input type="radio" name="novo-ia-modo" value="mais" onchange="novoIaGuardarModo()"> Nos sites, e completar com a IA (pesquisa Google) o que lá não estiver</label>
+    </div>
+    <div class="linha" style="margin-top:10px"><button class="prim corre" onclick="novosIA()">🔎 Pesquisar com IA</button>
+      <span class="nota" style="margin:0">Um vinho de cada vez (~10–40 s cada). Custa uns cêntimos por vinho.</span></div>
+  </div>
+  </div>
 </div>
 </section>
 <section class="tab" id="t-nomes" hidden>
@@ -851,11 +919,17 @@ const semAc=t=>String(t||"").normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").t
 const palavras=el=>semAc(document.getElementById(el).value).split(/\\s+/).filter(Boolean);
 async function post(u,b){const r=await fetch(u,{method:"POST",headers:{"Content-Type":"application/json","X-Painel":TOKEN},body:JSON.stringify(b)});const j=await r.json();if(!r.ok)throw new Error(j.erro||r.status);return j;}
 
-// ── Separadores ── (o de agora fica no endereço: #info, #nomes, #produtores, #duplicados, #comentarios, #sugestoes)
-const TABS=["info","nomes","produtores","duplicados","comentarios","sugestoes"],ABERTOS=new Set();
+// ── Separadores ── (o de agora fica no endereço: #info, #novos, #nomes, #produtores, #duplicados, #comentarios, #sugestoes)
+const TABS=["info","novos","nomes","produtores","duplicados","comentarios","sugestoes"],ABERTOS=new Set();
+let TAB="info";
 function abrirTab(t){
   if(!TABS.includes(t))t="info";
+  TAB=t;
   for(const x of TABS)document.getElementById("t-"+x).hidden=x!==t;
+  // O Registo, as Simulações e as Pesquisas com IA por rever servem os dois
+  // separadores que correm pesquisas: vão para o que está aberto, logo a
+  // seguir ao cartão de cima. É um bloco só (os mesmos ids), que muda de sítio.
+  if(t==="info"||t==="novos")document.getElementById(t==="novos"?"c-novo":"c-escolher").after(document.getElementById("comum"));
   document.querySelectorAll("nav.tabs button").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-selected",on?"true":"false");});
   if(location.hash!=="#"+t)history.replaceState(null,"","#"+t);
   // Os Nomes e os Produtores só leem a BD: carregam sozinhos da primeira vez.
@@ -1429,7 +1503,7 @@ const sitiosEscolhidos=p=>[...document.querySelectorAll(".sitio-"+p+":checked:no
 // ── Registo ──
 function comecar(ir){
   visto=0;document.getElementById("log").textContent="";clearInterval(timer);timer=setInterval(seguir,1000);seguir();
-  if(ir){abrirTab("info");document.getElementById("c-registo").scrollIntoView({behavior:"smooth",block:"start"});}
+  if(ir){if(TAB!=="info"&&TAB!=="novos")abrirTab("info");document.getElementById("c-registo").scrollIntoView({behavior:"smooth",block:"start"});}
 }
 async function seguir(){
   const r=await fetch("/estado?desde="+visto).then(r=>r.json()).catch(()=>null);
@@ -1437,16 +1511,17 @@ async function seguir(){
   const log=document.getElementById("log");
   if(r.linhas.length){log.textContent+=r.linhas.join("\\n")+"\\n";log.scrollTop=log.scrollHeight;}
   visto=r.total;
-  const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação",novo:"Vinho novo (simulação)",ia:"Pesquisa com IA"};
+  const nomes={simular:"Simulação",enriquecer:"Enriquecer",gravar:"Gravar simulação",novo:"Vinho novo (simulação)",ia:"Pesquisa com IA","novo-ia":"Vinhos novos — pesquisa com IA"};
+  const comIA=r.modo==="ia"||r.modo==="novo-ia";
   document.getElementById("estado").innerHTML=r.fim==null?"⏳ "+nomes[r.modo]+(r.aParar?" a parar…":" a correr…")
-    :r.parado?'<b class="ok">⏹ '+nomes[r.modo]+' parada a pedido.</b>'+(r.modo==="enriquecer"?" Os vinhos já tratados ficaram gravados.":r.modo==="ia"?" As pesquisas já feitas estão em «Pesquisas com IA por rever».":" A simulação ficou com os vinhos já tratados.")
+    :r.parado?'<b class="ok">⏹ '+nomes[r.modo]+' parada a pedido.</b>'+(r.modo==="enriquecer"?" Os vinhos já tratados ficaram gravados.":comIA?" As pesquisas já feitas estão em «Pesquisas com IA por rever».":" A simulação ficou com os vinhos já tratados.")
     :(r.codigo===0?'<b class="ok">✓ '+nomes[r.modo]+' terminou.</b>':'<b class="er">✗ '+nomes[r.modo]+' terminou com erro ('+r.codigo+').</b>');
   progresso(r);
   // Só os botões que põem o script a correr; o separador diz que está a correr.
   document.querySelectorAll("button.corre").forEach(b=>b.disabled=r.fim==null);
   document.getElementById("tab-corre").textContent=r.fim==null?" ⏳":"";
   if(r.fim!=null){clearInterval(timer);timer=null;carregarCatalogo();
-    if(r.modo==="ia"){iaListar();if(r.linhas.length||visto)document.getElementById("c-ia").scrollIntoView({behavior:"smooth",block:"start"});}
+    if(comIA){iaListar();if(r.linhas.length||visto)document.getElementById("c-ia").scrollIntoView({behavior:"smooth",block:"start"});}
     else if(r.modo!=="enriquecer")listarSims(r.modo==="simular"||r.modo==="novo");}
 }
 // A barra: quantos vinhos já foram tratados (o script escreve "[3/20] …"
@@ -1622,12 +1697,27 @@ async function fichCorrigir(){
 
 // ── Vinho novo ──
 const CORES=["Tinto","Branco","Rosé","Espumante","Licoroso","Frisante"];
+let TIPO_NOVO="sem";
+const NOVO_LINKS={sem:["Links (opcional)","cola aqui o link do Vivino, da loja…","Vivino, Garrafeira Nacional, Granvine ou Vinha.pt — separados por espaço. O script abre-os diretamente, em vez de procurar."],
+  ia:["Sites (até 5)","o link da página do vinho, ou o site (ex.: carlosalonso.wine)","Até 5, separados por vírgula ou espaço: o link da página do vinho, ou só o site, onde se procura o vinho."]};
+function tipoNovo(t){
+  TIPO_NOVO=t==="ia"?"ia":"sem";
+  try{localStorage.setItem("painel_tipo_novo",TIPO_NOVO);}catch{}
+  document.querySelectorAll("#tipo-novo button").forEach(b=>b.classList.toggle("on",b.dataset.t===TIPO_NOVO));
+  document.getElementById("novo-ia").hidden=TIPO_NOVO!=="ia";
+  document.getElementById("novo-sem").hidden=TIPO_NOVO==="ia";
+  // A mesma coluna serve os dois: links que o script abre, ou os sites da IA.
+  const [tit,ph,dica]=NOVO_LINKS[TIPO_NOVO],th=document.getElementById("novos-links-t");
+  th.textContent=tit;th.title=dica;
+  document.querySelectorAll("#novos .n-links").forEach(i=>i.placeholder=ph);
+}
+function novoIaGuardarModo(){try{localStorage.setItem("painel_novo_ia_modo",document.querySelector('input[name=novo-ia-modo]:checked').value);}catch{}}
 function novaLinha(){
   const tr=document.createElement("tr");
   tr.innerHTML='<td><input class="n-nome" placeholder="ex.: Quinta do Crasto Reserva Vinhas Velhas"></td><td><input class="n-prod"></td>'+
     '<td style="width:80px"><input class="n-ano" inputmode="numeric" maxlength="4"></td>'+
     '<td style="width:130px"><select class="n-cor"><option value="">— cor —</option>'+CORES.map(c=>"<option>"+c+"</option>").join("")+'</select></td>'+
-    '<td><input class="n-links" placeholder="cola aqui o link do Vivino, da loja…"></td>'+
+    '<td><input class="n-links" placeholder="'+esc(NOVO_LINKS[TIPO_NOVO][1])+'"></td>'+
     '<td style="width:30px"><button title="Tirar" onclick="this.closest(\\'tr\\').remove()">✕</button></td>';
   document.getElementById("novos").appendChild(tr);
 }
@@ -1640,6 +1730,23 @@ async function procurarNovos(){
   if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
   if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
   try{await post("/novo",{vinhos,pesquisa:document.getElementById("novo-pesquisa").value,sitios:sitiosEscolhidos("novo")});comecar(true);}catch(e){alert(e.message);}
+}
+// A pesquisa com IA dos vinhos novos: a mesma do separador Informação de
+// vinhos — cada vinho nasce no catálogo quando chega a vez dele, e o que a IA
+// encontrar fica por rever em «Pesquisas com IA por rever».
+async function novosIA(){
+  const vinhos=[...document.querySelectorAll("#novos tr")].slice(1).map(tr=>({
+    nome:tr.querySelector(".n-nome").value.trim(),produtor:tr.querySelector(".n-prod").value.trim(),
+    ano:tr.querySelector(".n-ano").value.trim(),tipo:tr.querySelector(".n-cor").value,
+    sites:tr.querySelector(".n-links").value.split(/[\\s,;]+/).map(x=>x.trim()).filter(Boolean).slice(0,5)})).filter(x=>x.nome);
+  if(!vinhos.length)return alert("Escreve pelo menos um nome.");
+  if(vinhos.some(x=>!x.tipo))return alert("Escolhe a cor de cada vinho.");
+  if(vinhos.some(x=>x.ano&&!/^\\d{4}$/.test(x.ano)))return alert("O ano tem quatro algarismos (ou fica vazio).");
+  const so=document.querySelector('input[name=novo-ia-modo]:checked').value==="so";
+  const sem=vinhos.filter(x=>!x.sites.length).length;
+  if(so&&sem===vinhos.length)return alert("Com «só nos sites que indiquei», escreve pelo menos um site num dos vinhos.");
+  if(so&&sem&&!confirm(sem+" vinho(s) sem sites vão ser saltados (e não são criados). Continuar?"))return;
+  try{await post("/novo-ia",{vinhos,soSites:so});comecar(true);}catch(e){alert(e.message);}
 }
 
 // ── Nomes de vinhos ──
@@ -2143,6 +2250,8 @@ filtrosHTML();
 ordensHTML();
 sitiosHTML("cat");sitiosHTML("novo");
 try{const m=localStorage.getItem("painel_ia_modo");if(m){const el=document.querySelector('input[name=ia-modo][value="'+m+'"]');if(el)el.checked=true;}}catch{}
+try{const m=localStorage.getItem("painel_novo_ia_modo");if(m){const el=document.querySelector('input[name=novo-ia-modo][value="'+m+'"]');if(el)el.checked=true;}}catch{}
+tipoNovo((()=>{try{return localStorage.getItem("painel_tipo_novo");}catch{return null;}})());
 tipoPesquisa((()=>{try{return localStorage.getItem("painel_tipo");}catch{return null;}})());
 iaListar();
 novaLinha();

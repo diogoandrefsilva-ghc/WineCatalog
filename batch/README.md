@@ -63,10 +63,13 @@ De cada vez que quiseres correr — **duplo clique em `vinhos.bat`** (Windows):
 3. abre o **painel** no browser (`http://127.0.0.1:8787`). Deixa a janela
    preta aberta enquanto o usas; fechá-la desliga o painel.
 
-O painel tem **quatro separadores**: **Informação de vinhos**, **Nomes de
-vinhos**, **Produtores** e **Duplicados** (o separador aberto fica no
-endereço — `#info`, `#nomes`, `#produtores`, `#duplicados` —, e recarregar a
-página não o perde).
+O painel tem estes separadores: **Informação de vinhos**, **Vinhos novos**,
+**Nomes de vinhos**, **Produtores**, **Duplicados**, **Comentários** e
+**Sugestões** (o separador aberto fica no endereço — `#info`, `#novos`,
+`#nomes`, `#produtores`, `#duplicados`… —, e recarregar a página não o
+perde). O **Registo**, as **Simulações** e as **Pesquisas com IA por rever**
+aparecem nos dois primeiros, logo a seguir ao cartão de cima: são os mesmos,
+corra a pesquisa de um separador ou do outro.
 
 ### Informação de vinhos
 
@@ -173,13 +176,25 @@ página não o perde).
   marca-o só se quiseres trocar. Se já puseste o mesmo valor que a
   simulação propõe, fica cinzento ("já está assim na BD") e não se grava.
   Uma fonte de preço que retiraste depois de simular continua retirada.
-- **Vinho novo** — nome, produtor, ano e **cor** (obrigatória) de um ou
-  mais vinhos que ainda não estão no catálogo, o que procurar, e **Procurar
-  (simular)**. O script procura cada um no Vivino e nas lojas e deixa uma
-  simulação: o vinho só é criado quando a gravares. Se já existir,
-  enriquece o que lá está.
-  Em **Links (opcional)** podes colar os endereços que já tens (Vivino,
-  Garrafeira Nacional, Granvine, Vinha.pt — separados por espaço): o script
+- **Vinhos novos** (o separador próprio, `#novos`) — nome, produtor, ano e
+  **cor** (obrigatória) de um ou mais vinhos que ainda não estão no
+  catálogo. Se um já existir (o mesmo nome, produtor e colheita), usa-se o
+  que lá está. Os mesmos dois tipos de pesquisa da Informação de vinhos:
+  - **Pesquisa sem IA — lojas principais e Vivino**: o que procurar, e
+    **Procurar (simular)**. O script procura cada um no Vivino e nas lojas e
+    deixa uma simulação: o vinho só é criado quando a gravares.
+  - **Pesquisa com IA — nos sites que indicares**: na última coluna, até 5
+    sites por vinho (o link da página do vinho, ou só o site), **Só nos sites
+    que indiquei** ou **Nos sites, e completar com a IA**, e **🔎 Pesquisar
+    com IA**. Quando chega a vez de cada vinho, ele é **criado no catálogo**
+    só com o nome, o produtor, a colheita e a cor (como no «Vinho novo» da
+    app); o que a IA encontrar fica em **Pesquisas com IA por rever**, para
+    escolheres o que entra. Um vinho sem sites, com «só nos sites», é saltado
+    e não chega a ser criado. Um que já exista com **outra cor** também não se
+    usa: o registo diz qual é, e decides na app.
+  No sem IA, a última coluna é a dos **links**: podes colar os endereços que
+  já tens (Vivino, Garrafeira Nacional, Granvine, Vinha.pt — separados por
+  espaço): o script
   abre-os diretamente em vez de procurar, e o nome não os recusa (só a cor e
   a colheita contam). O do Vivino tem de ser o de um vinho (`/w/<nº>`). Sem
   produtor, propõe o que a página do Vivino diz (a adega) — aparece na

@@ -1235,8 +1235,15 @@ cada um com os seus Simular/Enriquecer: o **"Correr N vinhos"** (a fila da
   só começa a 25/09/2026. A `vivino_catalogo` leva-o (`alterado`) com o
   `criado`. Corre sempre `IDS=` — o `/correr` recusa sem
   vinhos escolhidos; a fila às cegas saiu do painel, e os pedidos da app
-  são um filtro. Por baixo, o Registo, as Simulações, o Vinho novo (com o
-  seu "Procurar:") e "As garrafeiras × o catálogo" (links e fichas);
+  são um filtro. Por baixo, o Registo, as Simulações, as Pesquisas com IA
+  por rever e "As garrafeiras × o catálogo" (links e fichas);
+- **Vinhos novos** (`#novos`, 29/09/2026, o dono: "acabo por me esquecer
+  dele ali perdido") — o "Vinho novo pelo painel" (ver acima), que vivia no
+  fundo da Informação de vinhos, com os mesmos dois tipos de pesquisa (ver
+  "Pesquisa sem IA e Pesquisa com IA", a seguir). O Registo, as Simulações e
+  as Pesquisas com IA por rever são UM bloco só (`#comum`, os mesmos ids)
+  que o `abrirTab` muda para o separador aberto, logo a seguir ao cartão de
+  cima — como o `#filtros` da Garrafeira entre o Detalhe e os Locais;
 - **Nomes de vinhos** — a simulação da regra do nome, com procura, "Onde"
   (catálogo/garrafeiras) e "O que sai do nome" (colheita/produtor/cor/com
   avisos). Um desmarcado fica desmarcado ao mudar os filtros (`NOMES_OFF`),
@@ -1290,6 +1297,16 @@ separador é o alerta). Enquanto o script corre, só os botões que o põem a co
   do `batch/.env` tem de ser a chave em JWT (as `sb_secret_…` não passam no
   `verify_jwt`; o painel di-lo se a função responder 401). Custa o que custa
   uma pesquisa na app: cêntimos por vinho, 10–40 s cada.
+  **Nos Vinhos novos também** (29/09/2026): a mesma escolha, com os sites na
+  coluna que no sem IA é a dos links. Uma pesquisa é sempre de uma linha, por
+  isso o vinho novo NASCE quando chega a vez dele (`iaLinhaDoNovo`: a
+  `vivino_achar` e, sem linha, a `vivino_novo` — só nome, produtor, colheita
+  e cor, "painel do PC (admin)" no histórico), como o "Vinho novo" da app
+  antes de pesquisar; no sem IA continua a nascer só ao gravar a simulação.
+  Um vinho sem sites com «só nos sites» é saltado ANTES de nascer, e um que a
+  `achar` devolva com OUTRA cor não se usa (a `achar` sem cor casa com
+  qualquer uma): pode ser outro vinho, e o registo diz qual para se decidir
+  na app.
 
 **A ficha de um vinho no painel — o back-office** (27/09/2026, pedido do
 dono: "estamos a tentar fazer disto o nosso back-office"). O nome de um vinho
