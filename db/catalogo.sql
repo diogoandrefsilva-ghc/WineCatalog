@@ -592,6 +592,9 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------
+-- (30/09/2026: SUBSTITUÍDA pela versão do `db/regioes.sql`, que conhece os
+-- sinónimos — "Alentejano", "Évora", "Terras do Sado"… É essa que vale.)
+--
 -- A REGIÃO, normalizada — "DOURO" e "Douro" não podem responder por
 -- facetas diferentes no Catálogo, e "Península de Setúbal" é a mesma
 -- região que "Setúbal", só escrita como uma carta a escreveria.

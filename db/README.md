@@ -66,6 +66,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
     (29/09/2026: e a origem `prenda` — as prendas de anos da AnniversaryGifts, força 1, "uma prenda
      de anos" no histórico. Correm ANTES da secção "O VINHO VAI PARA O CATÁLOGO" do db/schema.sql do
      repo AnniversaryGifts; sem elas a força é 0 e a juntar não escreve)
+20. db/regioes.sql         (os sinónimos de região: "Alentejano", "Évora", "Evoramonte" → Alentejo,
+                            "Terras do Sado" → Setúbal, "DOC Douro" → Douro; a `subregiao_de` e a
+                            `regiao_chave`. Substitui a `normalizar_regiao` do catalogo.sql e corrige as
+                            fichas já gravadas. Na Garrafeira, a seguir: migracao-regiao.sql e a migração 37)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores
