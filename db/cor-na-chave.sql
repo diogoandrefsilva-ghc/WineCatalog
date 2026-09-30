@@ -526,6 +526,9 @@ CREATE OR REPLACE FUNCTION winecatalog.criar(
   SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
+  -- quem corrige: o admin (ou o painel/service_role) ou um curador
+  v_org     text := CASE WHEN winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role'
+                         THEN 'catalogo-admin' ELSE 'catalogo-curador' END;
   v_nome    text := btrim(COALESCE(p_nome, ''));
   v_prod    text := COALESCE(p_produtor, '');
   v_tipo    text := CASE WHEN jsonb_typeof(p_campos) = 'object' THEN p_campos ->> 'tipo' END;
@@ -536,8 +539,10 @@ DECLARE
   v_origens jsonb := '{}'::jsonb;
   k text; v jsonb; v_f integer;
 BEGIN
-  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
-    RAISE EXCEPTION 'Só o admin do catálogo pode criar uma linha.';
+  -- … e os CURADORES (db/curadores.sql, 30/09/2026), com a origem deles.
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role'
+          OR winecatalog.sou_curador()) THEN
+    RAISE EXCEPTION 'Só o admin do catálogo ou um curador pode criar uma linha.';
   END IF;
   IF v_nome = '' THEN
     RAISE EXCEPTION 'Um vinho novo precisa de um nome.';
@@ -565,10 +570,10 @@ BEGIN
         v := to_jsonb(winecatalog.normalizar_regiao(v #>> '{}'));
       END IF;
       CONTINUE WHEN winecatalog.vazio(v);
-      v_f := winecatalog.forca('catalogo-admin', k);
+      v_f := winecatalog.forca(v_org, k);
       v_ficha   := v_ficha   || jsonb_build_object(k, v);
       v_origens := v_origens || jsonb_build_object(
-        k, jsonb_build_object('o', 'catalogo-admin', 'f', v_f, 'em', now()));
+        k, jsonb_build_object('o', v_org, 'f', v_f, 'em', now()));
     END LOOP;
   END IF;
 
@@ -608,6 +613,9 @@ CREATE OR REPLACE FUNCTION winecatalog.editar(
   SET search_path TO 'winecatalog', 'public'
 AS $$
 DECLARE
+  -- quem corrige: o admin (ou o painel/service_role) ou um curador
+  v_org     text := CASE WHEN winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role'
+                         THEN 'catalogo-admin' ELSE 'catalogo-curador' END;
   r         winecatalog.vinhos%ROWTYPE;
   v_ficha   jsonb;
   v_origens jsonb;
@@ -625,8 +633,10 @@ DECLARE
 BEGIN
   -- O painel do PC (service_role, `painel_editar` em db/painel.sql) também
   -- corrige: é o admin, no computador dele, com a chave do batch (27/09/2026).
-  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role') THEN
-    RAISE EXCEPTION 'Só o admin do catálogo pode corrigir uma linha.';
+  -- … e os CURADORES (db/curadores.sql, 30/09/2026), com a origem deles.
+  IF NOT (winecatalog.sou_admin() OR COALESCE(auth.role(), '') = 'service_role'
+          OR winecatalog.sou_curador()) THEN
+    RAISE EXCEPTION 'Só o admin do catálogo ou um curador pode corrigir uma linha.';
   END IF;
 
   SELECT * INTO r FROM winecatalog.vinhos WHERE id = p_id FOR UPDATE;
@@ -659,10 +669,10 @@ BEGIN
         v_origens := v_origens - k;
         v_apagou  := v_apagou + 1;
       ELSE
-        v_f := winecatalog.forca('catalogo-admin', k);
+        v_f := winecatalog.forca(v_org, k);
         v_ficha   := v_ficha   || jsonb_build_object(k, v);
         v_origens := v_origens || jsonb_build_object(
-          k, jsonb_build_object('o', 'catalogo-admin', 'f', v_f, 'em', now()));
+          k, jsonb_build_object('o', v_org, 'f', v_f, 'em', now()));
         v_mudou := v_mudou + 1;
       END IF;
     END LOOP;

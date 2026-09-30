@@ -246,6 +246,7 @@ const WC_ORIGENS={
   'vinho-info-premium':{txt:'procura da Garrafeira (grounding)', cls:'og-media'},
   'vinho-info-gratis': {txt:'procura da Garrafeira (pesquisa + extração)', cls:'og-media'},
   'catalogo-admin':  {txt:'correção à mão (admin)', cls:'og-forte'},
+  'catalogo-curador':{txt:'correção de um curador', cls:'og-forte'},
   'catalogo-pesquisa':{txt:'pesquisa do catálogo', cls:'og-forte'},
   /* O script dos links e dos preços (batch/vivino-verificar.mjs) */
   'vivino-pagina':   {txt:'página do Vivino (script)', cls:'og-forte'},

@@ -58,6 +58,8 @@ tudo o que aqui está foi pago com um erro.
   `garrafeiras-rever.sql` (a porta da app para as garrafeiras × o catálogo) →
   `parecidos.sql` ("este vinho é aquele": os `parecidos` e a `corresponde`) →
   `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) →
+  `curadores.sql` (os curadores: quem o admin deixa criar e corrigir linhas, pela
+  Garrafeira — migração 32 de lá) →
   `garrafeiras-identidade.sql` (o nome e o produtor do catálogo chegam aos vinhos das
   garrafeiras ligados a cada linha — depois da migração 28 da Garrafeira) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
@@ -642,6 +644,20 @@ haver duas cópias — ver `db/catalogo-partilhado.sql`), e as três que a
 app chama, `comparar_catalogo`/`aplicar_do_catalogo`/`reportar_ao_catalogo`.
 Nenhuma pode deitar a ficha de um vinho abaixo se o catálogo não
 responder: o catálogo é uma poupança e um espelho, nunca uma dependência.
+
+### Os curadores — *quem mais pode criar e corrigir* (30/09/2026)
+`db/curadores.sql`. O dono das apps quis escolher quem cria vinhos no
+catálogo, e que as correções dessas pessoas na sua garrafeira corrijam o
+vinho do catálogo. Um curador é um email em `winecatalog.curadores`, que só o
+admin do catálogo enche (`curador_definir`/`curadores_listar`, o visto
+"Curador do catálogo" em Definições › Utilizadores da **Garrafeira**). A
+`criar` e a `editar` aceitam-no (`sou_curador()`), com a origem
+**`catalogo-curador`**, que vale o mesmo que a `catalogo-admin` na `forca()`.
+Onde é usado: o "+" do Catálogo da Garrafeira (vinho novo) e o trigger de lá,
+que leva à linha ligada o que um curador muda num vinho seu (migração 32 da
+Garrafeira, que tem as regras). O histórico diz "curador: <email>" — é o admin
+que os escolhe e quer saber quem corrigiu, e a correção é uma decisão, não o
+que alguém tem em casa. Passar o admin do catálogo não apaga a lista.
 
 ### Comentários e sugestões — *o que as garrafeiras têm a dizer* (28/09/2026)
 `db/comentarios.sql` (a porta da Garrafeira é a migração 26 de lá). Uma

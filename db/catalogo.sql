@@ -726,9 +726,12 @@ AS $$
     -- as duas excepções aqui são a mesma ideia aplicada a duas pessoas
     -- diferentes.
     WHEN COALESCE(p_origem,'') = 'garrafeira'     AND winecatalog.volatil(p_campo) THEN 2
-    WHEN COALESCE(p_origem,'') = 'catalogo-admin' AND winecatalog.volatil(p_campo) THEN 3
+    WHEN COALESCE(p_origem,'') IN ('catalogo-admin','catalogo-curador') AND winecatalog.volatil(p_campo) THEN 3
     ELSE CASE COALESCE(p_origem, '')
       WHEN 'catalogo-admin'      THEN 4
+      -- Um CURADOR do catálogo (db/curadores.sql, 30/09/2026): alguém a quem
+      -- o admin deu a palavra sobre o catálogo. Vale o mesmo que o admin.
+      WHEN 'catalogo-curador'    THEN 4
       WHEN 'garrafeira'          THEN 3
       WHEN 'ws-verificacao'      THEN 3
       WHEN 'catalogo-pesquisa'   THEN 3
