@@ -70,6 +70,11 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             "Terras do Sado" → Setúbal, "DOC Douro" → Douro; a `subregiao_de` e a
                             `regiao_chave`. Substitui a `normalizar_regiao` do catalogo.sql e corrige as
                             fichas já gravadas. Na Garrafeira, a seguir: migracao-regiao.sql e a migração 37)
+21. db/castas.sql          (uma grafia por casta: Aragonês/Aragonêz → Aragonez, Castelao → Castelão,
+                            Souzão → Sousão, Shiraz → Syrah, Tinta Cão → Tinto Cão…; "Touriga Nacional e
+                            Merlot" separa-se em duas; "Vinhas Velhas" sai. A `normalizar_castas` e o
+                            trigger `vinhos_castas` em qualquer escrita da ficha, e corrige as já gravadas.
+                            Na Garrafeira, a seguir: a migração 38, migracao-castas.sql)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

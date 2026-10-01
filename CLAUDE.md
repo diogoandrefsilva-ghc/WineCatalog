@@ -1701,6 +1701,28 @@ chamada à mão em cada porta.)
   garrafeiras) ficou no histórico (quem: "correção: nomes em maiúsculas") e
   no `garrafeira.sync_log` (`nome_capitalizado`).
 
+### As castas: uma grafia por casta — *uma regra, um trigger aqui e as portas de lá* (01/10/2026, o dono das apps)
+O filtro das castas do Catálogo tinha "Aragonez", "Aragonês" e "Aragonêz"
+lado a lado, e "Castelao"/"Castelão", "Sousão"/"Souzão", "Shiraz/Syrah"/
+"Syrah", "Sauvignon blanc"/"Sauvignon Blanc", "Tinta Cão"/"Tinto Cão" — e
+uma "Touriga Nacional e Merlot", duas castas escritas sem vírgula. É a
+`winecatalog.normalizar_castas` (`db/castas.sql`), aplicada por um trigger
+BEFORE (`vinhos_castas`) em qualquer escrita da ficha — pela mesma razão
+dos nomes: a porta que se esquecesse era um buraco calado.
+- **Separa** também por " e ", "&", "/", "+" e ";"; **compara** sem acentos
+  nem maiúsculas (`casta_chave`); **troca** a grafia pela de referência
+  (`casta_referencia`, a lista do IVV); **tira** o que não é casta
+  ("Vinhas Velhas"); e uma desconhecida em CAPS LOCK passa a Title Case.
+- **Não junta sinónimos regionais**: Tinta Roriz, Aragonez e Tempranillo
+  são a mesma uva, mas o nome diz de onde é o vinho e é o que está no
+  rótulo. Só se junta a mesma palavra mal escrita.
+- **Uma grafia nova** que apareça entra na `casta_referencia` — não se
+  corrige à mão no vinho, que a seguinte escrita a trazia de volta.
+- A Garrafeira usa as MESMAS funções na `casta_id`/`definir_castas`
+  (migração 38, `db/migracao-castas.sql` de lá).
+- A correção do que lá estava (19 fichas, 01/10/2026) fica no histórico
+  como "castas: normalização".
+
 ### Os produtores oficiais e o nome normalizado (27/09/2026, o dono das apps)
 O mesmo vinho escrito de maneiras diferentes nas garrafeiras e no catálogo:
 o produtor inteiro ou abreviado ("Ramos Pinto" / "Adriano Ramos Pinto"), o
