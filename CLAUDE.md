@@ -1797,7 +1797,8 @@ Grande Reserva", "Clássico 80 anos", "1255 Grande Villae", "Colecção da
 Família". O dono das apps: "eu sei que é complicado fazer uma regra a partir
 disto" — por isso não há regra, há uma LISTA DE PRODUTORES
 (`produtores_no_nome`: Caves Primavera, Companhia das Lezírias, Quinta do
-Piloto, Taboadella), que ele enche no painel ("Manter o produtor no nome").
+Piloto, Taboadella e, desde 03/10/2026, a M.O.B. — ver "As siglas com
+pontos"), que ele enche no painel ("Manter o produtor no nome").
 Nos vinhos de um produtor da lista o produtor não sai da frente do nome, no
 catálogo, nas garrafeiras e nas escritas futuras (a `nome_normal` é a mesma
 para todos, pela `produtor_no_nome`); a colheita e a cor no fim continuam a
@@ -2189,6 +2190,18 @@ de cada app antes de assumir que a que está calada está bem.**
 - **A ordem de expandir abreviaturas.** Primeiro mapeia-se ("qta."→"quinta"),
   depois filtram-se as palavras vazias. Ao contrário, a mesma garrafa ficava
   com duas chaves.
+- **As siglas com pontos (03/10/2026, `db/siglas.sql`).** "MOB Lote 3" não
+  achava o "M.O.B. Lote 3": a `tokens` partia a sigla em letras soltas
+  ({b, m} — o "o" saía como palavra vazia) e "MOB" é uma palavra só. Agora
+  as letras soltas seguidas de ponto juntam-se ANTES de se partir pela
+  pontuação ("M.O.B.", "M. O. B." → "mob"; "D.O.C." → "doc"); uma letra só
+  não é sigla ("S. Miguel"). Só as duas linhas do M.O.B. Lote 3 mudaram de
+  chave. A procura da Garrafeira, que é no browser, faz o mesmo (`siglas`).
+  E o tinto (#348) estava "Lote 3" com o branco (#384) "M.O.B. Lote 3": a
+  regra do nome tirava o produtor da frente a cada gravação do nome (o
+  branco escapou por só lhe terem mudado o produtor), e o dono não o
+  conseguia corrigir. A M.O.B. entrou nos `produtores_no_nome` e o #348
+  passou a "M.O.B. Lote 3" pela `editar` (no histórico).
 - **O FAB a roubar o toque ao modal.** O "+" nasceu com `z-index:700`
   contra os `600` do `.modal`, e é `position:fixed` no canto inferior
   direito — exatamente onde todos os modais desta app põem o botão de

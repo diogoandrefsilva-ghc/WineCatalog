@@ -75,6 +75,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             Merlot" separa-se em duas; "Vinhas Velhas" sai. A `normalizar_castas` e o
                             trigger `vinhos_castas` em qualquer escrita da ficha, e corrige as já gravadas.
                             Na Garrafeira, a seguir: a migração 38, migracao-castas.sql)
+22. db/siglas.sql          (as siglas com pontos: "M.O.B." e "M. O. B." são "MOB", "D.O.C." é "DOC" — uma
+                            letra solta não é sigla. Substitui a `tokens` do catalogo.sql e recalcula as
+                            chaves das linhas com siglas de pontos (a 03/10/2026, só o M.O.B. Lote 3 tinto
+                            e branco). A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

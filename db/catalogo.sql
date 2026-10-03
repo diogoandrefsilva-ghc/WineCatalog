@@ -207,7 +207,11 @@ ALTER TABLE winecatalog.config    ENABLE ROW LEVEL SECURITY;
 --     mesmo saco do nome: "Crasto Reserva" (só nome, vindo da carta) e
 --     nome="Reserva" + produtor="Quinta do Crasto" (vindo da garrafeira)
 --     têm de cair na mesma chave, e caem.
+--   · as siglas com pontos são a palavra sem eles ("M.O.B." = "MOB") —
+--     desde 03/10/2026, na versão do `siglas.sql`.
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `siglas.sql` (03/10/2026, "M.O.B." = "MOB"), que corre
+-- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.tokens(p_texto text)
   RETURNS text[] LANGUAGE sql IMMUTABLE
   SET search_path TO 'winecatalog', 'public'
