@@ -130,3 +130,64 @@ UPDATE winecatalog.produtores_no_nome m
    AND winecatalog.chave_produtor(m.produtor) <> m.chave
    AND NOT EXISTS (SELECT 1 FROM winecatalog.produtores_no_nome o
                     WHERE o.chave = winecatalog.chave_produtor(m.produtor));
+
+-- ════════════════════════════════════════════════════════════════════
+-- E no PRODUTOR escreve-se "Quinta" por extenso (03/10/2026, o dono)
+-- ════════════════════════════════════════════════════════════════════
+-- A chave já tratava as duas grafias como iguais (acima); o que se via
+-- continuava a ser "Qt.ª das Carvalhas". Um produtor que não esteja na
+-- lista dos oficiais (`produtor_variantes`) fica como foi escrito — a
+-- `produtor_oficial` devolvia-o tal e qual —, e agora sai com o "Qt.ª",
+-- "Qtª", "Qta.", "Qt." ou "Q.ta" trocado por "Quinta" (e "Qtas." por
+-- "Quintas"). Só no princípio de uma palavra e seguido de espaço ou do
+-- fim: "BQT" não é abreviatura nenhuma.
+--
+-- É a `produtor_oficial` porque é por ela que passam TODAS as escritas do
+-- produtor: o trigger dos nomes do catálogo (`vinhos_nomes`), a
+-- `identidade` (a `juntar`, a `criar`, a `editar`) e o trigger dos nomes
+-- da Garrafeira (`garrafeira.vinhos_nomes`, migração 23 de lá). A chave
+-- não muda: a `tokens` já dava o mesmo às duas grafias.
+-- O NOME do vinho fica como está escrito (por agora: o dono decide).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.quinta_por_extenso(p_texto text)
+  RETURNS text LANGUAGE sql IMMUTABLE
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+  SELECT regexp_replace(p_texto,
+           '(^|[^[:alnum:]])(q\.\s?ta|qta|qt)(s?)\.?ª?(?=\s|$)', '\1Quinta\3', 'gi');
+$$;
+REVOKE ALL ON FUNCTION winecatalog.quinta_por_extenso(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.quinta_por_extenso(text) TO authenticated, service_role;
+
+-- O nome oficial de uma grafia, ou a própria grafia (com a "Quinta" por
+-- extenso) se não houver. Substitui a do catalogo.sql.
+CREATE OR REPLACE FUNCTION winecatalog.produtor_oficial(p_produtor text)
+  RETURNS text LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  k text := winecatalog.chave_produtor(p_produtor);
+  r text;
+BEGIN
+  IF k = '' THEN RETURN p_produtor; END IF;
+  SELECT p.nome INTO r
+    FROM winecatalog.produtor_variantes v
+    JOIN winecatalog.produtores p ON p.id = v.produtor_id
+   WHERE v.chave = k;
+  RETURN COALESCE(r, winecatalog.quinta_por_extenso(p_produtor));
+END;
+$$;
+REVOKE ALL ON FUNCTION winecatalog.produtor_oficial(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.produtor_oficial(text) TO authenticated, service_role;
+
+-- Os que já lá estão. A 03/10/2026, seis linhas do catálogo da carta das
+-- Sugestões ("Qt.ª de Cidrô", "Qt.ª dos Aciprestes", "Qt.ª das Carvalhas")
+-- e nenhuma garrafeira. O trigger dos nomes refaz as chaves; nenhuma muda.
+SELECT set_config('winecatalog.quem', 'abreviaturas no produtor', true);
+UPDATE winecatalog.vinhos
+   SET produtor = winecatalog.produtor_oficial(produtor)
+ WHERE produtor ~* '(^|[^[:alnum:]])(q\.\s?ta|qta|qt)s?\.?ª?(\s|$)'
+   AND winecatalog.produtor_oficial(produtor) IS DISTINCT FROM produtor;
+-- Na Garrafeira o trigger dos nomes só deixa passar o produtor oficial;
+-- quem tiver "Qta." escrito passa a "Quinta" na próxima gravação. A
+-- 03/10/2026 não havia nenhum.

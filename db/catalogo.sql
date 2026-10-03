@@ -310,6 +310,8 @@ AS $$
     regexp_replace(COALESCE(p_produtor,''), '\s*\([^)]*\)', ' ', 'g')), '-');
 $$;
 
+-- ⚠ SUBSTITUÍDA em `abreviaturas.sql` (03/10/2026, "Qt.ª" → "Quinta" no
+-- produtor): a versão que VALE é a de lá.
 -- O nome oficial de uma grafia, ou a própria grafia se não houver.
 -- SECURITY DEFINER: as tabelas não se dão a ninguém, e a chave é calculada
 -- por sessões de toda a gente (a Garrafeira, as Edge Functions, os triggers).

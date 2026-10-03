@@ -2213,6 +2213,16 @@ de cada app antes de assumir que a que está calada está bem.**
   senão partia-se em "q" + "ta"); as doze chaves foram recalculadas.
   Uma abreviatura nova de uma palavra de casa entra aqui, na `tokens` — e
   na `siglas` da Garrafeira, que é a mesma regra no browser.
+  **No produtor escreve-se por extenso**: a `produtor_oficial`, quando a
+  grafia não é de um produtor oficial, devolve-a com o "Qt.ª"/"Qta."/"Q.ta"
+  trocado por "Quinta" (`quinta_por_extenso`). É por ela que passam todas
+  as escritas do produtor, aqui e na Garrafeira; as seis linhas com "Qt.ª"
+  no produtor foram corrigidas. O nome do vinho fica como foi escrito.
+  E o dono fundiu nesse dia, pela app: o #202 ("Quintas das Carvalhas
+  Touriga Nacional", sem ano) no #408 (2023), e o #385 ("Quinta do Cidrô
+  Sauvignon Blanc", sem ano) no #396 (2024). A `fundir` levou para a linha
+  com ano a nota do Vivino da linha SEM ano — que é a de todas as
+  colheitas, não a da colheita: passou à `vivino_nota_global` à mão.
 - **O FAB a roubar o toque ao modal.** O "+" nasceu com `z-index:700`
   contra os `600` do `.modal`, e é `position:fixed` no canto inferior
   direito — exatamente onde todos os modais desta app põem o botão de

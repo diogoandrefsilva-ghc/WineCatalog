@@ -82,7 +82,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
 23. db/abreviaturas.sql    ("Qt.ª", "Qtª", "Qt.", "Q.ta" são "Quinta", como já era o "Qta." — uma carta das
                             Sugestões escrevia "Qt.ª das Carvalhas" e não achava a linha. Substitui a `tokens` do
                             siglas.sql e recalcula as chaves das linhas com "Qt" (a 03/10/2026, as doze dessa carta).
-                            A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
+                            E no PRODUTOR escreve-se "Quinta" por extenso: a `produtor_oficial` (do catalogo.sql) passa
+                            pela `quinta_por_extenso` quando não há oficial — vale para o catálogo e para o trigger dos
+                            nomes da Garrafeira. A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores
