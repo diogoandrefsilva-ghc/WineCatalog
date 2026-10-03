@@ -146,6 +146,8 @@ $$;
 -- recusar um duplicado) também. `p_normalizar = false` calcula as chaves
 -- do nome tal como está (é o recálculo em massa, que não muda nomes).
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `abreviaturas.sql` (03/10/2026, "Qt.ª" → "Quinta" no
+-- nome): a versão que VALE é a de lá.
 CREATE OR REPLACE FUNCTION winecatalog.identidade(
   p_nome text, p_produtor text, p_ano integer, p_tipo text, p_normalizar boolean DEFAULT true
 ) RETURNS jsonb

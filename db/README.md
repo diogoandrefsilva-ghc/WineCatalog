@@ -84,7 +84,9 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             siglas.sql e recalcula as chaves das linhas com "Qt" (a 03/10/2026, as doze dessa carta).
                             E no PRODUTOR escreve-se "Quinta" por extenso: a `produtor_oficial` (do catalogo.sql) passa
                             pela `quinta_por_extenso` quando não há oficial — vale para o catálogo e para o trigger dos
-                            nomes da Garrafeira. A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
+                            nomes da Garrafeira. E no NOME do vinho também: a `identidade` (do cor-na-chave.sql) passa o
+                            nome pela mesma `quinta_por_extenso`; as nove linhas com "Qt.ª" no nome foram corrigidas.
+                            A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

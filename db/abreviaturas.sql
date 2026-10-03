@@ -147,7 +147,7 @@ UPDATE winecatalog.produtores_no_nome m
 -- `identidade` (a `juntar`, a `criar`, a `editar`) e o trigger dos nomes
 -- da Garrafeira (`garrafeira.vinhos_nomes`, migração 23 de lá). A chave
 -- não muda: a `tokens` já dava o mesmo às duas grafias.
--- O NOME do vinho fica como está escrito (por agora: o dono decide).
+-- O NOME do vinho também — ver a secção a seguir.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION winecatalog.quinta_por_extenso(p_texto text)
   RETURNS text LANGUAGE sql IMMUTABLE
@@ -191,3 +191,63 @@ UPDATE winecatalog.vinhos
 -- Na Garrafeira o trigger dos nomes só deixa passar o produtor oficial;
 -- quem tiver "Qta." escrito passa a "Quinta" na próxima gravação. A
 -- 03/10/2026 não havia nenhum.
+
+-- ════════════════════════════════════════════════════════════════════
+-- E no NOME do vinho também (03/10/2026, o dono: "ainda tenho Qtª")
+-- ════════════════════════════════════════════════════════════════════
+-- O Catálogo continuava a mostrar "Qt.ª de Cidrô Arinto" ao lado de
+-- "Quinta de Cidrô Touriga Nacional". A `identidade` — a ÚNICA conta do
+-- nome arrumado, por onde passam o trigger dos nomes do catálogo, a
+-- `juntar`, a `criar`, a `editar` e o trigger dos nomes da Garrafeira —
+-- passa o nome pela `quinta_por_extenso` a seguir à regra das maiúsculas.
+-- A chave não muda (a `tokens` já dava o mesmo), e a regra que tira o
+-- produtor da frente do nome (`nome_normal`) deixa "Quinta de Cidrô
+-- Touriga Nacional" como está — conferido nas nove linhas abaixo.
+-- Substitui a `identidade` do cor-na-chave.sql (só a linha do `v_nome`).
+-- ---------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION winecatalog.identidade(
+  p_nome text, p_produtor text, p_ano integer, p_tipo text, p_normalizar boolean DEFAULT true
+) RETURNS jsonb
+  LANGUAGE plpgsql STABLE SECURITY DEFINER
+  SET search_path TO 'winecatalog', 'public'
+AS $$
+DECLARE
+  v_nome text := btrim(regexp_replace(COALESCE(p_nome,''), '\s+', ' ', 'g'));
+  v_prod text := btrim(COALESCE(p_produtor,''));
+  v_ano  integer := p_ano;
+  v_cor  text;
+  nn     jsonb;
+BEGIN
+  v_cor := COALESCE(winecatalog.cor_de(p_tipo), winecatalog.cor_do_nome(v_nome));
+  IF p_normalizar THEN
+    BEGIN
+      v_nome := winecatalog.quinta_por_extenso(winecatalog.nome_proprio(v_nome));
+      v_prod := winecatalog.produtor_oficial(winecatalog.nome_proprio(v_prod));
+      nn := winecatalog.nome_normal(v_nome, v_prod, COALESCE(winecatalog.tipo_da_cor(v_cor), p_tipo), v_ano);
+      IF COALESCE(nn ->> 'nome_sem_cor', '') <> '' THEN v_nome := nn ->> 'nome_sem_cor'; END IF;
+      v_ano := COALESCE((nn ->> 'ano')::integer, v_ano);
+    EXCEPTION WHEN OTHERS THEN NULL;   -- arrumação: nunca deita uma escrita abaixo
+    END;
+  END IF;
+  RETURN jsonb_build_object(
+    'nome', v_nome, 'produtor', v_prod, 'ano', v_ano, 'cor', v_cor,
+    'chave',      winecatalog.chave(v_nome, v_prod, v_ano, v_cor),
+    'chave_base', winecatalog.chave_base(v_nome, v_prod),
+    'chave_nome', winecatalog.chave_nome(v_nome, v_ano),
+    'base_nome',  winecatalog.base_nome(v_nome));
+END;
+$$;
+REVOKE ALL ON FUNCTION winecatalog.identidade(text, text, integer, text, boolean) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION winecatalog.identidade(text, text, integer, text, boolean) TO authenticated, service_role;
+
+-- Os que já lá estão. A 03/10/2026, nove linhas da carta das Sugestões
+-- ("Qt.ª de Cidrô Arinto", "Qt.ª dos Aciprestes", "Qt.ª das Carvalhas
+-- Reserva"…), nenhuma ligada a uma garrafeira, e nenhum vinho de uma
+-- garrafeira com "Qt" no nome. O trigger dos nomes faz o resto. As linhas
+-- fundidas noutra não se mexem (guardam a chave de propósito).
+SELECT set_config('winecatalog.quem', 'abreviaturas no nome', true);
+UPDATE winecatalog.vinhos v
+   SET nome = winecatalog.quinta_por_extenso(v.nome)
+ WHERE v.nome ~* '(^|[^[:alnum:]])(q\.\s?ta|qta|qt)s?\.?ª?(\s|$)'
+   AND winecatalog.quinta_por_extenso(v.nome) <> v.nome
+   AND NOT EXISTS (SELECT 1 FROM winecatalog.alias a WHERE a.id_de = v.id);

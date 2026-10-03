@@ -2217,7 +2217,10 @@ de cada app antes de assumir que a que está calada está bem.**
   grafia não é de um produtor oficial, devolve-a com o "Qt.ª"/"Qta."/"Q.ta"
   trocado por "Quinta" (`quinta_por_extenso`). É por ela que passam todas
   as escritas do produtor, aqui e na Garrafeira; as seis linhas com "Qt.ª"
-  no produtor foram corrigidas. O nome do vinho fica como foi escrito.
+  no produtor foram corrigidas. **E no nome do vinho também** (o dono, no
+  mesmo dia: "ainda tenho Qtª"): a `identidade` passa o nome pela mesma
+  `quinta_por_extenso`, a seguir à regra das maiúsculas — nove linhas
+  corrigidas, nenhuma chave mudou.
   E o dono fundiu nesse dia, pela app: o #202 ("Quintas das Carvalhas
   Touriga Nacional", sem ano) no #408 (2023), e o #385 ("Quinta do Cidrô
   Sauvignon Blanc", sem ano) no #396 (2024). A `fundir` levou para a linha
