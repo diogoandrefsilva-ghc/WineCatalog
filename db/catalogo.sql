@@ -194,7 +194,8 @@ ALTER TABLE winecatalog.config    ENABLE ROW LEVEL SECURITY;
 --   · sem acentos e em minúsculas — "Rosé" e "rose" são o mesmo vinho;
 --   · o ANO sai do nome (fica no seu campo) — a carta escreve "Papa Figos
 --     2020" e a garrafeira escreve nome + ano em campos separados;
---   · abreviaturas de carta expandidas (qta. -> quinta);
+--   · abreviaturas de carta expandidas (qta. -> quinta; desde 03/10/2026
+--     também qt.ª, qtª, qt., q.ta — na versão do `abreviaturas.sql`);
 --   · as palavras VAZIAS ("de", "do", "vinho") saem — não distinguem nada;
 --   · as palavras de CASA saem também (quinta, herdade, adega, monte…):
 --     é o que faz "Crasto" (lido numa carta) encontrar "Quinta do Crasto"
@@ -210,8 +211,9 @@ ALTER TABLE winecatalog.config    ENABLE ROW LEVEL SECURITY;
 --   · as siglas com pontos são a palavra sem eles ("M.O.B." = "MOB") —
 --     desde 03/10/2026, na versão do `siglas.sql`.
 -- ---------------------------------------------------------------------
--- ⚠ SUBSTITUÍDA em `siglas.sql` (03/10/2026, "M.O.B." = "MOB"), que corre
--- depois deste ficheiro: a versão que VALE é a de lá. Mexer aqui não muda nada.
+-- ⚠ SUBSTITUÍDA em `siglas.sql` (03/10/2026, "M.O.B." = "MOB") e depois em
+-- `abreviaturas.sql` (03/10/2026, "Qt.ª" = "Quinta"), que correm depois deste
+-- ficheiro: a versão que VALE é a do `abreviaturas.sql`. Mexer aqui não muda nada.
 CREATE OR REPLACE FUNCTION winecatalog.tokens(p_texto text)
   RETURNS text[] LANGUAGE sql IMMUTABLE
   SET search_path TO 'winecatalog', 'public'

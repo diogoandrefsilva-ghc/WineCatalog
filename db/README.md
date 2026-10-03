@@ -79,6 +79,10 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             letra solta não é sigla. Substitui a `tokens` do catalogo.sql e recalcula as
                             chaves das linhas com siglas de pontos (a 03/10/2026, só o M.O.B. Lote 3 tinto
                             e branco). A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
+23. db/abreviaturas.sql    ("Qt.ª", "Qtª", "Qt.", "Q.ta" são "Quinta", como já era o "Qta." — uma carta das
+                            Sugestões escrevia "Qt.ª das Carvalhas" e não achava a linha. Substitui a `tokens` do
+                            siglas.sql e recalcula as chaves das linhas com "Qt" (a 03/10/2026, as doze dessa carta).
+                            A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

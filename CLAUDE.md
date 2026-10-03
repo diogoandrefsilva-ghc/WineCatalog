@@ -2202,6 +2202,17 @@ de cada app antes de assumir que a que está calada está bem.**
   branco escapou por só lhe terem mudado o produtor), e o dono não o
   conseguia corrigir. A M.O.B. entrou nos `produtores_no_nome` e o #348
   passou a "M.O.B. Lote 3" pela `editar` (no histórico).
+- **"Qt.ª" é "Quinta" (03/10/2026, `db/abreviaturas.sql`).** Uma carta das
+  Sugestões da Garrafeira escrevia "Qt.ª das Carvalhas Touriga Nacional", e
+  a `carta_ligar` não achou a linha que lá estava: a `tokens` só conhecia o
+  "Qta.", e "Qt.ª" dava "qt" (o "ª" sai com a pontuação, não é um acento
+  que o NFD tire) — uma palavra a mais na chave. O "Procurar informação"
+  da carta fez nascer o #408 ao lado do #202, e mais onze linhas dessa
+  carta (Cidrô, Aciprestes) nasceram com "qt" na chave. Agora "Qt.ª",
+  "Qtª", "Qt." e "Q.ta" são "quinta" (o "Q.ta" junta-se antes das siglas,
+  senão partia-se em "q" + "ta"); as doze chaves foram recalculadas.
+  Uma abreviatura nova de uma palavra de casa entra aqui, na `tokens` — e
+  na `siglas` da Garrafeira, que é a mesma regra no browser.
 - **O FAB a roubar o toque ao modal.** O "+" nasceu com `z-index:700`
   contra os `600` do `.modal`, e é `position:fixed` no canto inferior
   direito — exatamente onde todos os modais desta app põem o botão de
