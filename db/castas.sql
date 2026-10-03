@@ -43,6 +43,8 @@ AS $$
            '\s+', ' ', 'g'));
 $$;
 
+-- ⚠ SUBSTITUÍDA em `castas-abreviadas.sql` (03/10/2026): a lista passou a
+-- `casta_referencias()`, e é lá que se acrescenta uma casta.
 -- A grafia de referência de uma casta conhecida (pela chave), ou NULL.
 CREATE OR REPLACE FUNCTION winecatalog.casta_referencia(k text)
   RETURNS text LANGUAGE sql IMMUTABLE
@@ -107,6 +109,7 @@ AS $$
   END;
 $$;
 
+-- ⚠ SUBSTITUÍDA em `castas-abreviadas.sql` (03/10/2026, "T. Nacional").
 -- Uma casta (UM nome, já separado), normalizada — ou NULL se não é casta.
 CREATE OR REPLACE FUNCTION winecatalog.normalizar_casta(p_casta text)
   RETURNS text LANGUAGE plpgsql IMMUTABLE

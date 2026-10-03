@@ -87,6 +87,15 @@ silêncio e a única coisa que se notava era a conta da IA a não descer.
                             nomes da Garrafeira. E no NOME do vinho também: a `identidade` (do cor-na-chave.sql) passa o
                             nome pela mesma `quinta_por_extenso`; as nove linhas com "Qt.ª" no nome foram corrigidas.
                             A procura da Garrafeira faz o mesmo no browser — `siglas`, no app.js de lá)
+24. db/castas-abreviadas.sql ("T. Nacional" → Touriga Nacional, "Tª Roriz" → Tinta Roriz, "Cab. Sauvignon" →
+                            Cabernet Sauvignon — a palavra a seguir decide; só com UMA casta possível. Na chave
+                            (`tokens`), no nome gravado (`identidade`) e nas castas da ficha (`normalizar_casta`).
+                            A lista das castas de referência passa a `casta_referencias()` (era o CASE da
+                            `casta_referencia`), a mesma para as duas. Depois do castas.sql e do abreviaturas.sql)
+25. db/marcas-do-produtor.sql (uma grafia sem nenhuma palavra do nome oficial — "Quinta de Cidrô" da Real
+                            Companhia Velha — troca o produtor mas NÃO sai da frente do nome do vinho. Substitui a
+                            `nome_normal` do nomes-normalizar.sql. A 03/10/2026 o admin registou as três quintas da
+                            Real Companhia Velha, pela `produtor_definir`)
 ```
 
 O `nomes.sql` é a regra de maiúsculas dos nomes e produtores

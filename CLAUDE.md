@@ -1716,8 +1716,17 @@ dos nomes: a porta que se esquecesse era um buraco calado.
 - **Não junta sinónimos regionais**: Tinta Roriz, Aragonez e Tempranillo
   são a mesma uva, mas o nome diz de onde é o vinho e é o que está no
   rótulo. Só se junta a mesma palavra mal escrita.
-- **Uma grafia nova** que apareça entra na `casta_referencia` — não se
-  corrige à mão no vinho, que a seguinte escrita a trazia de volta.
+- **Uma grafia nova** que apareça entra na `casta_referencias()`
+  (`db/castas-abreviadas.sql` — era o CASE da `casta_referencia`, que agora
+  a lê) — não se corrige à mão no vinho, que a seguinte escrita a trazia de
+  volta.
+- **As abreviaturas** (03/10/2026, `castas_por_extenso`): "T. Nacional" é
+  Touriga Nacional e "T. Roriz" é Tinta Roriz — o "T." não diz qual, é a
+  palavra a seguir que decide (a segunda palavra de uma casta de
+  referência, com a abreviatura a ser o princípio da primeira, e só com UMA
+  casta possível). "Cab. Sauvignon", "Sauv. Blanc", "Tª Barroca", "T. Cão"
+  também; "S. Lázaro", "D. Maria" e "M.O.B." ficam. Vale na chave
+  (`tokens`), no nome gravado (`identidade`) e nas castas da ficha.
 - A Garrafeira usa as MESMAS funções na `casta_id`/`definir_castas`
   (migração 38, `db/migracao-castas.sql` de lá).
 - A correção do que lá estava (19 fichas, 01/10/2026) fica no histórico
@@ -1771,6 +1780,16 @@ vale no catálogo E em todas as garrafeiras. Em quatro fases:
    [cor] · [região] · [ano] na mesma linha (o nome quebra, já não corta com
    reticências) e o produtor por baixo; na grelha, o nome, depois cor ·
    região · ano, depois o produtor.
+
+**Uma MARCA da casa não sai da frente do nome** (03/10/2026,
+`db/marcas-do-produtor.sql`). Uma grafia que não partilha NENHUMA palavra
+com o nome oficial ("Quinta de Cidrô" da Real Companhia Velha) é o nome de
+uma propriedade ou de uma gama, não outra maneira de escrever o produtor:
+no campo do produtor troca-se pelo oficial como qualquer grafia, mas a
+`nome_normal` não a tira da frente do nome do vinho ("Quinta de Cidrô
+Marquis" fica). As que partilham ("Duorum Vinhos"/"Duorum", "Adriano Ramos
+Pinto"/"Ramos Pinto") continuam a sair. A 03/10/2026 nenhuma grafia que já
+lá estava era uma marca.
 
 **O nome completo** (27/09/2026, o dono das apps): ao lado do oficial, que
 é curto e é o que entra no vinho e na chave ("Quinta Nova", "Carlos
@@ -2226,6 +2245,19 @@ de cada app antes de assumir que a que está calada está bem.**
   Sauvignon Blanc", sem ano) no #396 (2024). A `fundir` levou para a linha
   com ano a nota do Vivino da linha SEM ano — que é a de todas as
   colheitas, não a da colheita: passou à `vivino_nota_global` à mão.
+  **E as castas abreviadas** (`db/castas-abreviadas.sql`, no mesmo dia): a
+  mesma carta escrevia "Qt.ª de Cidrô T. Nacional + Cab. Sauvignon" (o
+  #411, renomeado à mão). Agora "T. Nacional" → Touriga Nacional, "Tª
+  Roriz" → Tinta Roriz, "Cab. Sauvignon" → Cabernet Sauvignon — na chave,
+  no nome gravado e nas castas da ficha (ver "As castas").
+  **E as três quintas da Real Companhia Velha** (`db/marcas-do-produtor.sql`):
+  "Quinta de Cidrô", "Quinta das Carvalhas" e "Quinta dos Aciprestes" no
+  produtor passam a "Real Companhia Velha" (grafias da oficial, pela
+  `produtor_definir`) — mas uma grafia assim, sem nenhuma palavra do nome
+  oficial, é uma MARCA da casa e não sai da frente do nome do vinho. Sem
+  essa trava, o "Quinta do Cidrô Sauvignon Blanc" passava a "Sauvignon
+  Blanc" na escrita seguinte, e uma pesquisa a ele fazia nascer outra linha
+  (conferido numa transação desfeita: 7 nomes; com a trava, 0 dos 617).
 - **O FAB a roubar o toque ao modal.** O "+" nasceu com `z-index:700`
   contra os `600` do `.modal`, e é `position:fixed` no canto inferior
   direito — exatamente onde todos os modais desta app põem o botão de

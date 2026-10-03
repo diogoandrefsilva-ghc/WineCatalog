@@ -25,6 +25,8 @@
 -- qual). Substitui a `tokens` do siglas.sql.
 -- ---------------------------------------------------------------------
 
+-- ⚠ SUBSTITUÍDA em `castas-abreviadas.sql` (03/10/2026, "T. Nacional"),
+-- que corre depois: a versão que VALE é a de lá.
 CREATE OR REPLACE FUNCTION winecatalog.tokens(p_texto text)
   RETURNS text[] LANGUAGE sql IMMUTABLE
   SET search_path TO 'winecatalog', 'public'
@@ -205,6 +207,7 @@ UPDATE winecatalog.vinhos
 -- Touriga Nacional" como está — conferido nas nove linhas abaixo.
 -- Substitui a `identidade` do cor-na-chave.sql (só a linha do `v_nome`).
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `castas-abreviadas.sql` (03/10/2026, "T. Nacional").
 CREATE OR REPLACE FUNCTION winecatalog.identidade(
   p_nome text, p_produtor text, p_ano integer, p_tipo text, p_normalizar boolean DEFAULT true
 ) RETURNS jsonb

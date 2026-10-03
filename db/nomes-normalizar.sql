@@ -51,6 +51,9 @@ $$;
 -- novo, o que mudou e os avisos. `nome_sem_cor` ficou igual ao `nome`
 -- desde a fase 4 (era a pré-visualização da cor a sair).
 -- ---------------------------------------------------------------------
+-- ⚠ SUBSTITUÍDA em `marcas-do-produtor.sql` (03/10/2026: uma grafia sem
+-- nenhuma palavra do nome oficial — uma quinta, uma marca — não sai da frente
+-- do nome). A versão que VALE é a de lá.
 CREATE OR REPLACE FUNCTION winecatalog.nome_normal(p_nome text, p_produtor text, p_tipo text, p_ano integer)
   RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER
   SET search_path TO 'winecatalog', 'public'
