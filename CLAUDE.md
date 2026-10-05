@@ -60,6 +60,11 @@ tudo o que aqui está foi pago com um erro.
   `comentarios.sql` (os comentários sobre vinhos e as sugestões das garrafeiras) →
   `curadores.sql` (os curadores: quem o admin deixa criar e corrigir linhas, pela
   Garrafeira — migração 32 de lá) →
+  `fontes.sql` (05/10/2026: retirar um link errado das `fontes` — a
+  `fonte_retirar`/`fonte_devolver`, a lista `fontes_retiradas` e o trigger
+  `vinhos_fontes` que o impede de voltar por qualquer porta; e o histórico
+  de UM vinho, com o "Repor", também aos curadores. Quem o mostra é a página
+  do vinho da Garrafeira, migração 41 de lá) →
   `garrafeiras-identidade.sql` (o nome e o produtor do catálogo chegam aos vinhos das
   garrafeiras ligados a cada linha — depois da migração 28 da Garrafeira) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
