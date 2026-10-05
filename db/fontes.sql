@@ -6,7 +6,7 @@
 -- só curadores). O histórico seria só para curadores.").
 --
 -- Quem os mostra é a página do vinho da Garrafeira (a leitura é a
--- `garrafeira.catalogo_fontes`, migração 41 de lá). Aqui ficam as ESCRITAS
+-- `garrafeira.catalogo_fontes`, migração 42 de lá). Aqui ficam as ESCRITAS
 -- e as regras do catálogo.
 --
 -- RETIRAR NÃO É SÓ TIRAR DO ARRAY. As `fontes` juntam-se em cinco portas

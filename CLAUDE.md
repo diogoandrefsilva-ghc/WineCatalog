@@ -64,7 +64,7 @@ tudo o que aqui está foi pago com um erro.
   `fonte_retirar`/`fonte_devolver`, a lista `fontes_retiradas` e o trigger
   `vinhos_fontes` que o impede de voltar por qualquer porta; e o histórico
   de UM vinho, com o "Repor", também aos curadores. Quem o mostra é a página
-  do vinho da Garrafeira, migração 41 de lá) →
+  do vinho da Garrafeira, migração 42 de lá) →
   `garrafeiras-identidade.sql` (o nome e o produtor do catálogo chegam aos vinhos das
   garrafeiras ligados a cada linha — depois da migração 28 da Garrafeira) (+ `README.md`
   com os passos manuais e `migracao-catalogo-para-winecatalog.sql`, a
