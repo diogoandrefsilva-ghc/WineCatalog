@@ -1232,6 +1232,18 @@ site aberto no mesmo browser não consegue pôr o script a correr. O `.bat`
 é todo um bloco `( … )` porque o `cmd` lê o ficheiro aos bocados e o
 `git pull` pode trocá-lo a meio.
 
+**🔄 Atualizar, na barra dos separadores** (`atualizarTudo`, 08/10/2026, o
+dono: "no dashboard batch falta qualquer coisa para refrescar"). A lista da
+Informação de vinhos só se lia ao abrir a página (e depois de uma corrida),
+e o F5 deitava fora a escolha. O botão relê, sem recarregar, o catálogo, os
+números dos Duplicados e dos Comentários, a lista do separador aberto e a
+ficha aberta; a escolha, os filtros e a ordem ficam. NÃO relê o que está a
+meio de uma decisão — as Simulações, as Pesquisas com IA por rever e os
+Nomes (relê-los deitava fora o que se desmarcou; cada um tem o seu 🔄), a
+ficha em edição, um produtor a meio de mudar de nome, uma resposta a meio
+de escrever. A app tem o mesmo, a puxar o ecrã para baixo (ver o `CLAUDE.md`
+da Garrafeira, "Puxar para atualizar").
+
 **Os separadores e UM menu para escolher os vinhos** (27/09/2026,
 pedido do dono: "hoje isso está separado e faz-me confusão"). O painel era
 uma página corrida, e escolher os vinhos a enriquecer vivia em dois cartões,

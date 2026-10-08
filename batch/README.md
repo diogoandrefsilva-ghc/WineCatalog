@@ -71,6 +71,14 @@ perde). O **Registo**, as **Simulações** e as **Pesquisas com IA por rever**
 aparecem nos dois primeiros, logo a seguir ao cartão de cima: são os mesmos,
 corra a pesquisa de um separador ou do outro.
 
+**🔄 Atualizar** (à direita, na barra dos separadores) volta a ler da base de
+dados o que mudou noutro sítio — na app, no GitHub, noutra janela —: a lista
+do catálogo, os números dos Duplicados e dos Comentários, o separador aberto
+e a ficha aberta. Não recarrega a página, por isso a escolha dos vinhos e os
+filtros ficam (o F5 também atualiza, mas perde a escolha). As Simulações, as
+Pesquisas com IA por rever e os Nomes não se tocam — o que lá desmarcaste
+ficava perdido —; cada um tem o seu 🔄.
+
 ### Informação de vinhos
 
 - **Escolher os vinhos a enriquecer ou corrigir** — um menu só, em três

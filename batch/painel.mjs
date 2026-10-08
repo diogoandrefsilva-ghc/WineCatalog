@@ -597,6 +597,8 @@ header{background:var(--bd);color:#fff;padding:14px 20px 8px}header h1{margin:0;
 nav.tabs{position:sticky;top:0;z-index:5;background:var(--bd);display:flex;gap:2px;padding:0 12px;overflow-x:auto;box-shadow:0 2px 4px rgba(0,0,0,.15)}
 nav.tabs button{background:none;border:0;border-bottom:3px solid transparent;border-radius:0;color:#fff;opacity:.72;padding:10px 14px;font:600 14px system-ui;white-space:nowrap}
 nav.tabs button:hover{opacity:1}nav.tabs button.on{opacity:1;border-bottom-color:var(--ou)}
+nav.tabs .atualizar{margin:6px 0 6px auto;padding:4px 12px;border:1px solid rgba(255,255,255,.45);border-radius:99px;opacity:.9;font-size:13px}
+nav.tabs .atualizar:hover{background:rgba(255,255,255,.12)}nav.tabs .atualizar:disabled{opacity:.6}
 .tab[hidden]{display:none}
 main{max-width:1100px;margin:0 auto;padding:16px}
 .card{background:var(--card);border:1px solid var(--bo);border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.04);scroll-margin-top:52px}
@@ -716,6 +718,7 @@ button.mais{border-style:dashed;border-radius:99px;padding:3px 10px;font-size:12
   <button role="tab" data-tab="duplicados" onclick="abrirTab('duplicados')" title="Vinhos que parecem o mesmo">Duplicados<span id="tab-dup"></span></button>
   <button role="tab" data-tab="comentarios" onclick="abrirTab('comentarios')" title="O que as garrafeiras dizem de um vinho">Comentários<span id="tab-com-vinho"></span></button>
   <button role="tab" data-tab="sugestoes" onclick="abrirTab('sugestoes')" title="Ideias e problemas da app, escritos na Garrafeira">Sugestões<span id="tab-com-sugestao"></span></button>
+  <button type="button" class="atualizar" id="btn-atualizar" onclick="atualizarTudo()" title="Volta a ler da BD o catálogo, os números dos separadores, o separador aberto e a ficha aberta — sem recarregar a página: a escolha dos vinhos e os filtros ficam. As simulações, as pesquisas com IA por rever e os nomes têm o seu 🔄.">🔄 Atualizar</button>
 </nav>
 <main>
 <section class="tab" id="t-info">
@@ -930,13 +933,37 @@ function abrirTab(t){
   // separadores que correm pesquisas: vão para o que está aberto, logo a
   // seguir ao cartão de cima. É um bloco só (os mesmos ids), que muda de sítio.
   if(t==="info"||t==="novos")document.getElementById(t==="novos"?"c-novo":"c-escolher").after(document.getElementById("comum"));
-  document.querySelectorAll("nav.tabs button").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-selected",on?"true":"false");});
+  document.querySelectorAll("nav.tabs button[data-tab]").forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle("on",on);b.setAttribute("aria-selected",on?"true":"false");});
   if(location.hash!=="#"+t)history.replaceState(null,"","#"+t);
   // Os Nomes e os Produtores só leem a BD: carregam sozinhos da primeira vez.
   if(!ABERTOS.has(t)){ABERTOS.add(t);if(t==="nomes")nomesProcurar();if(t==="produtores")prodProcurar();
     if(t==="comentarios")comProcurar("vinho");if(t==="sugestoes")comProcurar("sugestao");}
 }
 window.addEventListener("hashchange",()=>abrirTab(location.hash.slice(1)));
+
+// ── Atualizar (08/10/2026, o dono: "no dashboard batch falta qualquer coisa para refrescar") ──
+// Volta a ler o que pode ter mudado noutro sítio — na app, no GitHub, noutra
+// janela — sem recarregar a página: a escolha dos vinhos, os filtros, a ordem e
+// o separador ficam (o F5 também atualiza, mas deita a escolha fora). Lê o
+// catálogo da Informação de vinhos (que não tinha 🔄), os números dos
+// Duplicados e dos Comentários, a lista do separador aberto e a ficha aberta.
+// Não toca no que está a meio de uma decisão tua: as simulações, as pesquisas
+// com IA por rever e os nomes têm o seu 🔄 (relê-los deitava fora o que
+// desmarcaste); a ficha em edição, um produtor a meio de mudar de nome e uma
+// resposta a meio de escrever também ficam.
+async function atualizarTudo(){
+  const b=document.getElementById("btn-atualizar");
+  if(b.disabled)return;
+  b.disabled=true;b.textContent="⏳ A atualizar…";
+  const p=[carregarCatalogo(),dupProcurar(),comContar()];
+  if(TAB==="produtores"&&PROD&&!PROD_ED.size&&!PROD_GR.size)p.push(prodProcurar());
+  for(const [t,aba] of [["vinho","comentarios"],["sugestao","sugestoes"]])
+    if(TAB===aba&&![...document.querySelectorAll("#com-"+t+"-lista .com-resp")].some(el=>el.value.trim()))p.push(comProcurar(t));
+  if(!document.getElementById("modal-vinho").hidden&&VINHO&&!EDITAR&&!MESMO)p.push(abrirVinho(VINHO.id));
+  await Promise.allSettled(p);
+  b.disabled=false;b.textContent="✓ Atualizado";
+  setTimeout(()=>{b.textContent="🔄 Atualizar";},1800);
+}
 
 // ── Escolher os vinhos ──
 let CAT=[];const ESC=new Set();
