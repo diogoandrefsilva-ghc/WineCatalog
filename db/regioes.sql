@@ -110,7 +110,7 @@ BEGIN
   IF k IN ('tras os montes', 'transmontano') THEN RETURN 'Trás-os-Montes'; END IF;
   IF k IN ('tejo', 'ribatejo', 'ribatejano') THEN RETURN 'Tejo'; END IF;
   IF k IN ('lisboa', 'estremadura') THEN RETURN 'Lisboa'; END IF;
-  IF k IN ('vinho verde', 'minho') THEN RETURN 'Vinho Verde'; END IF;
+  IF k IN ('vinho verde', 'vinhos verdes', 'minho') THEN RETURN 'Vinho Verde'; END IF;
   IF k IN ('dao', 'terras do dao') THEN RETURN 'Dão'; END IF;
   IF k IN ('beira interior', 'terras da beira') THEN RETURN 'Beira Interior'; END IF;
   IF k IN ('algarve', 'algarvio') THEN RETURN 'Algarve'; END IF;
